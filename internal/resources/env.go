@@ -38,6 +38,7 @@ func KokuCommonEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVa
 		EnvVal("REDIS_PORT", cachePort),
 		EnvVal("INSIGHTS_KAFKA_HOST", KafkaHost(cfg)),
 		EnvVal("INSIGHTS_KAFKA_PORT", KafkaPort(cfg)),
+
 		EnvVal("S3_ENDPOINT", S3Endpoint(cfg)),
 		EnvVal("REQUESTED_BUCKET", cfg.Spec.CostManagement.Storage.BucketName),
 		EnvVal("REQUESTED_ROS_BUCKET", cfg.Spec.CostManagement.Storage.ROSBucketName),
@@ -63,6 +64,25 @@ func KokuCommonEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVa
 	// handler; setting this env var overrides which handlers loggers use so
 	// Django doesn't try to write logs to the (read-only) container filesystem.
 	env = append(env, EnvVal("DJANGO_LOG_HANDLERS", "console"))
+
+	// Kafka SASL (BYOI secured Kafka)
+	if cfg.Spec.Kafka.SASL.Mechanism != "" {
+		env = append(env, EnvVal("KAFKA_SASL_MECHANISM", cfg.Spec.Kafka.SASL.Mechanism))
+		if cfg.Spec.Kafka.SASL.ExistingSecret != "" {
+			env = append(env,
+				EnvFromSecret("KAFKA_SASL_USERNAME", cfg.Spec.Kafka.SASL.ExistingSecret, "username"),
+				EnvFromSecret("KAFKA_SASL_PASSWORD", cfg.Spec.Kafka.SASL.ExistingSecret, "password"),
+			)
+		}
+	}
+
+	// Kafka TLS (BYOI secured Kafka)
+	if cfg.Spec.Kafka.SecurityProtocol != "" && cfg.Spec.Kafka.SecurityProtocol != "PLAINTEXT" {
+		env = append(env, EnvVal("KAFKA_SECURITY_PROTOCOL", cfg.Spec.Kafka.SecurityProtocol))
+	}
+	if cfg.Spec.Kafka.TLS.Enabled && cfg.Spec.Kafka.TLS.CACertSecret != "" {
+		env = append(env, EnvVal("KAFKA_SSL_CA_LOCATION", "/etc/kafka/certs/ca.crt"))
+	}
 
 	// Optional: Valkey auth
 	if cfg.Spec.Cache.Auth.Enabled && cfg.Spec.Cache.Auth.SecretName != "" {

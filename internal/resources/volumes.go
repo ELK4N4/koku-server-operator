@@ -59,6 +59,19 @@ func KokuVolumes(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Volume 
 		})
 	}
 
+	// Kafka TLS CA (BYOI secured Kafka)
+	if cfg.Spec.Kafka.TLS.Enabled && cfg.Spec.Kafka.TLS.CACertSecret != "" {
+		vols = append(vols, corev1.Volume{
+			Name: "kafka-ca-cert",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: cfg.Spec.Kafka.TLS.CACertSecret,
+					Items:      []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}},
+				},
+			},
+		})
+	}
+
 	return vols
 }
 
@@ -75,6 +88,15 @@ func KokuVolumeMounts(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Vo
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "redis-tls-ca",
 			MountPath: "/etc/redis-tls",
+			ReadOnly:  true,
+		})
+	}
+
+	// Kafka TLS CA (BYOI secured Kafka)
+	if cfg.Spec.Kafka.TLS.Enabled && cfg.Spec.Kafka.TLS.CACertSecret != "" {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      "kafka-ca-cert",
+			MountPath: "/etc/kafka/certs",
 			ReadOnly:  true,
 		})
 	}
