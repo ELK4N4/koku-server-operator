@@ -14,7 +14,7 @@ Last audited: 2026-08-05 against `~/operator/COST-*.md` source files.
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| [COST-7678](https://redhat.atlassian.net/browse/COST-7678) | Define CostManagement CRD types | 🔄 | Single file `api/v1alpha1/costmanagementserviceconfig_types.go` — ticket requires split across `infra_types.go`, `app_types.go`, `status_types.go`, `profiles.go`, `defaults.go`, `validation.go`. **Critical mismatch: all infra is external-only** (no bundled DB/Cache); CR takes `host`, `port`, `credentialsSecretRef` — we implemented `Deploy: true` options. Phase enum wrong: ticket defines Pending/Discovering/Validating/Migrating/Deploying/Ready/Degraded; we have Pending/Provisioning/Running/Degraded/Failed. Missing: `profiles` (standard/ha), `DiscoveredConfig` in status, condition types DiscoveryComplete/StorageReady/DatabaseReady/SchemaUpToDate/AuthenticationReady, mutating/validating webhooks. |
+| [COST-7678](https://redhat.atlassian.net/browse/COST-7678) | Define CostManagement CRD types | 🔄 | Single file `api/v1alpha1/costmanagementserviceconfig_types.go` — ticket requires split across `infra_types.go`, `app_types.go`, `status_types.go`, `profiles.go`, `defaults.go`, `validation.go`. Phase enum differs: ticket defines Pending/Discovering/Validating/Migrating/Deploying/Ready/Degraded; we have Pending/Provisioning/Running/Degraded/Failed. Ticket is external-only for infra; we add `Deploy: true` bundled mode as an intentional extension. Missing: `profiles` (standard/ha), `DiscoveredConfig` in status, condition types DiscoveryComplete/StorageReady/DatabaseReady/SchemaUpToDate/AuthenticationReady, mutating/validating webhooks. |
 | [COST-7679](https://redhat.atlassian.net/browse/COST-7679) | Create sample CRs and generate manifests | 🔄 | Single sample CR present; ticket requires two: minimal (required fields only) and production (HA profile, full resource overrides, monitoring enabled). CRD installs on CRC (OCP 4.21) ✅. Missing: HA profile sample, verified CEL validation. |
 
 ## Reconciler Core
@@ -37,7 +37,7 @@ Last audited: 2026-08-05 against `~/operator/COST-*.md` source files.
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API, Masu, Listener `1/1 Running` on CRC ✅. Missing per ticket: ROS API + Processor Deployments, Kruize Deployment + ClusterRole/ClusterRoleBinding with finalizer. Django key uses `base64.URLEncoding` ❌ — ticket requires `crypto/rand` with charset `abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)`. Profile-based sizing ❌. 5-minute readiness timeout with Degraded condition ❌. **Architectural note**: we have bundled DB/Cache (`Deploy: true`) but ticket says all infra is external-only. |
+| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API, Masu, Listener `1/1 Running` on CRC ✅. Missing per ticket: ROS API + Processor Deployments, Kruize Deployment + ClusterRole/ClusterRoleBinding with finalizer. Django key uses `base64.URLEncoding` ❌ — ticket requires `crypto/rand` with charset `abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)`. Profile-based sizing ❌. 5-minute readiness timeout with Degraded condition ❌. Bundled DB/Cache (`Deploy: true`) is an intentional extension beyond ticket scope. |
 | [COST-7687](https://redhat.atlassian.net/browse/COST-7687) | Implement workers and scheduled jobs | 🔄 | Celery Beat ✅. Ticket specifies six on-prem queues: download, summary, cost_model, refresh, ocp, priority — we have all of these plus extra (default, hcs, subs_extraction, subs_transmission). Missing: ROS Recommendation Poller Deployment, ROS Housekeeper Deployment, ROS Partition Cleaner CronJob, Kruize CronJobs, profile-based sizing. |
 | [COST-7688](https://redhat.atlassian.net/browse/COST-7688) | Implement Gateway and Ingress | ❌ | Envoy JWT proxy (Deployment + Service + ConfigMap wired to OIDC issuer/audiences from CR) not implemented. Ingress upload service not implemented. |
 | [COST-7689](https://redhat.atlassian.net/browse/COST-7689) | Implement RBAC Service | ❌ | RBAC **worker** Deployment (not API — RBAC API is part of the external RBAC service) not yet built. Ticket scope: single worker Deployment wired to external DB and cache. |
@@ -65,17 +65,19 @@ Last audited: 2026-08-05 against `~/operator/COST-*.md` source files.
 
 ---
 
-## Key Architectural Mismatches vs Ticket Spec
+## Deviations from Ticket Spec
 
-These require design discussion before the next sprint:
+Items where we intentionally diverge from the JIRA acceptance criteria:
 
-1. **All infrastructure is external-only** (COST-7678, COST-7686) — The CRD spec takes `host`/`port`/`credentialsSecretRef` for DB, Cache, Kafka. We implemented `Deploy: true` to bundle PostgreSQL and Valkey. This was useful for CRC testing but is architecturally wrong per the backlog. The operator is meant to wire services, not provision them.
+1. **Bundled infrastructure** (COST-7678, COST-7686) — Tickets spec external-only infra (CR takes `host`/`port`/`credentialsSecretRef`). We keep `Deploy: true` options for DB and Cache as an intentional extension — enables dev/PoC deployments without pre-existing infrastructure. External-only mode is also supported; both modes coexist.
 
-2. **Phase names** — Ticket: Discovering/Validating/Migrating/Deploying/Ready. Ours: Provisioning/Running. The status section needs to be renamed before any external consumers depend on it.
+Items that need fixing before GA:
+
+2. **Phase names** — Ticket: Discovering/Validating/Migrating/Deploying/Ready. Ours: Provisioning/Running. Should be renamed before any external consumers depend on the status API.
 
 3. **Migration scope** — Ticket: sequential Koku → ROS → RBAC migrate → RBAC seed. We only have Koku. ROS and RBAC migrations are missing.
 
-4. **Django key charset** — Ticket specifies `abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)`. We use `base64.URLEncoding`. This affects the actual secret value generated.
+4. **Django key charset** — Ticket specifies `abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)`. We use `base64.URLEncoding`. Affects the generated secret value.
 
 ---
 
