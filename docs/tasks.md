@@ -1,10 +1,11 @@
 # Operator Task Tracker
 
 Tracks implementation status against the COST-7678–7700 Jira backlog.
+Last audited: 2026-08-05 against `~/operator/COST-*.md` source files.
 
 ## Legend
-- ✅ Done — implemented and tested on CRC
-- 🔄 In Progress — partially implemented
+- ✅ Done — implements the ticket's acceptance criteria
+- 🔄 In Progress — partially implemented, specific gaps noted
 - ❌ Not started
 
 ---
@@ -13,73 +14,78 @@ Tracks implementation status against the COST-7678–7700 Jira backlog.
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| COST-7678 | Define CostManagementCRD types | ✅ | Full typed spec in `api/v1alpha1/costmanagementserviceconfig_types.go`. All 15 top-level sections. |
-| COST-7679 | Sample CRs and generate manifests | ✅ | `config/samples/costmanagement-service-cfg_v1alpha1_costmanagementserviceconfig.yaml`. CRD YAML generated via `make manifests`. |
+| [COST-7678](https://redhat.atlassian.net/browse/COST-7678) | Define CostManagement CRD types | 🔄 | Single file `api/v1alpha1/costmanagementserviceconfig_types.go` — ticket requires split across `infra_types.go`, `app_types.go`, `status_types.go`, `profiles.go`, `defaults.go`, `validation.go`. **Critical mismatch: all infra is external-only** (no bundled DB/Cache); CR takes `host`, `port`, `credentialsSecretRef` — we implemented `Deploy: true` options. Phase enum wrong: ticket defines Pending/Discovering/Validating/Migrating/Deploying/Ready/Degraded; we have Pending/Provisioning/Running/Degraded/Failed. Missing: `profiles` (standard/ha), `DiscoveredConfig` in status, condition types DiscoveryComplete/StorageReady/DatabaseReady/SchemaUpToDate/AuthenticationReady, mutating/validating webhooks. |
+| [COST-7679](https://redhat.atlassian.net/browse/COST-7679) | Create sample CRs and generate manifests | 🔄 | Single sample CR present; ticket requires two: minimal (required fields only) and production (HA profile, full resource overrides, monitoring enabled). CRD installs on CRC (OCP 4.21) ✅. Missing: HA profile sample, verified CEL validation. |
 
 ## Reconciler Core
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| COST-7680 | Phase-gated reconciler skeleton | ✅ | 6-stage pipeline with `runPhases()` + `PhaseError`. Stages: shared-config → infra → migration-gate → core → workers → edge. |
-| COST-7681 | Server-Side Apply and ownership model | ✅ | `apply()` uses `client.Apply + ForceOwnership`. StatefulSet handled separately (VCT immutability). Secrets use create-only `ensureSecret()`. |
-| COST-7682 | Cluster discovery | ❌ | S3 endpoint, storage class, cluster domain auto-detection not yet implemented. Currently requires explicit values in CR. |
-| COST-7683 | S3 backend auto-detection | ❌ | Placeholder storage credentials secret created. Real ODF/NooBaa/OBC detection not implemented. |
-| COST-7684 | External dependency validation | ❌ | No preflight check for Kafka, S3, external DB/cache connectivity. |
+| [COST-7680](https://redhat.atlassian.net/browse/COST-7680) | Implement phase-gated reconciler skeleton | 🔄 | `runPhases()` + `PhaseError` pattern in place ✅. Ticket's 5 phases: Discovery → Validation → Migrations → Application → Platform. We have 6 stages that roughly map but are named differently and missing: Discovery stage (auto-detect cluster domain/StorageClass), Validation stage (probe external deps), pause/resume via annotation, Kubernetes Events on state transitions. |
+| [COST-7681](https://redhat.atlassian.net/browse/COST-7681) | Implement Server-Side Apply and ownership model | 🔄 | SSA with `ForceOwnership` ✅, `ownerReferences` on namespace-scoped resources ✅. Missing: finalizer-based cleanup for cluster-scoped resources (ConsoleLink, ClusterRole, ClusterRoleBinding), drift correction (5-minute periodic requeue re-applying all desired state). |
+| [COST-7682](https://redhat.atlassian.net/browse/COST-7682) | Implement cluster discovery | ❌ | Cluster domain and default StorageClass auto-detection from OpenShift cluster config not implemented. `DiscoveryComplete` condition and `status.discoveredConfig` not present. |
+| [COST-7683](https://redhat.atlassian.net/browse/COST-7683) | Implement S3 backend auto-detection | ❌ | Three-path S3 resolution (user-provided → OBC/Direct Ceph → NooBaa) not implemented. Placeholder storage secret created but no real detection. `StorageReady` condition and `status.discoveredConfig.s3` not present. |
+| [COST-7684](https://redhat.atlassian.net/browse/COST-7684) | Implement external dependency validation | ❌ | No connectivity probes for DB, Cache, Kafka, OIDC, or S3. No secret resolution/validation (keys exist, expected keys present). Missing conditions: DatabaseReady, CacheReady, KafkaReady, AuthenticationReady. |
 
 ## Infrastructure
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| COST-7685 | Migration Job lifecycle | ✅ | Job created pre-deploy, upgrade-detection by image tag, completion/failure gating, `Result{Stop:true}` on failure. |
+| [COST-7685](https://redhat.atlassian.net/browse/COST-7685) | Implement migration Job lifecycle | 🔄 | Koku migration Job created and gated ✅, upgrade-detection by image tag ✅, `Result{Stop:true}` on failure ✅. Missing: ROS and RBAC migration Jobs (ticket: sequential Koku → ROS → RBAC migrate → RBAC seed), `activeDeadlineSeconds: 600` ❌ (not set), `backoffLimit: 3` ❌ (we use 0), `SchemaUpToDate` condition ❌ (we use `condDegraded`). |
 
 ## Application Services
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| COST-7686 | Application services | ✅ | PostgreSQL, Valkey, Koku API, Masu, Listener all `1/1 Running` on CRC (arm64). Koku API serving `/livez` + `/readyz`. |
-| COST-7687 | Workers and scheduled jobs | 🔄 | Celery beat + 5 active workers (default, priority, summary×2, ocp×2) `1/1 Running`. 5 disabled workers at 0 replicas. ROS, RBAC, Kruize, Ingress builders still TODO. |
-| COST-7688 | Gateway and Ingress | ❌ | Ingress upload handler stub only. |
-| COST-7689 | RBAC Service | ❌ | RBAC API + worker Deployments not yet implemented (stage 5 stub). |
-| COST-7690 | UI and ConsoleLink | ❌ | Stage 6 stub. |
-| COST-7691 | Routes, NetworkPolicies, TLS | ❌ | Stage 6 stub. |
-| COST-7692 | Monitoring and alerting | ❌ | ServiceMonitor not yet wired. `monitoring.enabled` flag in CRD only. |
+| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API, Masu, Listener `1/1 Running` on CRC ✅. Missing per ticket: ROS API + Processor Deployments, Kruize Deployment + ClusterRole/ClusterRoleBinding with finalizer. Django key uses `base64.URLEncoding` ❌ — ticket requires `crypto/rand` with charset `abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)`. Profile-based sizing ❌. 5-minute readiness timeout with Degraded condition ❌. **Architectural note**: we have bundled DB/Cache (`Deploy: true`) but ticket says all infra is external-only. |
+| [COST-7687](https://redhat.atlassian.net/browse/COST-7687) | Implement workers and scheduled jobs | 🔄 | Celery Beat ✅. Ticket specifies six on-prem queues: download, summary, cost_model, refresh, ocp, priority — we have all of these plus extra (default, hcs, subs_extraction, subs_transmission). Missing: ROS Recommendation Poller Deployment, ROS Housekeeper Deployment, ROS Partition Cleaner CronJob, Kruize CronJobs, profile-based sizing. |
+| [COST-7688](https://redhat.atlassian.net/browse/COST-7688) | Implement Gateway and Ingress | ❌ | Envoy JWT proxy (Deployment + Service + ConfigMap wired to OIDC issuer/audiences from CR) not implemented. Ingress upload service not implemented. |
+| [COST-7689](https://redhat.atlassian.net/browse/COST-7689) | Implement RBAC Service | ❌ | RBAC **worker** Deployment (not API — RBAC API is part of the external RBAC service) not yet built. Ticket scope: single worker Deployment wired to external DB and cache. |
+| [COST-7690](https://redhat.atlassian.net/browse/COST-7690) | Implement UI and ConsoleLink | ❌ | UI Deployment + OAuth2 Proxy sidecar, ClusterIP Service, ConsoleLink (cluster-scoped, needs finalizer cleanup) not implemented. |
+| [COST-7691](https://redhat.atlassian.net/browse/COST-7691) | Implement Routes, NetworkPolicies, and TLS | ❌ | OpenShift Routes (gateway + UI, edge TLS), NetworkPolicies per component, dedicated ServiceAccounts per component, restricted-v2 SCC compliance for all pods, `status.phase → Ready` transition not implemented. CA bundle ConfigMap partially present (init container + service-ca ConfigMap) but not full multi-source merge per ticket. |
+| [COST-7692](https://redhat.atlassian.net/browse/COST-7692) | Implement monitoring and alerting | ❌ | Operator metrics endpoint, application ServiceMonitors, PrometheusRules (5 alert rules), and Kubernetes Events on phase transitions/migration/drift not implemented. `monitoring.enabled` flag in CRD only. |
 
 ## Lifecycle
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| COST-7693 | Upgrade and scaling flows | 🔄 | Image-tag-triggered migration re-run implemented. Ordered rollout via stage gates. Scaling via replicas field. No canary/blue-green. |
-| COST-7694 | Secret rotation and CA management | 🔄 | DB + Django secrets are create-only (no rotation). CA bundle combine init container present. Service CA ConfigMap with OCP injection annotation. |
+| [COST-7693](https://redhat.atlassian.net/browse/COST-7693) | Implement upgrade and scaling flows | 🔄 | Image-tag-triggered migration re-run ✅, SSA re-applies desired replicas ✅. Missing: automatic rollback to previous image tags on migration failure (`UpgradeFailed` condition + Event), rolling update strategy (maxSurge/maxUnavailable per workload type), profile-based replica scaling. |
+| [COST-7694](https://redhat.atlassian.net/browse/COST-7694) | Implement secret rotation and CA management | 🔄 | CA bundle combine init container ✅, service-ca ConfigMap with OCP injection annotation ✅. Missing: rotation trigger via `cost.redhat.com/rotate-secrets` annotation, Django key with correct charset (`!@#$%^&*(-_=+)` etc.), pod template annotation rolling restart, `SecretRotated` Event. |
 
 ## OLM & CI
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| COST-7695 | OLM bundle | 🔄 | `make bundle` target wired. `PROJECT` file and `config/manifests/` present. Bundle not yet generated or validated. |
-| COST-7696 | CI pipeline for bundle | ❌ | `.github/workflows/` scaffolded but not customised. |
-| COST-7697 | Adapt existing E2E suite | ❌ | |
-| COST-7698 | Operator-specific E2E scenarios | ❌ | `test/e2e/` scaffold only. |
-| COST-7699 | OpenShift CI integration | ❌ | |
-| COST-7700 | Installation and configuration guides | ❌ | README is the scaffold placeholder. |
+| [COST-7695](https://redhat.atlassian.net/browse/COST-7695) | Create OLM bundle | 🔄 | `make bundle` target wired, `PROJECT` file and `config/manifests/` kustomize bases present. Bundle not yet generated; CSV not written; `operator-sdk bundle validate` not yet run. |
+| [COST-7696](https://redhat.atlassian.net/browse/COST-7696) | Build CI pipeline for bundle | ❌ | `.github/workflows/` scaffolded but not customised. No scorecard tests, no CatalogSource, no OLM install verification. |
+| [COST-7697](https://redhat.atlassian.net/browse/COST-7697) | Adapt existing E2E suite for operator | ❌ | Existing pytest suite (88+ tests) not yet adapted. `test/e2e/` is the kubebuilder Go scaffold stub, not the existing test suite. |
+| [COST-7698](https://redhat.atlassian.net/browse/COST-7698) | Implement operator-specific E2E scenarios | ❌ | Drift correction, secret rotation, upgrade sequencing, dependency failure, pause/resume E2E tests not written. |
+| [COST-7699](https://redhat.atlassian.net/browse/COST-7699) | Set up OpenShift CI integration | ❌ | Prow step, OLM install, external prerequisites provisioning, E2E execution, artifact collection not set up. |
+| [COST-7700](https://redhat.atlassian.net/browse/COST-7700) | Write installation and configuration guides | ❌ | Prerequisites guide, Quickstart, Production guide, CMMO configuration guide — none written. README is scaffold placeholder. |
 
 ---
 
-## Known Issues / Bugs
+## Key Architectural Mismatches vs Ticket Spec
 
-| Issue | File | Fix |
-|-------|------|-----|
-| Koku containers crash on read-only FS | `resources/volumes.go` | `kokuAppContainerSC()` removes `ReadOnlyRootFilesystem` — Django instantiates all logging handlers unconditionally |
-| `DJANGO_LOG_HANDLERS=console` insufficient | `resources/env.go` | Env var is set but doesn't prevent file handler instantiation at Django startup |
-| CRC arm64 / koku image | `config/samples/` | Sample CR uses `quay.io/martin_povolny/koku:latest` (arm64). Production tag: `quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku:d8055ac` (amd64) |
-| `ComponentStatus.Ready` omitempty | `api/v1alpha1/` | Boolean zero value omitted by merge patch; `+optional` + omitempty fixes CRD validation |
-| Stale `Degraded` condition | controller | Old failed-migration condition not cleared on success |
+These require design discussion before the next sprint:
+
+1. **All infrastructure is external-only** (COST-7678, COST-7686) — The CRD spec takes `host`/`port`/`credentialsSecretRef` for DB, Cache, Kafka. We implemented `Deploy: true` to bundle PostgreSQL and Valkey. This was useful for CRC testing but is architecturally wrong per the backlog. The operator is meant to wire services, not provision them.
+
+2. **Phase names** — Ticket: Discovering/Validating/Migrating/Deploying/Ready. Ours: Provisioning/Running. The status section needs to be renamed before any external consumers depend on it.
+
+3. **Migration scope** — Ticket: sequential Koku → ROS → RBAC migrate → RBAC seed. We only have Koku. ROS and RBAC migrations are missing.
+
+4. **Django key charset** — Ticket specifies `abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)`. We use `base64.URLEncoding`. This affects the actual secret value generated.
 
 ---
 
-## Next Priority
+## Next Priority (per backlog order)
 
-1. **COST-7686 completion** — Celery readiness gate, ROS, RBAC, Kruize resource builders
-2. **COST-7688** — Ingress upload handler
-3. **COST-7691** — OpenShift Route for the gateway
-4. **COST-7682/7683** — Cluster + S3 auto-detection (highest user-facing value)
-5. **COST-7695** — OLM bundle generation and validation
+1. **[COST-7678](https://redhat.atlassian.net/browse/COST-7678)** — Restructure CRD: split files, fix phase names, switch infra to external-only, add `DiscoveredConfig` status, add profiles
+2. **[COST-7682](https://redhat.atlassian.net/browse/COST-7682)** — Discovery phase (cluster domain, StorageClass)
+3. **[COST-7683](https://redhat.atlassian.net/browse/COST-7683)** — S3 auto-detection (OBC → NooBaa → user-provided)
+4. **[COST-7684](https://redhat.atlassian.net/browse/COST-7684)** — External dependency validation (TCP + HTTP probes)
+5. **[COST-7685](https://redhat.atlassian.net/browse/COST-7685)** — Complete migration: add ROS + RBAC Jobs, fix backoffLimit, add `activeDeadlineSeconds`
+6. **[COST-7686](https://redhat.atlassian.net/browse/COST-7686)** — Add ROS API/Processor and Kruize to app services
+7. **[COST-7688](https://redhat.atlassian.net/browse/COST-7688)** — Envoy gateway + Ingress upload handler
+8. **[COST-7691](https://redhat.atlassian.net/browse/COST-7691)** — Routes + NetworkPolicies + phase→Ready transition
