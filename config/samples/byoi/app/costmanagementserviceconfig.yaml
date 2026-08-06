@@ -46,13 +46,14 @@ spec:
       rosBucketName: "ros-data"
     api:
       image:
-        repository: quay.io/martin_povolny/koku
-        tag: "latest"
+        # amd64 — suitable for clusterbot / typical OpenShift nodes
+        repository: quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku
+        tag: "d8055ac"
       replicas: 1
     masu:
       image:
-        repository: quay.io/martin_povolny/koku
-        tag: "latest"
+        repository: quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku
+        tag: "d8055ac"
       replicas: 1
     listener:
       replicas: 1
