@@ -11,7 +11,7 @@ import (
 func KokuVolumes(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Volume {
 	vols := []corev1.Volume{
 		{
-			Name: "tmp",
+			Name:         "tmp",
 			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 		},
 		{

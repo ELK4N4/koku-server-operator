@@ -43,8 +43,10 @@ func (e *PhaseError) Error() string {
 
 func (e *PhaseError) Unwrap() error { return e.Err }
 
-// wrapPhaseError wraps err as a PhaseError if err is non-nil.
-func wrapPhaseError(err error, condType, reason string, phase costv1alpha1.Phase) error {
+// NewPhaseError wraps err as a PhaseError. Callers use this at the point of
+// failure to attach the condition type, reason, and target phase so the
+// reconcile loop can update status without if-chains.
+func NewPhaseError(err error, condType, reason string, phase costv1alpha1.Phase) error {
 	if err == nil {
 		return nil
 	}

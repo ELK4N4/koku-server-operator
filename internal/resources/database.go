@@ -103,7 +103,7 @@ func DatabaseStatefulSet(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.
 								TimeoutSeconds:      5,
 								FailureThreshold:    3,
 							},
-							Resources:       dbSpec.Resources,
+							Resources: dbSpec.Resources,
 							// PostgreSQL writes to /var/run, /tmp, and the data dir;
 							// readOnlyRootFilesystem would break it.
 							SecurityContext: dbContainerSC(),

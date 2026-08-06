@@ -11,8 +11,8 @@ import (
 // -----------------------------------------------------------------------------
 
 type ImageSpec struct {
-	Repository string            `json:"repository"`
-	Tag        string            `json:"tag"`
+	Repository string `json:"repository"`
+	Tag        string `json:"tag"`
 	// +kubebuilder:default:=IfNotPresent
 	PullPolicy corev1.PullPolicy `json:"pullPolicy,omitempty"`
 }
@@ -35,7 +35,7 @@ type SecretKeyRef struct {
 
 type GlobalConfig struct {
 	// +kubebuilder:default:=IfNotPresent
-	PullPolicy      corev1.PullPolicy            `json:"pullPolicy,omitempty"`
+	PullPolicy       corev1.PullPolicy             `json:"pullPolicy,omitempty"`
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 	// Cluster base domain used for Route hostname generation.
 	// +kubebuilder:default:="apps.cluster.local"
@@ -52,8 +52,8 @@ type DatabaseConfig struct {
 	// Deploy the bundled PostgreSQL StatefulSet.
 	// Set false to use an external database (requires Host to be set).
 	// +kubebuilder:default:=true
-	Deploy bool      `json:"deploy,omitempty"`
-	Image  ImageSpec `json:"image,omitempty"`
+	Deploy  bool                `json:"deploy,omitempty"`
+	Image   ImageSpec           `json:"image,omitempty"`
 	Storage DatabaseStorageSpec `json:"storage,omitempty"`
 
 	// Host for an external PostgreSQL instance (only used when Deploy is false).
@@ -95,14 +95,14 @@ type CacheConfig struct {
 	// +kubebuilder:default:=6379
 	Port int32 `json:"port,omitempty"`
 
-	Auth        CacheAuthSpec        `json:"auth,omitempty"`
-	TLS         CacheTLSSpec         `json:"tls,omitempty"`
-	Persistence CachePersistenceSpec `json:"persistence,omitempty"`
+	Auth        CacheAuthSpec               `json:"auth,omitempty"`
+	TLS         CacheTLSSpec                `json:"tls,omitempty"`
+	Persistence CachePersistenceSpec        `json:"persistence,omitempty"`
 	Resources   corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type CacheAuthSpec struct {
-	Enabled bool   `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
 	// Name of a Secret with key redis-password (and optionally redis-username).
 	SecretName string `json:"secretName,omitempty"`
 }
@@ -135,7 +135,7 @@ type KafkaConfig struct {
 
 type KafkaSASLSpec struct {
 	// +kubebuilder:validation:Enum=PLAIN;SCRAM-SHA-256;SCRAM-SHA-512;""
-	Mechanism      string `json:"mechanism,omitempty"`
+	Mechanism string `json:"mechanism,omitempty"`
 	// Name of a Secret with keys: username, password.
 	ExistingSecret string `json:"existingSecret,omitempty"`
 }
@@ -183,7 +183,7 @@ type AuthConfig struct {
 }
 
 type EnvoySpec struct {
-	Image     ImageSpec                   `json:"image,omitempty"`
+	Image ImageSpec `json:"image,omitempty"`
 	// +kubebuilder:default:=2
 	Replicas  int32                       `json:"replicas,omitempty"`
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -198,7 +198,7 @@ type KeycloakSpec struct {
 	Realm string `json:"realm,omitempty"`
 	// JWT audiences accepted by the gateway.
 	// +kubebuilder:default:={"cost-management-operator","cost-management-ui"}
-	Audiences []string `json:"audiences,omitempty"`
+	Audiences []string        `json:"audiences,omitempty"`
 	TLS       KeycloakTLSSpec `json:"tls,omitempty"`
 }
 
@@ -222,11 +222,11 @@ type RealmUser struct {
 // -----------------------------------------------------------------------------
 
 type RBACConfig struct {
-	Image          ImageSpec                   `json:"image,omitempty"`
-	API            RBACComponentSpec           `json:"api,omitempty"`
-	Worker         RBACComponentSpec           `json:"worker,omitempty"`
-	BootstrapAdmin BootstrapAdminSpec          `json:"bootstrapAdmin,omitempty"`
-	KeycloakSync   KeycloakSyncSpec            `json:"keycloakSync,omitempty"`
+	Image          ImageSpec          `json:"image,omitempty"`
+	API            RBACComponentSpec  `json:"api,omitempty"`
+	Worker         RBACComponentSpec  `json:"worker,omitempty"`
+	BootstrapAdmin BootstrapAdminSpec `json:"bootstrapAdmin,omitempty"`
+	KeycloakSync   KeycloakSyncSpec   `json:"keycloakSync,omitempty"`
 }
 
 type RBACComponentSpec struct {
@@ -240,14 +240,14 @@ type BootstrapAdminSpec struct {
 }
 
 type KeycloakSyncSpec struct {
-	Enabled bool   `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
 	// +kubebuilder:default:="*/15 * * * *"
-	Schedule         string       `json:"schedule,omitempty"`
-	OrgGroupPrefix   string       `json:"orgGroupPrefix,omitempty"`
-	OrgAdminSubgroup string       `json:"orgAdminSubgroup,omitempty"`
-	PruneOrphans     bool         `json:"pruneOrphans,omitempty"`
-	ClientID         string       `json:"clientId,omitempty"`
-	ClientSecretRef  SecretKeyRef `json:"clientSecretRef,omitempty"`
+	Schedule         string                      `json:"schedule,omitempty"`
+	OrgGroupPrefix   string                      `json:"orgGroupPrefix,omitempty"`
+	OrgAdminSubgroup string                      `json:"orgAdminSubgroup,omitempty"`
+	PruneOrphans     bool                        `json:"pruneOrphans,omitempty"`
+	ClientID         string                      `json:"clientId,omitempty"`
+	ClientSecretRef  SecretKeyRef                `json:"clientSecretRef,omitempty"`
 	Resources        corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
@@ -256,7 +256,7 @@ type KeycloakSyncSpec struct {
 // -----------------------------------------------------------------------------
 
 type IngressConfig struct {
-	Image   ImageSpec `json:"image,omitempty"`
+	Image ImageSpec `json:"image,omitempty"`
 	// Maximum upload size in bytes.
 	// +kubebuilder:default:=104857600
 	MaxUploadSize int64 `json:"maxUploadSize,omitempty"`
@@ -265,7 +265,7 @@ type IngressConfig struct {
 	ValidTypes string `json:"validTypes,omitempty"`
 	// Staging bucket name for uploads.
 	// +kubebuilder:default:="insights-upload-perma"
-	StagingBucket string `json:"stagingBucket,omitempty"`
+	StagingBucket string                      `json:"stagingBucket,omitempty"`
 	Resources     corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
@@ -287,9 +287,9 @@ type KruizePartitionsSpec struct {
 	// +kubebuilder:default:=true
 	DeleteEnabled bool `json:"deleteEnabled,omitempty"`
 	// +kubebuilder:default:="0 0 * * *"
-	DeleteSchedule            string `json:"deleteSchedule,omitempty"`
+	DeleteSchedule string `json:"deleteSchedule,omitempty"`
 	// +kubebuilder:default:="16"
-	DeletePartitionsThreshold string `json:"deletePartitionsThreshold,omitempty"`
+	DeletePartitionsThreshold string                      `json:"deletePartitionsThreshold,omitempty"`
 	Resources                 corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
@@ -298,12 +298,12 @@ type KruizePartitionsSpec struct {
 // -----------------------------------------------------------------------------
 
 type ROSConfig struct {
-	Image          ImageSpec          `json:"image,omitempty"`
-	ServiceAccount ServiceAccountSpec `json:"serviceAccount,omitempty"`
-	API            ROSAPISpec         `json:"api,omitempty"`
-	Processor      ROSProcessorSpec   `json:"processor,omitempty"`
-	RecommendationPoller ROSPollerSpec `json:"recommendationPoller,omitempty"`
-	Housekeeper    ROSHousekeeperSpec `json:"housekeeper,omitempty"`
+	Image                ImageSpec          `json:"image,omitempty"`
+	ServiceAccount       ServiceAccountSpec `json:"serviceAccount,omitempty"`
+	API                  ROSAPISpec         `json:"api,omitempty"`
+	Processor            ROSProcessorSpec   `json:"processor,omitempty"`
+	RecommendationPoller ROSPollerSpec      `json:"recommendationPoller,omitempty"`
+	Housekeeper          ROSHousekeeperSpec `json:"housekeeper,omitempty"`
 }
 
 type ROSAPISpec struct {
@@ -327,8 +327,8 @@ type ROSPollerSpec struct {
 }
 
 type ROSHousekeeperSpec struct {
-	Resources       corev1.ResourceRequirements `json:"resources,omitempty"`
-	PartitionCleaner ROSPartitionCleanerSpec    `json:"partitionCleaner,omitempty"`
+	Resources        corev1.ResourceRequirements `json:"resources,omitempty"`
+	PartitionCleaner ROSPartitionCleanerSpec     `json:"partitionCleaner,omitempty"`
 }
 
 type ROSPartitionCleanerSpec struct {
@@ -367,8 +367,8 @@ type CostManagementStorageSpec struct {
 
 type KokuAPISpec struct {
 	// +kubebuilder:default:=true
-	Enabled  bool      `json:"enabled,omitempty"`
-	Image    ImageSpec `json:"image,omitempty"`
+	Enabled bool      `json:"enabled,omitempty"`
+	Image   ImageSpec `json:"image,omitempty"`
 	// +kubebuilder:default:=1
 	Replicas  int32                       `json:"replicas,omitempty"`
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -379,8 +379,8 @@ type KokuAPISpec struct {
 
 type MasuSpec struct {
 	// +kubebuilder:default:=true
-	Enabled  bool      `json:"enabled,omitempty"`
-	Image    ImageSpec `json:"image,omitempty"`
+	Enabled bool      `json:"enabled,omitempty"`
+	Image   ImageSpec `json:"image,omitempty"`
 	// +kubebuilder:default:=1
 	Replicas  int32                       `json:"replicas,omitempty"`
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -389,7 +389,7 @@ type MasuSpec struct {
 
 type ListenerSpec struct {
 	// +kubebuilder:default:=true
-	Enabled  bool `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
 	// +kubebuilder:default:=2
 	Replicas  int32                       `json:"replicas,omitempty"`
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -401,22 +401,22 @@ type CelerySpec struct {
 }
 
 type CeleryWorkersSpec struct {
-	Default         CeleryWorkerSpec `json:"default,omitempty"`
-	Priority        CeleryWorkerSpec `json:"priority,omitempty"`
-	Summary         CeleryWorkerSpec `json:"summary,omitempty"`
-	OCP             CeleryWorkerSpec `json:"ocp,omitempty"`
-	CostModel       CeleryWorkerSpec `json:"costModel,omitempty"`
+	Default   CeleryWorkerSpec `json:"default,omitempty"`
+	Priority  CeleryWorkerSpec `json:"priority,omitempty"`
+	Summary   CeleryWorkerSpec `json:"summary,omitempty"`
+	OCP       CeleryWorkerSpec `json:"ocp,omitempty"`
+	CostModel CeleryWorkerSpec `json:"costModel,omitempty"`
 	// Cloud-provider workers — typically 0 replicas for OCP-only deployments.
-	Refresh         CeleryWorkerSpec `json:"refresh,omitempty"`
-	HCS             CeleryWorkerSpec `json:"hcs,omitempty"`
-	Download        CeleryWorkerSpec `json:"download,omitempty"`
-	SubsExtraction  CeleryWorkerSpec `json:"subsExtraction,omitempty"`
+	Refresh          CeleryWorkerSpec `json:"refresh,omitempty"`
+	HCS              CeleryWorkerSpec `json:"hcs,omitempty"`
+	Download         CeleryWorkerSpec `json:"download,omitempty"`
+	SubsExtraction   CeleryWorkerSpec `json:"subsExtraction,omitempty"`
 	SubsTransmission CeleryWorkerSpec `json:"subsTransmission,omitempty"`
 }
 
 type CeleryWorkerSpec struct {
 	// +kubebuilder:default:=1
-	Replicas    int32                       `json:"replicas,omitempty"`
+	Replicas int32 `json:"replicas,omitempty"`
 	// +kubebuilder:default:=5
 	Concurrency int32                       `json:"concurrency,omitempty"`
 	Resources   corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -428,9 +428,9 @@ type CeleryWorkerSpec struct {
 
 type UIConfig struct {
 	// +kubebuilder:default:=1
-	ReplicaCount int32           `json:"replicaCount,omitempty"`
-	OAuthProxy   OAuthProxySpec  `json:"oauthProxy,omitempty"`
-	App          UIAppSpec       `json:"app,omitempty"`
+	ReplicaCount int32          `json:"replicaCount,omitempty"`
+	OAuthProxy   OAuthProxySpec `json:"oauthProxy,omitempty"`
+	App          UIAppSpec      `json:"app,omitempty"`
 }
 
 type OAuthProxySpec struct {
@@ -451,9 +451,9 @@ type UIAppSpec struct {
 // -----------------------------------------------------------------------------
 
 type GatewayRouteConfig struct {
-	Annotations map[string]string    `json:"annotations,omitempty"`
-	Hosts       []RouteHostSpec      `json:"hosts,omitempty"`
-	TLS         RouteTLSSpec         `json:"tls,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Hosts       []RouteHostSpec   `json:"hosts,omitempty"`
+	TLS         RouteTLSSpec      `json:"tls,omitempty"`
 }
 
 type RouteHostSpec struct {
@@ -464,7 +464,7 @@ type RouteHostSpec struct {
 
 type RoutePathSpec struct {
 	// +kubebuilder:default:="/"
-	Path     string `json:"path,omitempty"`
+	Path string `json:"path,omitempty"`
 	// +kubebuilder:default:=Prefix
 	PathType string `json:"pathType,omitempty"`
 }

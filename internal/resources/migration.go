@@ -70,7 +70,7 @@ func MigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag string
 									corev1.ResourceMemory: resource.MustParse("1Gi"),
 								},
 							},
-							VolumeMounts:    KokuVolumeMounts(cfg),
+							VolumeMounts: KokuVolumeMounts(cfg),
 							// readOnlyRootFilesystem omitted: Django instantiates all
 							// configured log handler objects (including file handlers)
 							// before our DJANGO_LOG_HANDLERS override takes effect.

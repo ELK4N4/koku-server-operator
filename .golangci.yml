@@ -1,45 +1,80 @@
 version: "2"
+
 run:
   allow-parallel-runners: true
+
 linters:
   default: none
   enable:
-    - copyloopvar
-    - dupl
-    - errcheck
-    - ginkgolinter
-    - goconst
-    - gocyclo
-    - govet
-    - ineffassign
-    - lll
-    - misspell
-    - nakedret
-    - prealloc
-    - revive
-    - staticcheck
-    - unconvert
-    - unparam
-    - unused
+    - copyloopvar    # catch loop variable capture bugs (Go <1.22 compat)
+    - depguard       # forbid deprecated packages
+    - dupl           # detect copy-pasted code blocks
+    - errcheck       # all errors must be handled
+    - ginkgolinter   # enforce ginkgo best practices in tests
+    - goconst        # flag repeated string literals
+    - gocyclo        # cyclomatic complexity
+    - gosec          # security issues
+    - govet          # go vet checks
+    - ineffassign    # assignments that are never read
+    - lll            # line length
+    - misspell       # common typos
+    - modernize      # suggest idiomatic Go replacements
+    - nakedret       # bare returns in long functions
+    - prealloc       # suggest slice pre-allocation
+    - revive         # opinionated style
+    - staticcheck    # advanced static analysis
+    - unconvert      # unnecessary type conversions
+    - unparam        # unused function parameters
+    - unused         # unused code
+
   settings:
+    depguard:
+      rules:
+        forbid-sort-pkg:
+          deny:
+            - pkg: sort
+              desc: "Use the slices package instead (Go 1.21+)"
+    gocyclo:
+      min-complexity: 20  # reconcile loops are inherently branchy
+    gosec:
+      excludes:
+        - G101  # hardcoded credentials (false positives on test helpers)
+        - G304  # file path from variable (common in operator config loading)
+        - G404  # weak random (acceptable for non-security use)
+    lll:
+      line-length: 140
     revive:
       rules:
         - name: comment-spacings
         - name: import-shadowing
+
   exclusions:
     generated: lax
     rules:
-      - linters:
-          - lll
-        path: api/*
-      - linters:
-          - dupl
-          - lll
-        path: internal/*
+      # Resource builders repeat Kubernetes TypeMeta primitives ("apps/v1",
+      # "Deployment", etc.) by design — suppressing dupl, lll, and goconst there.
+      - linters: [dupl, lll, goconst]
+        path: internal/resources/
+      # CRD type files and controller: lll violations are common in kubebuilder
+      # markers (can't be split) and in method signatures that include the
+      # full type name CostManagementServiceConfigReconciler.
+      - linters: [lll]
+        path: api/
+      - linters: [lll]
+        path: internal/controller/
+      - linters: [lll]
+        path: cmd/
+      # Test files: relax errcheck, gosec, and unparam
+      - linters: [errcheck, gosec, unparam]
+        path: _test\.go
+      # test/utils uses kubectl exec with variable args by design
+      - linters: [gosec]
+        path: test/
     paths:
       - third_party$
       - builtin$
       - examples$
+
 formatters:
   enable:
     - gofmt

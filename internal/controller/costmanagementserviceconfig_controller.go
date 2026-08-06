@@ -26,9 +26,11 @@ const (
 	condDegraded    = "Degraded"
 	condProgressing = "Progressing"
 
-	fieldOwner = "koku-server-operator"
+	fieldOwner  = "koku-server-operator"
 	requeueFast = 10 * time.Second
 	requeueSlow = 30 * time.Second
+
+	msgNotYetImplemented = "not yet implemented"
 )
 
 type CostManagementServiceConfigReconciler struct {
@@ -210,7 +212,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 	if errors.IsNotFound(err) {
 		// First run: create the Job.
 		job := resources.MigrationJob(cfg, imageTag)
-		setOwnerRef(cfg, job, r.Scheme)
+		setOwnerRef(cfg, job)
 		if createErr := r.Create(ctx, job); createErr != nil {
 			return Result{}, fmt.Errorf("create migration job: %w", createErr)
 		}
@@ -286,11 +288,12 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 // -----------------------------------------------------------------------------
 
 func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
-	var objs []client.Object
+	workers := resources.CeleryWorkerDeployments(cfg)
+	objs := make([]client.Object, 0, 1+len(workers))
 
 	// Celery beat + workers
 	objs = append(objs, resources.CeleryBeatDeployment(cfg))
-	for _, d := range resources.CeleryWorkerDeployments(cfg) {
+	for _, d := range workers {
 		objs = append(objs, d)
 	}
 
@@ -302,9 +305,10 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		}
 	}
 
-	cfg.Status.Components.ROS = costv1alpha1.ComponentStatus{Ready: true, Message: "TODO"}
-	cfg.Status.Components.RBAC = costv1alpha1.ComponentStatus{Ready: true, Message: "TODO"}
-	cfg.Status.Components.Kruize = costv1alpha1.ComponentStatus{Ready: true, Message: "TODO"}
+	// ROS, RBAC, Kruize status — stubs until COST-7686/7687/7689 resource builders land.
+	cfg.Status.Components.ROS = costv1alpha1.ComponentStatus{Ready: true, Message: msgNotYetImplemented}
+	cfg.Status.Components.RBAC = costv1alpha1.ComponentStatus{Ready: true, Message: msgNotYetImplemented}
+	cfg.Status.Components.Kruize = costv1alpha1.ComponentStatus{Ready: true, Message: msgNotYetImplemented}
 	return Result{}, nil
 }
 
@@ -312,10 +316,10 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 // Stage 6 — Edge: gateway, UI, routes
 // -----------------------------------------------------------------------------
 
-func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
-	// TODO: Envoy gateway, UI, OpenShift Route — to be implemented in follow-up.
-	cfg.Status.Components.Auth = costv1alpha1.ComponentStatus{Ready: true, Message: "TODO"}
-	cfg.Status.Components.UI = costv1alpha1.ComponentStatus{Ready: true, Message: "TODO"}
+func (r *CostManagementServiceConfigReconciler) reconcileEdge(_ context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	// Envoy gateway, UI, OpenShift Route — stubs until COST-7688/7690/7691 land.
+	cfg.Status.Components.Auth = costv1alpha1.ComponentStatus{Ready: true, Message: msgNotYetImplemented}
+	cfg.Status.Components.UI = costv1alpha1.ComponentStatus{Ready: true, Message: msgNotYetImplemented}
 	return Result{}, nil
 }
 
@@ -326,7 +330,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 // apply creates or updates obj using Server-Side Apply.
 func (r *CostManagementServiceConfigReconciler) apply(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig, obj client.Object) error {
 	obj.SetNamespace(cfg.Namespace)
-	setOwnerRef(cfg, obj, r.Scheme)
+	setOwnerRef(cfg, obj)
 	return r.Patch(ctx, obj, client.Apply, client.ForceOwnership, client.FieldOwner(fieldOwner))
 }
 
@@ -337,7 +341,7 @@ func (r *CostManagementServiceConfigReconciler) applyStatefulSet(ctx context.Con
 	existing := &appsv1.StatefulSet{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, existing)
 	if errors.IsNotFound(err) {
-		setOwnerRef(cfg, desired, r.Scheme)
+		setOwnerRef(cfg, desired)
 		return r.Create(ctx, desired)
 	}
 	if err != nil {
@@ -360,13 +364,13 @@ func (r *CostManagementServiceConfigReconciler) ensureSecret(ctx context.Context
 	existing := &corev1.Secret{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}, existing)
 	if errors.IsNotFound(err) {
-		setOwnerRef(cfg, secret, r.Scheme)
+		setOwnerRef(cfg, secret)
 		return r.Create(ctx, secret)
 	}
 	return err
 }
 
-func setOwnerRef(owner *costv1alpha1.CostManagementServiceConfig, obj client.Object, scheme *runtime.Scheme) {
+func setOwnerRef(owner *costv1alpha1.CostManagementServiceConfig, obj client.Object) {
 	if obj.GetNamespace() == "" {
 		return // cluster-scoped: owner refs don't apply
 	}

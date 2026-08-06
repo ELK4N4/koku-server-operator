@@ -5,12 +5,12 @@ import (
 )
 
 const (
-	labelApp        = "app.kubernetes.io/name"
-	labelInstance   = "app.kubernetes.io/instance"
-	labelPartOf     = "app.kubernetes.io/part-of"
-	labelManagedBy  = "app.kubernetes.io/managed-by"
-	labelComponent  = "app.kubernetes.io/component"
-	labelVersion    = "app.kubernetes.io/version"
+	labelApp       = "app.kubernetes.io/name"
+	labelInstance  = "app.kubernetes.io/instance"
+	labelPartOf    = "app.kubernetes.io/part-of"
+	labelManagedBy = "app.kubernetes.io/managed-by"
+	labelComponent = "app.kubernetes.io/component"
+	labelVersion   = "app.kubernetes.io/version"
 
 	ManagedBy = "koku-server-operator"
 )
@@ -30,8 +30,8 @@ func Labels(cfg *costv1alpha1.CostManagementServiceConfig, component string) map
 // These must never change after initial creation.
 func SelectorLabels(cfg *costv1alpha1.CostManagementServiceConfig, component string) map[string]string {
 	return map[string]string{
-		labelApp:      cfg.Name,
-		labelInstance: cfg.Name,
+		labelApp:       cfg.Name,
+		labelInstance:  cfg.Name,
 		labelComponent: component,
 	}
 }
