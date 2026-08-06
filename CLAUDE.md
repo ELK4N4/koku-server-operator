@@ -1,0 +1,116 @@
+# koku-server-operator
+
+Kubernetes operator that deploys and manages the on-premise Cost Management
+stack on OpenShift. Users install it via OLM, apply one `CostManagementServiceConfig`
+CR, and the operator wires all application services to their pre-existing
+external infrastructure.
+
+## Key identifiers
+
+| Item | Value |
+|------|-------|
+| Module | `github.com/project-koku/koku-server-operator` |
+| API group | `costmanagement-service-cfg.openshift.io/v1alpha1` |
+| Kind | `CostManagementServiceConfig` |
+| Short name | `cmsc` |
+| Field manager | `koku-server-operator` |
+| Leader election ID | `koku-server-operator.costmanagement-service-cfg.openshift.io` |
+
+## Build
+
+```bash
+make generate          # regenerate deep-copy methods
+make manifests         # regenerate CRD YAML + RBAC ClusterRole
+make build             # compile manager binary to bin/manager
+make run               # run locally against current kubeconfig
+go test -race ./internal/...
+golangci-lint run ./...
+govulncheck ./...
+```
+
+The `bin/controller-gen` binary is checked in (v0.18.0 arm64). CI runs all
+of the above via `.github/workflows/ci.yml`.
+
+## Production design target
+
+**All infrastructure is external (BYOI).** In production, PostgreSQL, Kafka,
+and object storage are the customer's responsibility. The operator connects to
+them via connection details and `credentialsSecretRef` fields in the CR.
+
+The `database.deploy: true` and `cache.deploy: true` options exist **for
+local development and CI only** — no HA, no backup, no day-2 operations.
+Kafka cannot be bundled at all (always AMQ Streams). Do not design features
+or reconciler logic around the bundled path.
+
+See `docs/design/design-vs-jira.md` for the full rationale.
+
+## Reconciler stages
+
+The controller uses a phase-gated pipeline (internal stages, not exposed as
+Phase values):
+
+1. **Shared config** — secrets (create-only), ConfigMaps, ServiceAccount
+2. **Infrastructure** — validate/provision DB and cache; readiness gate
+3. **Migration** — Koku schema migration Job; blocks stage 4 until complete
+4. **Core services** — Koku API, Masu, Listener
+5. **Workers** — Celery beat + workers, ROS, RBAC, Kruize, Ingress
+6. **Edge** — Envoy gateway, UI, OpenShift Routes
+
+Stages 1–4 are implemented and tested on CRC. Stages 5–6 are partially
+implemented (Celery workers done; ROS, RBAC, Kruize, Ingress, gateway, UI
+are stubs).
+
+## Status API
+
+Conditions are the primary API — **not** the Phase field. The three top-level
+conditions follow the OpenShift/Kubernetes operator convention:
+
+- `Available` — core functionality working
+- `Progressing` — operator is actively reconciling
+- `Degraded` — operator cannot make progress without intervention
+
+Component-specific conditions (`DatabaseReady`, `CacheReady`, `SchemaUpToDate`,
+etc.) go into the same `status.conditions` slice as `metav1.Condition` entries.
+The `Phase` field (`Provisioning` / `Running` / `Degraded`) is a human-readable
+convenience only — not for machine consumption.
+
+The current `ComponentStatuses` struct (with `Ready bool`) is a known gap
+and will be replaced by proper `metav1.Condition` entries.
+
+## Key design decisions (vs JIRA spec)
+
+Full analysis in `docs/design/design-vs-jira.md`. Short version:
+
+| Decision | Why |
+|----------|-----|
+| Conditions over phase enum | Kubernetes API conventions; phases are linear, conditions compose |
+| Bundled infra is dev-only | JIRAs are correct — production is BYOI |
+| `*bool` needed for opt-out fields | `bool+omitempty+default:true` loses `false` on marshal |
+| No passwords in CR spec | etcd stores CR plaintext; use Secret references |
+| Finalizers required for cluster-scoped resources | `ownerReferences` don't work cross-namespace |
+
+## Testing on CRC
+
+```bash
+eval "$(crc oc-env)"
+oc login -u kubeadmin -p <password> https://api.crc.testing:6443
+
+./hack/deploy-crc.sh cost-onprem          # install CRDs + RBAC
+NAMESPACE=cost-onprem go run ./cmd/main.go --dev
+
+# In another terminal:
+oc apply -n cost-onprem \
+  -f config/samples/costmanagement-service-cfg_v1alpha1_costmanagementserviceconfig.yaml
+oc get cmsc -n cost-onprem -w
+```
+
+CRC is arm64; use `quay.io/martin_povolny/koku:latest` for the koku image.
+The production image (`quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku:d8055ac`)
+is amd64-only and segfaults under QEMU emulation.
+
+## Reference material
+
+- `docs/jira/COST-7678.md` – `COST-7700.md` — JIRA ticket source
+- `docs/design/design-vs-jira.md` — design decisions and best-practice analysis
+- `docs/tasks.md` — implementation status per JIRA ticket
+- `../cost-onprem-chart/cost-onprem/` — Helm chart this operator replaces (reference for resource shapes, env vars, volumes)
