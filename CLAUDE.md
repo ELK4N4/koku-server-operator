@@ -42,7 +42,7 @@ local development and CI only** — no HA, no backup, no day-2 operations.
 Kafka cannot be bundled at all (always AMQ Streams). Do not design features
 or reconciler logic around the bundled path.
 
-See `docs/design/design-vs-jira.md` for the full rationale.
+See [docs/design/design-vs-jira.md](docs/design/design-vs-jira.md) for the full rationale.
 
 ## Reconciler stages
 
@@ -79,7 +79,7 @@ and will be replaced by proper `metav1.Condition` entries.
 
 ## Key design decisions (vs JIRA spec)
 
-Full analysis in `docs/design/design-vs-jira.md`. Short version:
+Full analysis in [docs/design/design-vs-jira.md](docs/design/design-vs-jira.md). Short version:
 
 | Decision | Why |
 |----------|-----|
@@ -91,8 +91,8 @@ Full analysis in `docs/design/design-vs-jira.md`. Short version:
 
 ## Reference material
 
-- `docs/development/crc-testing.md` — local development and CRC testing guide
-- `docs/tasks.md` — implementation status per JIRA ticket
-- `docs/design/design-vs-jira.md` — design decisions and best-practice analysis
-- `docs/jira/COST-7678.md` – `COST-7700.md` — JIRA ticket source
+- [docs/development/crc-testing.md](docs/development/crc-testing.md) — local development and CRC testing guide
+- [docs/tasks.md](docs/tasks.md) — implementation status per JIRA ticket
+- [docs/design/design-vs-jira.md](docs/design/design-vs-jira.md) — design decisions and best-practice analysis
+- [docs/jira/](docs/jira/) — JIRA ticket source (COST-7678–7700)
 - `../cost-onprem-chart/cost-onprem/` — Helm chart this operator replaces (reference for resource shapes, env vars, volumes)
