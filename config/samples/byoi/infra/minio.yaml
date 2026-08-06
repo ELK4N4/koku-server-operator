@@ -1,0 +1,163 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: cost-byoi-infra
+  labels:
+    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/component: minio
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: cost-byoi-infra
+  labels:
+    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/component: minio
+spec:
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+    - name: console
+      port: 9001
+      targetPort: console
+  selector:
+    app.kubernetes.io/name: minio
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: cost-byoi-infra
+  labels:
+    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/component: minio
+    app.kubernetes.io/name: minio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: koku-server-operator-byoi
+        app.kubernetes.io/component: minio
+        app.kubernetes.io/name: minio
+    spec:
+      serviceAccountName: byoi-infra
+      containers:
+        - name: minio
+          image: docker.io/minio/minio:RELEASE.2025-01-20T14-49-07Z
+          imagePullPolicy: IfNotPresent
+          args: ["server", "/data", "--console-address", ":9001"]
+          ports:
+            - name: s3
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: access-key
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: secret-key
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: s3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: s3
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minio-data
+---
+# Create the buckets the operator / Koku expect by default.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: cost-byoi-infra
+  labels:
+    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/component: minio
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: koku-server-operator-byoi
+        app.kubernetes.io/component: minio
+        app.kubernetes.io/name: minio-init
+    spec:
+      serviceAccountName: byoi-infra
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: docker.io/minio/mc:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOME
+              value: /tmp
+            - name: MC_CONFIG_DIR
+              value: /tmp/.mc
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: access-key
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: secret-key
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          command:
+            - sh
+            - -c
+            - |
+              set -euo pipefail
+              until mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
+                echo "waiting for minio..."
+                sleep 3
+              done
+              mc mb --ignore-existing local/koku-bucket
+              mc mb --ignore-existing local/ros-data
+              mc ls local
+              echo "buckets ready"
+      volumes:
+        - name: tmp
+          emptyDir: {}
