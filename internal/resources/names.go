@@ -2,6 +2,7 @@ package resources
 
 import (
 	"strconv"
+	"strings"
 
 	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
 )
@@ -83,7 +84,15 @@ func NameCeleryBeat(cfg *costv1alpha1.CostManagementServiceConfig) string {
 }
 
 func NameCeleryWorker(cfg *costv1alpha1.CostManagementServiceConfig, queue string) string {
-	return cfg.Name + "-celery-worker-" + queue
+	// Celery queue names may contain underscores (e.g. cost_model); Kubernetes
+	// Deployment/container names must be RFC 1123 (alphanumeric + '-' only).
+	return cfg.Name + "-celery-worker-" + DNS1123Label(queue)
+}
+
+// DNS1123Label converts a Celery queue (or similar) name into a DNS-1123 label
+// suitable for Kubernetes resource and container names.
+func DNS1123Label(s string) string {
+	return strings.ReplaceAll(s, "_", "-")
 }
 
 // DatabaseHost returns the hostname of the database that all services should connect to.
