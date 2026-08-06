@@ -41,6 +41,8 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=config.openshift.io,resources=ingresses,verbs=get
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
 
 func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -80,6 +82,7 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionTrue, "Reconciling", "Reconciliation in progress")
 
 	result, err := runPhases([]PhaseFn{
+		func() (Result, error) { return r.reconcileDiscovery(ctx, cfg) },
 		func() (Result, error) { return r.reconcileSharedConfig(ctx, cfg) },
 		func() (Result, error) { return r.reconcileInfrastructure(ctx, cfg) },
 		func() (Result, error) { return r.reconcileMigration(ctx, cfg) },

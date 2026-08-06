@@ -93,20 +93,20 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Run unit tests
-        # The controller package uses envtest (requires etcd/kube-apiserver
-        # binaries) but has no real test cases yet — only the scaffold stub.
-        # Test only internal/resources which has no envtest dependency.
-        # Re-add internal/controller once real controller tests are written.
-        run: |
-          go test -race -count=1 -timeout 120s -coverprofile=coverage.out \
-            ./internal/resources/...
+      - name: Cache envtest binaries
+        uses: actions/cache@v4
+        with:
+          path: bin/k8s
+          key: envtest-${{ runner.os }}-${{ hashFiles('go.mod') }}
+
+      - name: Run tests (unit + envtest integration)
+        run: make test
 
       - name: Coverage summary
         run: |
           echo '### Test Coverage' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          go tool cover -func=coverage.out | grep -E 'total:|\.go:' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=cover.out | grep -E 'total:|\.go:' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
   check-generated:
