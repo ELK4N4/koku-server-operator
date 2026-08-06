@@ -1,0 +1,82 @@
+# Separate BYOI CostManagementServiceConfig — deploy:false for DB/cache.
+# Point clusterDomain at your cluster's apps domain before relying on Routes.
+apiVersion: costmanagement-service-cfg.openshift.io/v1alpha1
+kind: CostManagementServiceConfig
+metadata:
+  name: cost-management
+  namespace: cost-byoi
+spec:
+  global:
+    clusterDomain: "apps.cluster.example.com"
+    storageClass: ""
+
+  database:
+    deploy: false
+    host: "postgresql.cost-byoi-infra.svc.cluster.local"
+    port: 5432
+    sslMode: "disable"
+    secretName: "byoi-db-credentials"
+
+  cache:
+    deploy: false
+    host: "valkey.cost-byoi-infra.svc.cluster.local"
+    port: 6379
+    auth:
+      enabled: true
+      secretName: "byoi-cache-credentials"
+    tls:
+      enabled: false
+
+  kafka:
+    bootstrapServers: "kafka.cost-byoi-infra.svc.cluster.local:9092"
+    securityProtocol: "PLAINTEXT"
+
+  objectStorage:
+    endpoint: "minio.cost-byoi-infra.svc.cluster.local"
+    port: 9000
+    useSSL: false
+    secretName: "byoi-s3-credentials"
+    s3:
+      region: "us-east-1"
+      addressingStyle: "path"
+
+  costManagement:
+    storage:
+      bucketName: "koku-bucket"
+      rosBucketName: "ros-data"
+    api:
+      image:
+        repository: quay.io/martin_povolny/koku
+        tag: "latest"
+      replicas: 1
+    masu:
+      image:
+        repository: quay.io/martin_povolny/koku
+        tag: "latest"
+      replicas: 1
+    listener:
+      replicas: 1
+    celery:
+      workers:
+        default:
+          replicas: 1
+        priority:
+          replicas: 1
+        summary:
+          replicas: 1
+        ocp:
+          replicas: 1
+        costModel:
+          replicas: 1
+
+  # Keycloak deferred — placeholder only for this fixture.
+  auth:
+    keycloak:
+      url: "http://keycloak.not-deployed.svc.cluster.local"
+      realm: "kubernetes"
+      audiences:
+        - "cost-management-operator"
+        - "cost-management-ui"
+
+  monitoring:
+    enabled: false
