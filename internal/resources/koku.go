@@ -140,7 +140,9 @@ func CeleryWorkerDeployment(cfg *costv1alpha1.CostManagementServiceConfig, queue
 		concurrency = 5
 	}
 
-	component := "cost-worker-" + queue
+	// Keep the Celery queue name (may include '_') for -Q / WORKER_QUEUES, but
+	// sanitize for Deployment metadata.name and container name (RFC 1123).
+	component := "cost-worker-" + DNS1123Label(queue)
 	env := KokuCommonEnv(cfg)
 	env = append(env,
 		EnvVal("CELERY_LOG_LEVEL", "info"),
