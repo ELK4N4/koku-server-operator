@@ -161,17 +161,32 @@ api/v1alpha1/
   validation.go             # validating webhook + CEL rules
 ```
 
-### What we implement
+### What we implement and why
 
-Currently a single `costmanagementserviceconfig_types.go`. The split is
-correct and is planned for COST-7678; it has not yet been done because the
-file structure is a refactor with no behavioral change, and other tickets
-(COST-7682 Discovery, COST-7684 Validation) add new fields that will land in
-those files anyway — splitting first and then immediately adding to the new
-files is the right order.
+A single `costmanagementserviceconfig_types.go`. **The file split is
+intentionally skipped.**
 
-The webhooks (`defaults.go`, `validation.go`) will be implemented alongside
-the split.
+In Go, files within a package are compiled identically — splitting
+`infra_types.go` from `app_types.go` has no semantic effect. Types are found
+and accessed the same way by the compiler, by controller-gen, and by IDE
+tooling regardless of which file they live in.
+
+The split has marginal organisational value at the current file size (~500
+lines). It becomes worthwhile if the file grows significantly or if multiple
+developers are editing different sections simultaneously and producing merge
+conflicts. Neither condition applies now.
+
+**What is worth isolating** (and will be, when implemented):
+
+- `defaults.go` and `validation.go` — these are admission webhook handlers,
+  a genuinely different concern from type definitions. They will be created
+  as separate files when the webhooks are implemented (COST-7678 backlog).
+- `status_types.go` — could be split if the status section grows
+  significantly, but not a priority.
+
+The remaining spec-type splits (`infra_types.go`, `app_types.go`,
+`profiles.go`) are cosmetic and will only be done if the file becomes hard
+to navigate.
 
 ---
 
