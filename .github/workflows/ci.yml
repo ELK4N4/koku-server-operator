@@ -59,8 +59,15 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Install setup-envtest
+        run: GOBIN=$(pwd)/bin go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+
       - name: Run unit tests
-        run: go test -race -count=1 -timeout 120s -coverprofile=coverage.out ./internal/...
+        run: |
+          KUBEBUILDER_ASSETS=$(bin/setup-envtest use --bin-dir bin -p path)
+          export KUBEBUILDER_ASSETS
+          go test -race -count=1 -timeout 120s -coverprofile=coverage.out \
+            $(go list ./... | grep -v /e2e)
 
       - name: Coverage summary
         run: |
