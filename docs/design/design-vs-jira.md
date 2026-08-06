@@ -88,47 +88,59 @@ implementation detail.
 
 ---
 
-## 2. Bundled Infrastructure
+## 2. Bundled Infrastructure (Dev/Test Convenience Only)
 
 ### What the JIRAs specify (COST-7678, COST-7686)
 
 All infrastructure is external-only. The CR accepts connection details and a
 `credentialsSecretRef` for each dependency (PostgreSQL, Redis/Valkey, Kafka,
-S3, OIDC). The operator does not provision any infrastructure.
+S3, OIDC). The operator does not provision any infrastructure. **The JIRAs
+are correct for the production target.** In production on-premise deployments,
+PostgreSQL, Kafka, and object storage are the customer's responsibility —
+typically operated by dedicated teams or products (CNPG, AMQ Streams, ODF).
 
 ### What we implement
 
-Both modes coexist in the CRD:
+The CRD has a `deploy: true` option for database and cache:
 
 ```yaml
 database:
-  deploy: true   # bundled mode: operator provisions a PostgreSQL StatefulSet
+  deploy: true   # TESTING ONLY — provisions a bare PostgreSQL StatefulSet
   # OR
-  deploy: false  # BYOI mode: operator connects to an external instance
+  deploy: false  # PRODUCTION — connects to an external instance
   host: "postgres.databases.svc.cluster.local"
   secretName: "my-db-credentials"
 ```
 
-The same pattern applies to the cache (Valkey).
+### Scope and limitations of `deploy: true`
 
-### Why we keep the bundled option
+The bundled mode is a **developer and CI convenience**. It exists solely to
+allow running the full stack without pre-provisioning external services, which
+is useful for:
 
-The JIRA scope targets production on-premise deployments where customers
-already operate PostgreSQL and Kafka. For that audience, external-only is
-correct.
+- Local development (`make run` against CRC)
+- Integration tests that need a self-contained environment
+- Demonstrating the operator without a full infrastructure stack
 
-However, the operator also needs to be usable for:
+It is **explicitly out of scope for production**:
 
-- **Development and CI** — a developer running the stack locally does not want
-  to provision a separate database cluster
-- **Proof-of-concept deployments** — a customer evaluating the product should
-  be able to apply one CR and have a working system
-- **Integration testing** — the test suite needs a self-contained environment
+- No high availability (single-replica StatefulSet, no replication)
+- No backup, point-in-time recovery, or day-2 operations
+- No connection pooling, monitoring integration, or certificate management
+- Storage class and sizing are minimal defaults
+- Kafka cannot be bundled at all (AMQ Streams is always external)
 
-The bundled option costs nothing architecturally (it is additive, not a
-replacement) and removes a significant adoption barrier. The BYOI path is
-fully implemented and tested; `deploy: true` is an intentional extension
-beyond the ticket scope.
+The production CRD path — `deploy: false` with all six dependency types
+wired via BYOI connection details and `credentialsSecretRef` — is the primary
+design target and matches the JIRA specification exactly.
+
+### Implication for design decisions
+
+Any feature, reconciler stage, or status condition that interacts with the
+database, cache, or object storage should be designed around the **external
+(BYOI) path**. The bundled path must not drive API shape or reconciler
+complexity. If the bundled path requires special-casing in the reconciler,
+that is a sign the abstraction needs to be reconsidered.
 
 ---
 
@@ -362,7 +374,7 @@ memory and confuses tooling. The override should replace the earlier entry.
 |-------|-----------|--------------------|-------------|
 | Status primary API | Phase enum (linear) | Conditions (composable) + Phase as convenience | ✅ Yes — Kubernetes best practices |
 | Phase names | Discovering/Validating/Migrating/Deploying/Ready | Provisioning/Running (to rename) | 🔄 Rename pending |
-| Bundled infra | External-only | External + bundled both supported | ✅ Yes — dev/PoC use case |
+| Bundled infra | External-only (correct for production) | `deploy: true` exists for dev/CI only; production path is BYOI | ⚠️ Testing convenience — not a production feature |
 | CRD file split | 6 files + webhooks | Single file | 🔄 Refactor pending (COST-7678) |
 | Migration scope | Koku + ROS + RBAC | Koku only | ❌ Gap (COST-7685) |
 | Migration `backoffLimit` | 3 | 0 | ❌ Gap |
