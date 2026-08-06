@@ -88,7 +88,7 @@ func NameCeleryWorker(cfg *costv1alpha1.CostManagementServiceConfig, queue strin
 
 // DatabaseHost returns the hostname of the database that all services should connect to.
 func DatabaseHost(cfg *costv1alpha1.CostManagementServiceConfig) string {
-	if cfg.Spec.Database.Deploy {
+	if costv1alpha1.BoolVal(cfg.Spec.Database.Deploy, true) {
 		return NameDatabase(cfg)
 	}
 	return cfg.Spec.Database.Host
@@ -96,7 +96,7 @@ func DatabaseHost(cfg *costv1alpha1.CostManagementServiceConfig) string {
 
 // CacheHost returns the hostname of the Valkey/Redis instance.
 func CacheHost(cfg *costv1alpha1.CostManagementServiceConfig) string {
-	if cfg.Spec.Cache.Deploy {
+	if costv1alpha1.BoolVal(cfg.Spec.Cache.Deploy, true) {
 		return NameValkey(cfg)
 	}
 	return cfg.Spec.Cache.Host
@@ -129,7 +129,7 @@ func S3Endpoint(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	s := cfg.Spec.ObjectStorage
 	scheme := "http"
 	port := s.Port
-	if s.UseSSL {
+	if costv1alpha1.BoolVal(s.UseSSL, true) {
 		scheme = "https"
 		if port == 0 {
 			port = 443

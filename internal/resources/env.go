@@ -49,7 +49,7 @@ func KokuCommonEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVa
 		EnvVal("S3_REGION", cfg.Spec.ObjectStorage.S3.Region),
 		EnvVal("AWS_CONFIG_FILE", "/etc/aws/config"),
 		EnvFromSecret("DJANGO_SECRET_KEY", djangoSecret, "secret-key"),
-		EnvVal("SCHEDULE_REPORT_CHECKS", boolStr(cfg.Spec.CostManagement.ScheduleReportChecks)),
+		EnvVal("SCHEDULE_REPORT_CHECKS", boolStr(costv1alpha1.BoolVal(cfg.Spec.CostManagement.ScheduleReportChecks, true))),
 		EnvVal("REPORT_DOWNLOAD_SCHEDULE", cfg.Spec.CostManagement.ReportDownloadSchedule),
 		EnvVal("RBAC_SERVICE_HOST", NameRBACAPI(cfg)),
 		EnvVal("RBAC_SERVICE_PORT", "8080"),

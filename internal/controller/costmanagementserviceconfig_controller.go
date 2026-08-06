@@ -22,15 +22,9 @@ import (
 )
 
 const (
-	condReady       = "Ready"
-	condDegraded    = "Degraded"
-	condProgressing = "Progressing"
-
 	fieldOwner  = "koku-server-operator"
 	requeueFast = 10 * time.Second
 	requeueSlow = 30 * time.Second
-
-	msgNotYetImplemented = "not yet implemented"
 )
 
 type CostManagementServiceConfigReconciler struct {
@@ -82,8 +76,8 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 //  6. Edge (Envoy gateway, UI, Route)
 func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (ctrl.Result, error) {
 	cfg.Status.ObservedGeneration = cfg.Generation
-	cfg.Status.Phase = costv1alpha1.PhaseProvisioning
-	r.setCondition(cfg, condProgressing, metav1.ConditionTrue, "Reconciling", "Reconciliation in progress")
+	cfg.Status.Phase = costv1alpha1.PhaseProgressing
+	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionTrue, "Reconciling", "Reconciliation in progress")
 
 	result, err := runPhases([]PhaseFn{
 		func() (Result, error) { return r.reconcileSharedConfig(ctx, cfg) },
@@ -102,9 +96,9 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 		return ctrl.Result{RequeueAfter: result.RequeueAfter}, nil
 	}
 
-	r.setCondition(cfg, condReady, metav1.ConditionTrue, "AllComponentsReady", "All components are running")
-	r.setCondition(cfg, condProgressing, metav1.ConditionFalse, "ReconcileComplete", "")
-	cfg.Status.Phase = costv1alpha1.PhaseRunning
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "AllComponentsReady", "All components are running")
+	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "ReconcileComplete", "")
+	cfg.Status.Phase = costv1alpha1.PhaseReady
 	return ctrl.Result{}, nil
 }
 
@@ -151,7 +145,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileSharedConfig(ctx contex
 // -----------------------------------------------------------------------------
 
 func (r *CostManagementServiceConfigReconciler) reconcileInfrastructure(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
-	if cfg.Spec.Database.Deploy {
+	if costv1alpha1.BoolVal(cfg.Spec.Database.Deploy, true) {
 		if err := r.apply(ctx, cfg, resources.DatabaseService(cfg)); err != nil {
 			return Result{}, fmt.Errorf("database service: %w", err)
 		}
@@ -164,15 +158,15 @@ func (r *CostManagementServiceConfigReconciler) reconcileInfrastructure(ctx cont
 			return Result{}, err
 		}
 		if !ready {
-			cfg.Status.Components.Database = costv1alpha1.ComponentStatus{Ready: false, Message: "waiting for PostgreSQL pod"}
+			r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionFalse, "WaitingForDatabase", "waiting for PostgreSQL pod")
 			return Result{RequeueAfter: requeueFast}, nil
 		}
-		cfg.Status.Components.Database = costv1alpha1.ComponentStatus{Ready: true}
+		r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionTrue, "DatabaseAvailable", "")
 	} else {
-		cfg.Status.Components.Database = costv1alpha1.ComponentStatus{Ready: true, Message: "external"}
+		r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionTrue, "ExternalDatabase", "")
 	}
 
-	if cfg.Spec.Cache.Deploy {
+	if costv1alpha1.BoolVal(cfg.Spec.Cache.Deploy, true) {
 		if err := r.apply(ctx, cfg, resources.CachePVC(cfg)); err != nil {
 			return Result{}, fmt.Errorf("valkey pvc: %w", err)
 		}
@@ -187,12 +181,12 @@ func (r *CostManagementServiceConfigReconciler) reconcileInfrastructure(ctx cont
 			return Result{}, err
 		}
 		if !ready {
-			cfg.Status.Components.Cache = costv1alpha1.ComponentStatus{Ready: false, Message: "waiting for Valkey pod"}
+			r.setCondition(cfg, costv1alpha1.ConditionCacheReady, metav1.ConditionFalse, "WaitingForCache", "waiting for Valkey pod")
 			return Result{RequeueAfter: requeueFast}, nil
 		}
-		cfg.Status.Components.Cache = costv1alpha1.ComponentStatus{Ready: true}
+		r.setCondition(cfg, costv1alpha1.ConditionCacheReady, metav1.ConditionTrue, "CacheAvailable", "")
 	} else {
-		cfg.Status.Components.Cache = costv1alpha1.ComponentStatus{Ready: true, Message: "external"}
+		r.setCondition(cfg, costv1alpha1.ConditionCacheReady, metav1.ConditionTrue, "ExternalCache", "")
 	}
 
 	return Result{}, nil
@@ -216,7 +210,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 		if createErr := r.Create(ctx, job); createErr != nil {
 			return Result{}, fmt.Errorf("create migration job: %w", createErr)
 		}
-		cfg.Status.Components.Migration = costv1alpha1.ComponentStatus{Ready: false, Message: "migration job created"}
+		r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse, "MigrationRunning", "migration job created")
 		return Result{RequeueAfter: requeueFast}, nil
 	}
 	if err != nil {
@@ -229,26 +223,25 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 		if delErr := r.Delete(ctx, existing, client.PropagationPolicy(metav1.DeletePropagationBackground)); delErr != nil && !errors.IsNotFound(delErr) {
 			return Result{}, fmt.Errorf("delete stale migration job: %w", delErr)
 		}
-		cfg.Status.Components.Migration = costv1alpha1.ComponentStatus{Ready: false, Message: "restarting migration for new image"}
+		r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse, "MigrationRunning", "restarting migration for new image")
 		return Result{RequeueAfter: requeueFast}, nil
 	}
 
 	// Check completion.
 	if isJobComplete(existing) {
-		cfg.Status.Components.Migration = costv1alpha1.ComponentStatus{Ready: true}
-		// Clear any stale Degraded condition from a previous failed migration run.
-		r.setCondition(cfg, condDegraded, metav1.ConditionFalse, "MigrationSucceeded", "")
+		r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionTrue, "MigrationComplete", "")
+		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionFalse, "MigrationSucceeded", "")
 		return Result{}, nil
 	}
 	if isJobFailed(existing) {
-		cfg.Status.Components.Migration = costv1alpha1.ComponentStatus{Ready: false, Message: "migration job failed — check pod logs"}
-		r.setCondition(cfg, condDegraded, metav1.ConditionTrue, "MigrationFailed", "Database migration job failed")
-		cfg.Status.Phase = costv1alpha1.PhaseFailed
+		r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse, "MigrationFailed", "migration job failed — check pod logs")
+		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, "MigrationFailed", "Database migration job failed")
+		cfg.Status.Phase = costv1alpha1.PhaseDegraded
 		// Stop the pipeline; do not proceed to core services.
 		return Result{Stop: true}, nil
 	}
 
-	cfg.Status.Components.Migration = costv1alpha1.ComponentStatus{Ready: false, Message: "migration running"}
+	r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse, "MigrationRunning", "migration running")
 	return Result{RequeueAfter: requeueFast}, nil
 }
 
@@ -276,10 +269,10 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 		return Result{}, err
 	}
 	if !ready {
-		cfg.Status.Components.CostManagement = costv1alpha1.ComponentStatus{Ready: false, Message: "waiting for Koku API"}
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "WaitingForAPI", "waiting for Koku API")
 		return Result{RequeueAfter: requeueSlow}, nil
 	}
-	cfg.Status.Components.CostManagement = costv1alpha1.ComponentStatus{Ready: true}
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "KokuAvailable", "")
 	return Result{}, nil
 }
 
@@ -305,10 +298,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		}
 	}
 
-	// ROS, RBAC, Kruize status — stubs until COST-7686/7687/7689 resource builders land.
-	cfg.Status.Components.ROS = costv1alpha1.ComponentStatus{Ready: true, Message: msgNotYetImplemented}
-	cfg.Status.Components.RBAC = costv1alpha1.ComponentStatus{Ready: true, Message: msgNotYetImplemented}
-	cfg.Status.Components.Kruize = costv1alpha1.ComponentStatus{Ready: true, Message: msgNotYetImplemented}
+	// ROS, RBAC, Kruize — stubs until COST-7686/7687/7689 resource builders land.
 	return Result{}, nil
 }
 
@@ -318,8 +308,6 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 
 func (r *CostManagementServiceConfigReconciler) reconcileEdge(_ context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
 	// Envoy gateway, UI, OpenShift Route — stubs until COST-7688/7690/7691 land.
-	cfg.Status.Components.Auth = costv1alpha1.ComponentStatus{Ready: true, Message: msgNotYetImplemented}
-	cfg.Status.Components.UI = costv1alpha1.ComponentStatus{Ready: true, Message: msgNotYetImplemented}
 	return Result{}, nil
 }
 

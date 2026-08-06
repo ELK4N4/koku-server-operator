@@ -160,6 +160,11 @@ spec:
                     type: object
                   realmUsers:
                     items:
+                      description: |-
+                        RealmUser defines an initial Keycloak user created by the operator.
+                        NOTE: do not put production credentials here — the Password field is stored
+                        in etcd. Use a Secret reference instead once secret-backed user provisioning
+                        is implemented (COST-7694).
                       properties:
                         accountNumber:
                           type: string
@@ -197,8 +202,8 @@ spec:
                   deploy:
                     default: true
                     description: |-
-                      Deploy the bundled Valkey instance.
-                      Set false to use an external Redis/Valkey endpoint.
+                      Deploy the bundled Valkey instance (dev/CI only — not for production).
+                      Set false to connect to an external Redis/Valkey endpoint.
                     type: boolean
                   host:
                     description: Host for an external cache (only used when Deploy
@@ -314,8 +319,8 @@ spec:
                         additionalProperties:
                           type: string
                         description: |-
-                          Environment variable overrides injected into the container.
-                          These are merged over the operator-managed defaults.
+                          Environment variable overrides merged over operator-managed defaults.
+                          Must not contain secret values — use Secret references for credentials.
                         type: object
                       image:
                         properties:
@@ -1318,8 +1323,8 @@ spec:
                   deploy:
                     default: true
                     description: |-
-                      Deploy the bundled PostgreSQL StatefulSet.
-                      Set false to use an external database (requires Host to be set).
+                      Deploy the bundled PostgreSQL StatefulSet (dev/CI only — not for production).
+                      Set false to connect to an external database.
                     type: boolean
                   host:
                     description: Host for an external PostgreSQL instance (only used
@@ -1407,11 +1412,9 @@ spec:
                   secretName:
                     description: |-
                       Name of an existing Secret containing DB credentials.
-                      The secret must have keys: postgres-user, postgres-password,
-                      koku-user, koku-password, ros-user, ros-password,
-                      kruize-user, kruize-password, rbac-user, rbac-password.
-                      When empty the operator generates random credentials and stores them
-                      in a Secret named <cr-name>-db-credentials.
+                      Keys: postgres-user, postgres-password, koku-user, koku-password,
+                      ros-user, ros-password, kruize-user, kruize-password, rbac-user, rbac-password.
+                      When empty the operator generates credentials into <cr-name>-db-credentials.
                     type: string
                   sslMode:
                     default: disable
@@ -1475,7 +1478,9 @@ spec:
                 properties:
                   clusterDomain:
                     default: apps.cluster.local
-                    description: Cluster base domain used for Route hostname generation.
+                    description: |-
+                      Cluster base domain used for Route hostname generation.
+                      Auto-detected by the Discovery phase when empty.
                     type: string
                   imagePullSecrets:
                     items:
@@ -1501,8 +1506,8 @@ spec:
                       a container image
                     type: string
                   storageClass:
-                    description: StorageClass for all PVCs. If empty, the cluster
-                      default is used.
+                    description: StorageClass for all PVCs. Auto-detected by the Discovery
+                      phase when empty.
                     type: string
                 type: object
               ingress:
@@ -1801,7 +1806,9 @@ spec:
                 properties:
                   endpoint:
                     default: s3.openshift-storage.svc.cluster.local
-                    description: S3 endpoint hostname (without protocol or port).
+                    description: |-
+                      S3 endpoint hostname (without protocol or port).
+                      Auto-detected by the Discovery phase (OBC → NooBaa → user-provided).
                     type: string
                   port:
                     default: 443
@@ -1823,12 +1830,20 @@ spec:
                   secretName:
                     description: |-
                       Name of an existing Secret with keys: access-key, secret-key.
-                      When empty the operator creates the secret from ODF/NooBaa.
+                      When empty the operator creates or detects the secret via ODF/NooBaa.
                     type: string
                   useSSL:
                     default: true
                     type: boolean
                 type: object
+              profile:
+                default: standard
+                description: Profile selects pre-defined resource sizing. Defaults
+                  to standard.
+                enum:
+                - standard
+                - ha
+                type: string
               rbac:
                 properties:
                   api:
@@ -2604,75 +2619,12 @@ spec:
             type: object
           status:
             properties:
-              components:
-                description: Per-component readiness breakdown.
-                properties:
-                  auth:
-                    properties:
-                      message:
-                        type: string
-                      ready:
-                        type: boolean
-                    type: object
-                  cache:
-                    properties:
-                      message:
-                        type: string
-                      ready:
-                        type: boolean
-                    type: object
-                  costManagement:
-                    properties:
-                      message:
-                        type: string
-                      ready:
-                        type: boolean
-                    type: object
-                  database:
-                    properties:
-                      message:
-                        type: string
-                      ready:
-                        type: boolean
-                    type: object
-                  kruize:
-                    properties:
-                      message:
-                        type: string
-                      ready:
-                        type: boolean
-                    type: object
-                  migration:
-                    properties:
-                      message:
-                        type: string
-                      ready:
-                        type: boolean
-                    type: object
-                  rbac:
-                    properties:
-                      message:
-                        type: string
-                      ready:
-                        type: boolean
-                    type: object
-                  ros:
-                    properties:
-                      message:
-                        type: string
-                      ready:
-                        type: boolean
-                    type: object
-                  ui:
-                    properties:
-                      message:
-                        type: string
-                      ready:
-                        type: boolean
-                    type: object
-                type: object
               conditions:
-                description: Conditions summarises the current reconciliation state.
+                description: |-
+                  Conditions is the canonical status API.
+                  Standard conditions: Available, Progressing, Degraded.
+                  Component conditions: DatabaseReady, CacheReady, StorageReady,
+                  KafkaReady, AuthenticationReady, SchemaUpToDate, DiscoveryComplete.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -2731,19 +2683,46 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              discoveredConfig:
+                description: DiscoveredConfig holds values auto-detected during the
+                  Discovery phase.
+                properties:
+                  clusterDomain:
+                    description: ClusterDomain detected from the OpenShift cluster
+                      configuration.
+                    type: string
+                  s3:
+                    description: S3 holds resolved object storage connection details.
+                    properties:
+                      endpoint:
+                        description: Endpoint in the form scheme://host:port.
+                        type: string
+                      region:
+                        description: Region used for S3 signature generation.
+                        type: string
+                      secretName:
+                        description: SecretName of the Secret containing access-key
+                          and secret-key.
+                        type: string
+                    type: object
+                  storageClass:
+                    description: StorageClass detected as the cluster default.
+                    type: string
+                type: object
               observedGeneration:
-                description: Generation last observed during reconciliation.
+                description: ObservedGeneration is the metadata.generation last reconciled.
                 format: int64
                 type: integer
               phase:
                 default: Pending
-                description: Phase represents the overall installation/upgrade state.
+                description: |-
+                  Phase is a human-readable summary of overall operator state.
+                  Conditions are the authoritative machine-readable status.
                 enum:
                 - Pending
-                - Provisioning
-                - Running
+                - Progressing
+                - Ready
                 - Degraded
-                - Failed
                 type: string
             type: object
         type: object

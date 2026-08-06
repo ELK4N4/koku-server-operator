@@ -7,6 +7,44 @@ import (
 )
 
 // -----------------------------------------------------------------------------
+// Condition type constants
+// Top-level conditions follow the OpenShift/Kubernetes operator convention.
+// Component conditions are set as entries in status.conditions alongside them.
+// -----------------------------------------------------------------------------
+
+const (
+	// Top-level conditions (machine-readable primary API)
+	ConditionAvailable   = "Available"
+	ConditionProgressing = "Progressing"
+	ConditionDegraded    = "Degraded"
+
+	// Component-level conditions
+	ConditionDiscoveryComplete = "DiscoveryComplete"
+	ConditionDatabaseReady     = "DatabaseReady"
+	ConditionCacheReady        = "CacheReady"
+	ConditionStorageReady      = "StorageReady"
+	ConditionKafkaReady        = "KafkaReady"
+	ConditionAuthReady         = "AuthenticationReady"
+	ConditionSchemaUpToDate    = "SchemaUpToDate"
+)
+
+// -----------------------------------------------------------------------------
+// Profile
+// -----------------------------------------------------------------------------
+
+// Profile selects a pre-defined resource sizing tier for all components.
+// +kubebuilder:validation:Enum=standard;ha
+type Profile string
+
+const (
+	// ProfileStandard is suitable for single-node or small clusters.
+	ProfileStandard Profile = "standard"
+	// ProfileHA provides higher replica counts and resource requests for
+	// production multi-node deployments.
+	ProfileHA Profile = "ha"
+)
+
+// -----------------------------------------------------------------------------
 // Shared primitives
 // -----------------------------------------------------------------------------
 
@@ -19,7 +57,7 @@ type ImageSpec struct {
 
 type ServiceAccountSpec struct {
 	// +kubebuilder:default:=true
-	Create bool   `json:"create,omitempty"`
+	Create *bool  `json:"create,omitempty"`
 	Name   string `json:"name,omitempty"`
 }
 
@@ -27,6 +65,15 @@ type ServiceAccountSpec struct {
 type SecretKeyRef struct {
 	Name string `json:"name"`
 	Key  string `json:"key"`
+}
+
+// BoolVal reads a *bool field, returning defaultVal when the pointer is nil.
+// Use this to read fields that have a +kubebuilder:default:=true annotation.
+func BoolVal(b *bool, defaultVal bool) bool {
+	if b == nil {
+		return defaultVal
+	}
+	return *b
 }
 
 // -----------------------------------------------------------------------------
@@ -38,9 +85,10 @@ type GlobalConfig struct {
 	PullPolicy       corev1.PullPolicy             `json:"pullPolicy,omitempty"`
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 	// Cluster base domain used for Route hostname generation.
+	// Auto-detected by the Discovery phase when empty.
 	// +kubebuilder:default:="apps.cluster.local"
 	ClusterDomain string `json:"clusterDomain,omitempty"`
-	// StorageClass for all PVCs. If empty, the cluster default is used.
+	// StorageClass for all PVCs. Auto-detected by the Discovery phase when empty.
 	StorageClass string `json:"storageClass,omitempty"`
 }
 
@@ -49,10 +97,10 @@ type GlobalConfig struct {
 // -----------------------------------------------------------------------------
 
 type DatabaseConfig struct {
-	// Deploy the bundled PostgreSQL StatefulSet.
-	// Set false to use an external database (requires Host to be set).
+	// Deploy the bundled PostgreSQL StatefulSet (dev/CI only — not for production).
+	// Set false to connect to an external database.
 	// +kubebuilder:default:=true
-	Deploy  bool                `json:"deploy,omitempty"`
+	Deploy  *bool               `json:"deploy,omitempty"`
 	Image   ImageSpec           `json:"image,omitempty"`
 	Storage DatabaseStorageSpec `json:"storage,omitempty"`
 
@@ -64,11 +112,9 @@ type DatabaseConfig struct {
 	SSLMode string `json:"sslMode,omitempty"`
 
 	// Name of an existing Secret containing DB credentials.
-	// The secret must have keys: postgres-user, postgres-password,
-	// koku-user, koku-password, ros-user, ros-password,
-	// kruize-user, kruize-password, rbac-user, rbac-password.
-	// When empty the operator generates random credentials and stores them
-	// in a Secret named <cr-name>-db-credentials.
+	// Keys: postgres-user, postgres-password, koku-user, koku-password,
+	// ros-user, ros-password, kruize-user, kruize-password, rbac-user, rbac-password.
+	// When empty the operator generates credentials into <cr-name>-db-credentials.
 	SecretName string `json:"secretName,omitempty"`
 
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -84,10 +130,10 @@ type DatabaseStorageSpec struct {
 // -----------------------------------------------------------------------------
 
 type CacheConfig struct {
-	// Deploy the bundled Valkey instance.
-	// Set false to use an external Redis/Valkey endpoint.
+	// Deploy the bundled Valkey instance (dev/CI only — not for production).
+	// Set false to connect to an external Redis/Valkey endpoint.
 	// +kubebuilder:default:=true
-	Deploy bool      `json:"deploy,omitempty"`
+	Deploy *bool     `json:"deploy,omitempty"`
 	Image  ImageSpec `json:"image,omitempty"`
 
 	// Host for an external cache (only used when Deploy is false).
@@ -152,14 +198,15 @@ type KafkaTLSSpec struct {
 
 type ObjectStorageConfig struct {
 	// S3 endpoint hostname (without protocol or port).
+	// Auto-detected by the Discovery phase (OBC → NooBaa → user-provided).
 	// +kubebuilder:default:="s3.openshift-storage.svc.cluster.local"
 	Endpoint string `json:"endpoint,omitempty"`
 	// +kubebuilder:default:=443
 	Port int32 `json:"port,omitempty"`
 	// +kubebuilder:default:=true
-	UseSSL bool `json:"useSSL,omitempty"`
+	UseSSL *bool `json:"useSSL,omitempty"`
 	// Name of an existing Secret with keys: access-key, secret-key.
-	// When empty the operator creates the secret from ODF/NooBaa.
+	// When empty the operator creates or detects the secret via ODF/NooBaa.
 	SecretName string    `json:"secretName,omitempty"`
 	S3         S3Options `json:"s3,omitempty"`
 }
@@ -206,6 +253,10 @@ type KeycloakTLSSpec struct {
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
 }
 
+// RealmUser defines an initial Keycloak user created by the operator.
+// NOTE: do not put production credentials here — the Password field is stored
+// in etcd. Use a Secret reference instead once secret-backed user provisioning
+// is implemented (COST-7694).
 type RealmUser struct {
 	Username      string `json:"username"`
 	Password      string `json:"password"`
@@ -283,9 +334,9 @@ type KruizeConfig struct {
 
 type KruizePartitionsSpec struct {
 	// +kubebuilder:default:=true
-	CreateEnabled bool `json:"createEnabled,omitempty"`
+	CreateEnabled *bool `json:"createEnabled,omitempty"`
 	// +kubebuilder:default:=true
-	DeleteEnabled bool `json:"deleteEnabled,omitempty"`
+	DeleteEnabled *bool `json:"deleteEnabled,omitempty"`
 	// +kubebuilder:default:="0 0 * * *"
 	DeleteSchedule string `json:"deleteSchedule,omitempty"`
 	// +kubebuilder:default:="16"
@@ -333,7 +384,7 @@ type ROSHousekeeperSpec struct {
 
 type ROSPartitionCleanerSpec struct {
 	// +kubebuilder:default:=true
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
 	// +kubebuilder:default:="0 0 */15 * *"
 	Schedule  string                      `json:"schedule,omitempty"`
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -345,7 +396,7 @@ type ROSPartitionCleanerSpec struct {
 
 type CostManagementConfig struct {
 	// +kubebuilder:default:=true
-	ScheduleReportChecks bool `json:"scheduleReportChecks,omitempty"`
+	ScheduleReportChecks *bool `json:"scheduleReportChecks,omitempty"`
 	// Cron expression for report download checks.
 	// +kubebuilder:default:="*/5 * * * *"
 	ReportDownloadSchedule string `json:"reportDownloadSchedule,omitempty"`
@@ -367,19 +418,19 @@ type CostManagementStorageSpec struct {
 
 type KokuAPISpec struct {
 	// +kubebuilder:default:=true
-	Enabled bool      `json:"enabled,omitempty"`
+	Enabled *bool     `json:"enabled,omitempty"`
 	Image   ImageSpec `json:"image,omitempty"`
 	// +kubebuilder:default:=1
 	Replicas  int32                       `json:"replicas,omitempty"`
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
-	// Environment variable overrides injected into the container.
-	// These are merged over the operator-managed defaults.
+	// Environment variable overrides merged over operator-managed defaults.
+	// Must not contain secret values — use Secret references for credentials.
 	Env map[string]string `json:"env,omitempty"`
 }
 
 type MasuSpec struct {
 	// +kubebuilder:default:=true
-	Enabled bool      `json:"enabled,omitempty"`
+	Enabled *bool     `json:"enabled,omitempty"`
 	Image   ImageSpec `json:"image,omitempty"`
 	// +kubebuilder:default:=1
 	Replicas  int32                       `json:"replicas,omitempty"`
@@ -389,7 +440,7 @@ type MasuSpec struct {
 
 type ListenerSpec struct {
 	// +kubebuilder:default:=true
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
 	// +kubebuilder:default:=2
 	Replicas  int32                       `json:"replicas,omitempty"`
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
@@ -484,14 +535,17 @@ type RouteTLSSpec struct {
 
 type MonitoringConfig struct {
 	// +kubebuilder:default:=true
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // -----------------------------------------------------------------------------
-// Top-level Spec and Status
+// Top-level Spec
 // -----------------------------------------------------------------------------
 
 type CostManagementServiceConfigSpec struct {
+	// Profile selects pre-defined resource sizing. Defaults to standard.
+	// +kubebuilder:default:=standard
+	Profile        Profile              `json:"profile,omitempty"`
 	Global         GlobalConfig         `json:"global,omitempty"`
 	Database       DatabaseConfig       `json:"database,omitempty"`
 	Cache          CacheConfig          `json:"cache,omitempty"`
@@ -508,47 +562,70 @@ type CostManagementServiceConfigSpec struct {
 	Monitoring     MonitoringConfig     `json:"monitoring,omitempty"`
 }
 
-// Phase represents the overall installation/upgrade state.
-// +kubebuilder:validation:Enum=Pending;Provisioning;Running;Degraded;Failed
+// -----------------------------------------------------------------------------
+// Status
+// -----------------------------------------------------------------------------
+
+// Phase is a human-readable convenience field summarising operator progress.
+// Conditions are the primary machine-readable status API.
+//
+// +kubebuilder:validation:Enum=Pending;Progressing;Ready;Degraded
 type Phase string
 
 const (
-	PhasePending      Phase = "Pending"
-	PhaseProvisioning Phase = "Provisioning"
-	PhaseRunning      Phase = "Running"
-	PhaseDegraded     Phase = "Degraded"
-	PhaseFailed       Phase = "Failed"
+	// PhasePending means the CR was just created and reconciliation has not started.
+	PhasePending Phase = "Pending"
+	// PhaseProgressing means the operator is actively working toward desired state.
+	// Check the Progressing condition's reason and message for details.
+	PhaseProgressing Phase = "Progressing"
+	// PhaseReady means all components are running and healthy.
+	PhaseReady Phase = "Ready"
+	// PhaseDegraded means the operator cannot make progress without intervention.
+	// Check the Degraded condition's reason and message for details.
+	PhaseDegraded Phase = "Degraded"
 )
 
-type ComponentStatus struct {
-	// +optional
-	Ready bool `json:"ready,omitempty"`
-	// +optional
-	Message string `json:"message,omitempty"`
+// DiscoveredConfig holds values auto-detected by the Discovery phase.
+// These are populated before workloads are created and can be used
+// to verify what the operator resolved.
+type DiscoveredConfig struct {
+	// ClusterDomain detected from the OpenShift cluster configuration.
+	ClusterDomain string `json:"clusterDomain,omitempty"`
+	// StorageClass detected as the cluster default.
+	StorageClass string `json:"storageClass,omitempty"`
+	// S3 holds resolved object storage connection details.
+	S3 *DiscoveredS3 `json:"s3,omitempty"`
 }
 
-type ComponentStatuses struct {
-	Database       ComponentStatus `json:"database,omitempty"`
-	Cache          ComponentStatus `json:"cache,omitempty"`
-	Migration      ComponentStatus `json:"migration,omitempty"`
-	CostManagement ComponentStatus `json:"costManagement,omitempty"`
-	ROS            ComponentStatus `json:"ros,omitempty"`
-	RBAC           ComponentStatus `json:"rbac,omitempty"`
-	Kruize         ComponentStatus `json:"kruize,omitempty"`
-	Auth           ComponentStatus `json:"auth,omitempty"`
-	UI             ComponentStatus `json:"ui,omitempty"`
+// DiscoveredS3 holds the resolved S3 endpoint and credentials reference.
+type DiscoveredS3 struct {
+	// Endpoint in the form scheme://host:port.
+	Endpoint string `json:"endpoint,omitempty"`
+	// SecretName of the Secret containing access-key and secret-key.
+	SecretName string `json:"secretName,omitempty"`
+	// Region used for S3 signature generation.
+	Region string `json:"region,omitempty"`
 }
 
 type CostManagementServiceConfigStatus struct {
+	// Phase is a human-readable summary of overall operator state.
+	// Conditions are the authoritative machine-readable status.
 	// +kubebuilder:default=Pending
 	Phase Phase `json:"phase,omitempty"`
-	// Conditions summarises the current reconciliation state.
+
+	// Conditions is the canonical status API.
+	// Standard conditions: Available, Progressing, Degraded.
+	// Component conditions: DatabaseReady, CacheReady, StorageReady,
+	// KafkaReady, AuthenticationReady, SchemaUpToDate, DiscoveryComplete.
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// Per-component readiness breakdown.
-	Components ComponentStatuses `json:"components,omitempty"`
-	// Generation last observed during reconciliation.
+
+	// DiscoveredConfig holds values auto-detected during the Discovery phase.
+	// +optional
+	DiscoveredConfig *DiscoveredConfig `json:"discoveredConfig,omitempty"`
+
+	// ObservedGeneration is the metadata.generation last reconciled.
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
