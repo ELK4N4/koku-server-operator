@@ -185,6 +185,14 @@ func NameEnvoy(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	return cfg.Name + "-gateway"
 }
 
+func NameEnvoyConfigMap(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	return cfg.Name + "-gateway-envoy-config"
+}
+
+func NameAPIRoute(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	return cfg.Name + "-api"
+}
+
 func NameUI(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	return cfg.Name + "-ui"
 }

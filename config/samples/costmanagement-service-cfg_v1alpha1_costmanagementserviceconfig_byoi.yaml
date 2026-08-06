@@ -76,7 +76,7 @@ spec:
       region: "us-east-1"
       addressingStyle: "path"
 
-  # OIDC auth (RHBK / Keycloak, pre-existing)
+  # Envoy JWT gateway requires a reachable Keycloak/RHBK JWKS endpoint.
   auth:
     keycloak:
       url: "https://keycloak.auth.svc.cluster.local"

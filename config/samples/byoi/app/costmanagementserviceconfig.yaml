@@ -70,7 +70,8 @@ spec:
         costModel:
           replicas: 1
 
-  # Keycloak deferred — placeholder only for this fixture.
+  # Envoy JWT gateway requires a reachable Keycloak/RHBK JWKS endpoint.
+  # Placeholder URL — replace with a real Keycloak before exercising the /api Route.
   auth:
     keycloak:
       url: "http://keycloak.not-deployed.svc.cluster.local"
@@ -78,6 +79,11 @@ spec:
       audiences:
         - "cost-management-operator"
         - "cost-management-ui"
+    envoy:
+      image:
+        repository: registry.redhat.io/openshift-service-mesh/proxyv2-rhel9
+        tag: "2.6"
+      replicas: 1
 
   monitoring:
     enabled: false
