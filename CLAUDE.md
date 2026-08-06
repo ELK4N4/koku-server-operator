@@ -89,28 +89,10 @@ Full analysis in `docs/design/design-vs-jira.md`. Short version:
 | No passwords in CR spec | etcd stores CR plaintext; use Secret references |
 | Finalizers required for cluster-scoped resources | `ownerReferences` don't work cross-namespace |
 
-## Testing on CRC
-
-```bash
-eval "$(crc oc-env)"
-oc login -u kubeadmin -p <password> https://api.crc.testing:6443
-
-./hack/deploy-crc.sh cost-onprem          # install CRDs + RBAC
-NAMESPACE=cost-onprem go run ./cmd/main.go --dev
-
-# In another terminal:
-oc apply -n cost-onprem \
-  -f config/samples/costmanagement-service-cfg_v1alpha1_costmanagementserviceconfig.yaml
-oc get cmsc -n cost-onprem -w
-```
-
-CRC is arm64; use `quay.io/martin_povolny/koku:latest` for the koku image.
-The production image (`quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku:d8055ac`)
-is amd64-only and segfaults under QEMU emulation.
-
 ## Reference material
 
-- `docs/jira/COST-7678.md` – `COST-7700.md` — JIRA ticket source
-- `docs/design/design-vs-jira.md` — design decisions and best-practice analysis
+- `docs/development/crc-testing.md` — local development and CRC testing guide
 - `docs/tasks.md` — implementation status per JIRA ticket
+- `docs/design/design-vs-jira.md` — design decisions and best-practice analysis
+- `docs/jira/COST-7678.md` – `COST-7700.md` — JIRA ticket source
 - `../cost-onprem-chart/cost-onprem/` — Helm chart this operator replaces (reference for resource shapes, env vars, volumes)
