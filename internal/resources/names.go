@@ -134,7 +134,15 @@ func KafkaPort(cfg *costv1alpha1.CostManagementServiceConfig) string {
 }
 
 // S3Endpoint returns the S3 endpoint URL including protocol.
+// When the user did not set objectStorage.secretName and Discovery populated
+// status.discoveredConfig.s3, the discovered full endpoint URL is preferred.
 func S3Endpoint(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	if cfg.Spec.ObjectStorage.SecretName == "" &&
+		cfg.Status.DiscoveredConfig != nil &&
+		cfg.Status.DiscoveredConfig.S3 != nil &&
+		cfg.Status.DiscoveredConfig.S3.Endpoint != "" {
+		return cfg.Status.DiscoveredConfig.S3.Endpoint
+	}
 	s := cfg.Spec.ObjectStorage
 	scheme := "http"
 	port := s.Port
@@ -146,7 +154,11 @@ func S3Endpoint(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	} else if port == 0 {
 		port = 80
 	}
-	return scheme + "://" + s.Endpoint + ":" + int32String(port)
+	host := s.Endpoint
+	if host == "" {
+		host = "s3.openshift-storage.svc.cluster.local"
+	}
+	return scheme + "://" + host + ":" + int32String(port)
 }
 
 func int32String(n int32) string {

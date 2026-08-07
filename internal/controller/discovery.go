@@ -45,6 +45,24 @@ func (r *CostManagementServiceConfigReconciler) reconcileDiscovery(ctx context.C
 	}
 	cfg.Status.DiscoveredConfig.StorageClass = sc
 
+	// S3 / object storage (COST-7683). User-provided → OBC → NooBaa.
+	// Failure sets StorageReady=False but does not block the pipeline —
+	// clusters without ODF (e.g. BYOI + MinIO with secretName set) still proceed.
+	s3, err := r.resolveS3(ctx, cfg)
+	if err != nil {
+		cfg.Status.DiscoveredConfig.S3 = nil
+		r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
+			"S3NotFound", err.Error())
+	} else {
+		cfg.Status.DiscoveredConfig.S3 = s3
+		reason := "Discovered"
+		if cfg.Spec.ObjectStorage.SecretName != "" {
+			reason = "UserProvided"
+		}
+		r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionTrue,
+			reason, fmt.Sprintf("endpoint=%s secret=%s", s3.Endpoint, s3.SecretName))
+	}
+
 	r.setCondition(cfg, costv1alpha1.ConditionDiscoveryComplete, metav1.ConditionTrue,
 		"Discovered",
 		fmt.Sprintf("clusterDomain=%s storageClass=%s", domain, sc))
