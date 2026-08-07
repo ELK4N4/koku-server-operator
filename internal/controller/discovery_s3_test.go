@@ -7,20 +7,17 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
 )
 
+const testClusterDomain = "apps.example.com"
+
 func objectBucketClaim(name, ns, phase string) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "objectbucket.io",
-		Version: "v1alpha1",
-		Kind:    "ObjectBucketClaim",
-	})
+	obj.SetGroupVersionKind(objectBucketClaimGVK())
 	obj.SetName(name)
 	obj.SetNamespace(ns)
 	_ = unstructured.SetNestedField(obj.Object, phase, "status", "phase")
@@ -90,7 +87,7 @@ func TestResolveS3_UserProvided(t *testing.T) {
 				Port:       9000,
 				UseSSL:     boolPtr(false),
 				SecretName: "byoi-s3-credentials",
-				S3:         costv1alpha1.S3Options{Region: "us-east-1"},
+				S3:         costv1alpha1.S3Options{Region: defaultS3Region},
 			},
 		},
 	}
@@ -105,7 +102,7 @@ func TestResolveS3_UserProvided(t *testing.T) {
 	if got.SecretName != "byoi-s3-credentials" {
 		t.Errorf("SecretName: got %q", got.SecretName)
 	}
-	if got.Region != "us-east-1" {
+	if got.Region != defaultS3Region {
 		t.Errorf("Region: got %q", got.Region)
 	}
 }
@@ -196,7 +193,7 @@ func TestReconcileDiscovery_UserProvidedS3_SetsStorageReady(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(testScheme(t)).
 		WithObjects(
-			openShiftIngress("apps.example.com"),
+			openShiftIngress(testClusterDomain),
 			defaultStorageClass("gp3-csi"),
 		).
 		Build()
@@ -206,7 +203,7 @@ func TestReconcileDiscovery_UserProvidedS3_SetsStorageReady(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
 		Spec: costv1alpha1.CostManagementServiceConfigSpec{
 			Global: costv1alpha1.GlobalConfig{
-				ClusterDomain: "apps.example.com",
+				ClusterDomain: testClusterDomain,
 				StorageClass:  "gp3-csi",
 			},
 			ObjectStorage: costv1alpha1.ObjectStorageConfig{
@@ -236,7 +233,7 @@ func TestReconcileDiscovery_NoS3_SetsStorageReadyFalse_Continues(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(testScheme(t)).
 		WithObjects(
-			openShiftIngress("apps.example.com"),
+			openShiftIngress(testClusterDomain),
 			defaultStorageClass("gp3-csi"),
 		).
 		Build()
@@ -246,7 +243,7 @@ func TestReconcileDiscovery_NoS3_SetsStorageReadyFalse_Continues(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
 		Spec: costv1alpha1.CostManagementServiceConfigSpec{
 			Global: costv1alpha1.GlobalConfig{
-				ClusterDomain: "apps.example.com",
+				ClusterDomain: testClusterDomain,
 				StorageClass:  "gp3-csi",
 			},
 		},

@@ -188,7 +188,7 @@ func TestReconcileDiscovery_BothDiscovered(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(testScheme(t)).
 		WithObjects(
-			openShiftIngress("apps.example.com"),
+			openShiftIngress(testClusterDomain),
 			defaultStorageClass("ocs-storagecluster-ceph-rbd"),
 		).
 		Build()
@@ -208,8 +208,8 @@ func TestReconcileDiscovery_BothDiscovered(t *testing.T) {
 	if cfg.Status.DiscoveredConfig == nil {
 		t.Fatal("DiscoveredConfig is nil")
 	}
-	if cfg.Status.DiscoveredConfig.ClusterDomain != "apps.example.com" {
-		t.Errorf("ClusterDomain: got %q, want %q", cfg.Status.DiscoveredConfig.ClusterDomain, "apps.example.com")
+	if cfg.Status.DiscoveredConfig.ClusterDomain != testClusterDomain {
+		t.Errorf("ClusterDomain: got %q, want %q", cfg.Status.DiscoveredConfig.ClusterDomain, testClusterDomain)
 	}
 	if cfg.Status.DiscoveredConfig.StorageClass != "ocs-storagecluster-ceph-rbd" {
 		t.Errorf("StorageClass: got %q, want %q", cfg.Status.DiscoveredConfig.StorageClass, "ocs-storagecluster-ceph-rbd")
@@ -271,7 +271,7 @@ func TestReconcileDiscovery_DomainMissing_RequeuesWithCondition(t *testing.T) {
 func TestReconcileDiscovery_StorageClassMissing_RequeuesWithCondition(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(testScheme(t)).
-		WithObjects(openShiftIngress("apps.example.com")).
+		WithObjects(openShiftIngress(testClusterDomain)).
 		Build()
 
 	r := &CostManagementServiceConfigReconciler{Client: c}

@@ -17,12 +17,31 @@ import (
 )
 
 const (
-	defaultOBCName           = "ros-data-ceph"
-	noobaaAdminNamespace     = "openshift-storage"
-	noobaaAdminSecretName    = "noobaa-admin"
-	noobaaDefaultEndpoint = "s3.openshift-storage.svc.cluster.local"
-	s3SourceAnnotation    = "koku.costmanagement.io/s3-source"
+	defaultOBCName         = "ros-data-ceph"
+	defaultS3Region        = "us-east-1"
+	objectBucketAPIGroup   = "objectbucket.io"
+	objectBucketAPIVersion = "v1alpha1"
+	noobaaAdminNamespace   = "openshift-storage"
+	noobaaAdminSecretName  = "noobaa-admin"
+	noobaaDefaultEndpoint  = "s3.openshift-storage.svc.cluster.local"
+	s3SourceAnnotation     = "koku.costmanagement.io/s3-source"
 )
+
+func objectBucketClaimGVK() schema.GroupVersionKind {
+	return schema.GroupVersionKind{
+		Group:   objectBucketAPIGroup,
+		Version: objectBucketAPIVersion,
+		Kind:    "ObjectBucketClaim",
+	}
+}
+
+func objectBucketClaimListGVK() schema.GroupVersionKind {
+	return schema.GroupVersionKind{
+		Group:   objectBucketAPIGroup,
+		Version: objectBucketAPIVersion,
+		Kind:    "ObjectBucketClaimList",
+	}
+}
 
 // resolveS3 resolves object storage with strict precedence:
 //  1. User-provided Spec.ObjectStorage.SecretName
@@ -56,7 +75,7 @@ func s3Region(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	if cfg.Spec.ObjectStorage.S3.Region != "" {
 		return cfg.Spec.ObjectStorage.S3.Region
 	}
-	return "us-east-1"
+	return defaultS3Region
 }
 
 func (r *CostManagementServiceConfigReconciler) discoverOBC(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (*costv1alpha1.DiscoveredS3, error) {
@@ -103,11 +122,7 @@ func (r *CostManagementServiceConfigReconciler) discoverOBC(ctx context.Context,
 func (r *CostManagementServiceConfigReconciler) findBoundOBC(ctx context.Context, namespace string) (string, error) {
 	// Prefer the conventional Direct Ceph RGW claim name used by the Helm chart.
 	obc := &unstructured.Unstructured{}
-	obc.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "objectbucket.io",
-		Version: "v1alpha1",
-		Kind:    "ObjectBucketClaim",
-	})
+	obc.SetGroupVersionKind(objectBucketClaimGVK())
 	err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: defaultOBCName}, obc)
 	if err == nil {
 		phase, _, _ := unstructured.NestedString(obc.Object, "status", "phase")
@@ -120,11 +135,7 @@ func (r *CostManagementServiceConfigReconciler) findBoundOBC(ctx context.Context
 	}
 
 	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "objectbucket.io",
-		Version: "v1alpha1",
-		Kind:    "ObjectBucketClaimList",
-	})
+	list.SetGroupVersionKind(objectBucketClaimListGVK())
 	if err := r.List(ctx, list, client.InNamespace(namespace)); err != nil {
 		return "", fmt.Errorf("no bound ObjectBucketClaim found")
 	}
