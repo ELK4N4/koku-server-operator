@@ -45,22 +45,39 @@ func rbacEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVar {
 	return env
 }
 
-// rbacVolumesAndMounts returns the optional Valkey TLS volume + mount for RBAC pods.
+// rbacVolumesAndMounts returns shared volumes for RBAC pods (/tmp + optional Valkey TLS).
 func rbacVolumesAndMounts(cfg *costv1alpha1.CostManagementServiceConfig) ([]corev1.Volume, []corev1.VolumeMount) {
-	if !cfg.Spec.Cache.TLS.Enabled || cfg.Spec.Cache.TLS.CACertSecretName == "" {
-		return nil, nil
-	}
-	vol := corev1.Volume{
-		Name: "redis-tls-ca",
-		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName: cfg.Spec.Cache.TLS.CACertSecretName,
-				Items:      []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}},
+	vols := []corev1.Volume{{
+		Name:         "tmp",
+		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+	}}
+	mounts := []corev1.VolumeMount{{Name: "tmp", MountPath: "/tmp"}}
+	if cfg.Spec.Cache.TLS.Enabled && cfg.Spec.Cache.TLS.CACertSecretName != "" {
+		vols = append(vols, corev1.Volume{
+			Name: "redis-tls-ca",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: cfg.Spec.Cache.TLS.CACertSecretName,
+					Items:      []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}},
+				},
 			},
-		},
+		})
+		mounts = append(mounts, corev1.VolumeMount{Name: "redis-tls-ca", MountPath: "/etc/redis-tls", ReadOnly: true})
 	}
-	mount := corev1.VolumeMount{Name: "redis-tls-ca", MountPath: "/etc/redis-tls", ReadOnly: true}
-	return []corev1.Volume{vol}, []corev1.VolumeMount{mount}
+	return vols, mounts
+}
+
+// rbacAppContainerSC is used for RBAC API/worker containers. readOnlyRootFilesystem
+// is omitted because gunicorn needs a writable temp dir and Django configures a
+// file log handler at startup (same pattern as kokuAppContainerSC).
+func rbacAppContainerSC() *corev1.SecurityContext {
+	f := false
+	t := true
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &f,
+		Privileged:               &f,
+		RunAsNonRoot:             &t,
+	}
 }
 
 // waitForRBACDB blocks until the RBAC database port is open.
@@ -146,7 +163,7 @@ func RBACAPIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.De
 						},
 						Resources:       spec.API.Resources,
 						VolumeMounts:    mounts,
-						SecurityContext: restrictedContainerSC(),
+						SecurityContext: rbacAppContainerSC(),
 					}},
 					Volumes: vols,
 				},
@@ -217,7 +234,7 @@ func RBACWorkerDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1
 						Env:             rbacEnv(cfg),
 						Resources:       spec.Worker.Resources,
 						VolumeMounts:    mounts,
-						SecurityContext: restrictedContainerSC(),
+						SecurityContext: rbacAppContainerSC(),
 					}},
 					Volumes: vols,
 				},
