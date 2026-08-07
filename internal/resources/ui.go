@@ -314,10 +314,14 @@ func UIRoute(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstru
 	route.SetLabels(Labels(cfg, "ui"))
 
 	_ = unstructured.SetNestedField(route.Object, host, "spec", "host")
-	_ = unstructured.SetNestedField(route.Object, map[string]any{
-		"name": NameUI(cfg), "port": "https",
+	// RouteTargetReference has no "port" field — use spec.port.targetPort (same as GatewayAPIRoute).
+	_ = unstructured.SetNestedMap(route.Object, map[string]any{
+		"kind":   "Service",
+		"name":   NameUI(cfg),
+		"weight": int64(100),
 	}, "spec", "to")
-	_ = unstructured.SetNestedField(route.Object, map[string]any{
+	_ = unstructured.SetNestedField(route.Object, "https", "spec", "port", "targetPort")
+	_ = unstructured.SetNestedMap(route.Object, map[string]any{
 		"termination":                   "passthrough",
 		"insecureEdgeTerminationPolicy": "Redirect",
 	}, "spec", "tls")

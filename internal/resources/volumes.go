@@ -161,6 +161,12 @@ func WaitForValkeyInitContainer(cfg *costv1alpha1.CostManagementServiceConfig) c
 	}
 }
 
+// kokuImageUID is the numeric UID of the koku image USER ("koku").
+// Pod-level runAsNonRoot requires an explicit numeric runAsUser when the
+// image USER is a name rather than a UID; otherwise kubelet rejects the pod
+// with CreateContainerConfigError.
+const kokuImageUID int64 = 1000
+
 // kokuAppContainerSC is used for koku application containers (API, Masu,
 // Listener, Celery). readOnlyRootFilesystem is omitted because koku's Django
 // settings.py unconditionally configures a file log handler at
@@ -168,21 +174,20 @@ func WaitForValkeyInitContainer(cfg *costv1alpha1.CostManagementServiceConfig) c
 // regardless of DJANGO_LOG_HANDLERS, causing a boot failure on a read-only FS.
 func kokuAppContainerSC() *corev1.SecurityContext {
 	f := false
+	t := true
+	uid := kokuImageUID
 	return &corev1.SecurityContext{
 		AllowPrivilegeEscalation: &f,
 		Privileged:               &f,
+		RunAsNonRoot:             &t,
+		RunAsUser:                &uid,
 	}
 }
 
-// migrationContainerSC is like restrictedContainerSC but without
-// readOnlyRootFilesystem, because Django's logging framework instantiates all
-// configured handler objects at startup regardless of DJANGO_LOG_HANDLERS.
+// migrationContainerSC is like kokuAppContainerSC: no readOnlyRootFilesystem
+// (Django log handlers) and an explicit numeric UID for the koku image USER.
 func migrationContainerSC() *corev1.SecurityContext {
-	f := false
-	return &corev1.SecurityContext{
-		AllowPrivilegeEscalation: &f,
-		Privileged:               &f,
-	}
+	return kokuAppContainerSC()
 }
 
 func int32Ptr(i int32) *int32 { return &i }
