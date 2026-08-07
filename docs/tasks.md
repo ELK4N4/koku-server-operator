@@ -40,7 +40,7 @@ Last audited: 2026-08-07 against implementation in `internal/controller/` and `i
 | [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API + Masu + Listener `1/1 Running` on CRC ✅, ROS API + Processor ✅, Kruize Deployment + Service + ClusterRole/Binding ✅, Bundled DB/Cache (dev-only extension) ✅. Missing: profile-based sizing, 5-minute readiness timeout with Degraded condition, Django key correct charset. |
 | [COST-7687](https://redhat.atlassian.net/browse/COST-7687) | Implement workers and scheduled jobs | ✅ | Celery Beat + 10 workers ✅, ROS Processor + Recommendation Poller + Housekeeper ✅, ROS Partition Cleaner CronJob ✅, Kruize DeletePartitions CronJob ✅. Ticket's six on-prem queues all present. |
 | [COST-7688](https://redhat.atlassian.net/browse/COST-7688) | Implement Gateway and Ingress | ✅ | Envoy JWT proxy Deployment + Service + ConfigMap wired to OIDC issuer/audiences ✅, OpenShift Route for gateway API ✅. Ingress upload service not yet implemented (separate from Envoy). |
-| [COST-7689](https://redhat.atlassian.net/browse/COST-7689) | Implement RBAC Service | ❌ | RBAC worker Deployment not yet built. |
+| [COST-7689](https://redhat.atlassian.net/browse/COST-7689) | Implement RBAC Service | ✅ | RBAC API Deployment + Service + RBAC Celery worker Deployment ✅. Deployed in Stage 4 before Koku. Both wired with rbac-user/rbac-password from DB credentials secret + cache env vars. |
 | [COST-7690](https://redhat.atlassian.net/browse/COST-7690) | Implement UI and ConsoleLink | ❌ | UI Deployment + OAuth2 Proxy sidecar, ConsoleLink (cluster-scoped, needs finalizer) not implemented. |
 | [COST-7691](https://redhat.atlassian.net/browse/COST-7691) | Implement Routes, NetworkPolicies, and TLS | ❌ | UI Route, NetworkPolicies per component, dedicated ServiceAccounts per component, restricted-v2 SCC compliance, `status.phase → Ready` transition not implemented. Gateway Route done (COST-7688). |
 | [COST-7692](https://redhat.atlassian.net/browse/COST-7692) | Implement monitoring and alerting | ❌ | Operator metrics endpoint, application ServiceMonitors, PrometheusRules, Kubernetes Events on state transitions not implemented. |
@@ -82,7 +82,7 @@ Items that need fixing before GA:
 ## Next Priority
 
 1. **[COST-7684](https://redhat.atlassian.net/browse/COST-7684)** — External dependency validation (TCP + HTTP probes for DB, Cache, Kafka, OIDC)
-2. **[COST-7689](https://redhat.atlassian.net/browse/COST-7689)** — RBAC worker Deployment
+2. **[COST-7689](https://redhat.atlassian.net/browse/COST-7689)** — OLM bundle generation and validation
 3. **[COST-7695](https://redhat.atlassian.net/browse/COST-7695)** — OLM bundle generation and validation
 4. **[COST-7691](https://redhat.atlassian.net/browse/COST-7691)** — UI Route + NetworkPolicies + phase→Ready transition
 5. **[COST-7690](https://redhat.atlassian.net/browse/COST-7690)** — UI Deployment + ConsoleLink

@@ -370,6 +370,18 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 		}
 	}
 
+	// RBAC API + worker (must be up before Koku API starts serving requests).
+	rbacObjs := []client.Object{
+		resources.RBACAPIDeployment(cfg),
+		resources.RBACAPIService(cfg),
+		resources.RBACWorkerDeployment(cfg),
+	}
+	for _, obj := range rbacObjs {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return Result{}, fmt.Errorf("rbac %s: %w", obj.GetName(), err)
+		}
+	}
+
 	// Koku core + ROS shared config.
 	objs := []client.Object{
 		resources.CdappConfigMap(cfg),
