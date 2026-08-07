@@ -66,13 +66,13 @@ func GatewayAPIRoute(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 
 	_ = unstructured.SetNestedField(route.Object, host, "spec", "host")
 	_ = unstructured.SetNestedField(route.Object, "/api", "spec", "path")
-	_ = unstructured.SetNestedMap(route.Object, map[string]interface{}{
+	_ = unstructured.SetNestedMap(route.Object, map[string]any{
 		"kind":   "Service",
 		"name":   NameEnvoy(cfg),
 		"weight": int64(100),
 	}, "spec", "to")
 	_ = unstructured.SetNestedField(route.Object, "http", "spec", "port", "targetPort")
-	_ = unstructured.SetNestedMap(route.Object, map[string]interface{}{
+	_ = unstructured.SetNestedMap(route.Object, map[string]any{
 		"termination":                   termination,
 		"insecureEdgeTerminationPolicy": insecurePolicy,
 	}, "spec", "tls")

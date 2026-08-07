@@ -19,10 +19,10 @@ const (
 	envoyAdminPort int32 = 9901
 	envoyComponent       = "gateway"
 
-	defaultKeycloakURL  = "https://keycloak.keycloak.svc.cluster.local"
+	defaultKeycloakURL   = "https://keycloak.keycloak.svc.cluster.local"
 	defaultKeycloakRealm = "kubernetes"
-	defaultEnvoyImage   = "registry.redhat.io/openshift-service-mesh/proxyv2-rhel9"
-	defaultEnvoyTag     = "2.6"
+	defaultEnvoyImage    = "registry.redhat.io/openshift-service-mesh/proxyv2-rhel9"
+	defaultEnvoyTag      = "2.6"
 )
 
 // KeycloakURL returns the Keycloak base URL from the CR (or the chart default).
@@ -73,8 +73,10 @@ func keycloakHostPort(cfg *costv1alpha1.CostManagementServiceConfig) (host strin
 	}
 	host = u.Hostname()
 	if u.Port() != "" {
-		p, _ := strconv.Atoi(u.Port())
-		return host, int32(p), useTLS
+		p, err := strconv.ParseInt(u.Port(), 10, 32)
+		if err == nil {
+			return host, int32(p), useTLS
+		}
 	}
 	if useTLS {
 		return host, 443, true
