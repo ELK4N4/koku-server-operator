@@ -202,3 +202,35 @@ func restrictedContainerSC() *corev1.SecurityContext {
 		RunAsNonRoot:             &t,
 	}
 }
+
+// uiOAuthProxyContainerSC is for the oauth2-proxy sidecar. The rhceph image
+// USER is root; an explicit non-root UID is required alongside pod runAsNonRoot.
+func uiOAuthProxyContainerSC() *corev1.SecurityContext {
+	f := false
+	t := true
+	uid := ubiMinimalNonRootUID
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &f,
+		Privileged:               &f,
+		ReadOnlyRootFilesystem:   &t,
+		RunAsNonRoot:             &t,
+		RunAsUser:                &uid,
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+	}
+}
+
+// uiAppContainerSC is for the koku-ui-onprem nginx container (image USER 1001).
+// Writable nginx paths are provided via emptyDir mounts in UIDeployment.
+func uiAppContainerSC() *corev1.SecurityContext {
+	f := false
+	t := true
+	uid := ubiMinimalNonRootUID
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &f,
+		Privileged:               &f,
+		ReadOnlyRootFilesystem:   &t,
+		RunAsNonRoot:             &t,
+		RunAsUser:                &uid,
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+	}
+}
