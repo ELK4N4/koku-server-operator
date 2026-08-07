@@ -80,6 +80,8 @@ spec:
       repository: quay.io/redhat-services-prod/kruize-autotune-tenant/autotune
       tag: "d1f0140"
 
+  # Envoy JWT gateway requires a reachable Keycloak/RHBK JWKS endpoint.
+  # Without it, gateway pods can become Ready while API calls return 401.
   auth:
     envoy:
       image:
@@ -87,7 +89,11 @@ spec:
         tag: "2.6"
       replicas: 2
     keycloak:
+      url: "https://keycloak.keycloak.svc.cluster.local"
       realm: kubernetes
+      audiences:
+        - "cost-management-operator"
+        - "cost-management-ui"
 
   ui:
     replicaCount: 1

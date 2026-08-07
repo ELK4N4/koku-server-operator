@@ -40,6 +40,7 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=services;configmaps;secrets;serviceaccounts;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=route.openshift.io,resources=routes/custom-host,verbs=create
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=config.openshift.io,resources=ingresses,verbs=get
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
@@ -350,8 +351,47 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 // Stage 6 — Edge: gateway, UI, routes
 // -----------------------------------------------------------------------------
 
-func (r *CostManagementServiceConfigReconciler) reconcileEdge(_ context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
-	// Envoy gateway, UI, OpenShift Route — stubs until COST-7688/7690/7691 land.
+func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	logger := log.FromContext(ctx)
+
+	objs := []client.Object{
+		resources.EnvoyConfigMap(cfg),
+		resources.EnvoyService(cfg),
+		resources.EnvoyDeployment(cfg),
+	}
+	for _, obj := range objs {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return Result{}, fmt.Errorf("edge %s: %w", obj.GetName(), err)
+		}
+	}
+
+	route := resources.GatewayAPIRoute(cfg)
+	if route != nil {
+		if err := r.apply(ctx, cfg, route); err != nil {
+			return Result{}, fmt.Errorf("edge route %s: %w", route.GetName(), err)
+		}
+	} else {
+		logger.Info("skipping API Route: cluster domain not resolved; gateway still deployed for in-cluster access")
+	}
+
+	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameEnvoy(cfg))
+	if err != nil {
+		return Result{}, err
+	}
+	if !ready {
+		r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionFalse,
+			"WaitingForGateway", "waiting for Envoy gateway Deployment")
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+
+	if route == nil {
+		r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionFalse,
+			"ClusterDomainPending", "Envoy gateway ready; API Route deferred until cluster domain is available")
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+
+	r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionTrue,
+		"GatewayReady", "Envoy JWT gateway and API Route are ready")
 	return Result{}, nil
 }
 
