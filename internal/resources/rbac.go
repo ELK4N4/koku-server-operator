@@ -77,7 +77,7 @@ func waitForRBACDB(cfg *costv1alpha1.CostManagementServiceConfig) corev1.Contain
 			"bash", "-c",
 			`until bash -c "echo >/dev/tcp/` + host + `/` + int32String(port) + `" 2>/dev/null; do echo 'waiting for rbac db'; sleep 2; done`,
 		},
-		SecurityContext: restrictedContainerSC(),
+		SecurityContext: ubiMinimalInitSC(),
 	}
 }
 
