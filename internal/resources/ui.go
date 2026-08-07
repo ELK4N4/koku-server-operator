@@ -207,6 +207,10 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 				},
 			},
 		},
+		// Writable paths for nginx under readOnlyRootFilesystem.
+		{Name: "nginx-tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		{Name: "nginx-log", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 	}
 
 	probe := &corev1.Probe{
@@ -248,8 +252,9 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "proxy-tls", MountPath: "/etc/tls/private", ReadOnly: true},
 								{Name: "keycloak-ca", MountPath: "/etc/keycloak-ca", ReadOnly: true},
+								{Name: "tmp", MountPath: "/tmp"},
 							},
-							SecurityContext: restrictedContainerSC(),
+							SecurityContext: uiOAuthProxyContainerSC(),
 						},
 						{
 							Name:            "app",
@@ -268,8 +273,11 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 							Resources: appResources,
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "nginx-config", MountPath: "/opt/app-root/etc/nginx.default.d/nginx.conf", SubPath: "nginx.conf"},
+								{Name: "nginx-tmp", MountPath: "/var/lib/nginx/tmp"},
+								{Name: "nginx-log", MountPath: "/var/log/nginx"},
+								{Name: "tmp", MountPath: "/tmp"},
 							},
-							SecurityContext: restrictedContainerSC(),
+							SecurityContext: uiAppContainerSC(),
 						},
 					},
 					Volumes: vols,
