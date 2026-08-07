@@ -116,12 +116,14 @@ func (r *CostManagementServiceConfigReconciler) reconcileDelete(ctx context.Cont
 }
 
 // reconcile drives the ordered, staged rollout:
+//  0. Discovery (cluster domain, StorageClass, S3)
 //  1. Shared configuration (ConfigMaps, Secrets, ServiceAccount)
 //  2. Infrastructure (PostgreSQL, Valkey)
-//  3. DB migration gate
-//  4. Core services (Koku API, Masu, Listener)
-//  5. Workers (Celery, ROS, RBAC, Kruize, Ingress)
-//  6. Edge (Envoy gateway, UI, Route)
+//  3. Validation (TCP/HTTP probes for external deps, Secret key checks)
+//  4. DB migration gate (Koku → ROS → RBAC)
+//  5. Core services (Koku API, Masu, Listener)
+//  6. Workers (Celery, ROS, Kruize)
+//  7. Edge (Envoy gateway, UI, Route)
 func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (ctrl.Result, error) {
 	cfg.Status.ObservedGeneration = cfg.Generation
 	cfg.Status.Phase = costv1alpha1.PhaseProgressing
@@ -131,6 +133,7 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 		func() (Result, error) { return r.reconcileDiscovery(ctx, cfg) },
 		func() (Result, error) { return r.reconcileSharedConfig(ctx, cfg) },
 		func() (Result, error) { return r.reconcileInfrastructure(ctx, cfg) },
+		func() (Result, error) { return r.reconcileValidation(ctx, cfg) },
 		func() (Result, error) { return r.reconcileMigration(ctx, cfg) },
 		func() (Result, error) { return r.reconcileCoreServices(ctx, cfg) },
 		func() (Result, error) { return r.reconcileWorkers(ctx, cfg) },
