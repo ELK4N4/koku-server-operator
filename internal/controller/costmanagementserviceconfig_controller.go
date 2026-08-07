@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
@@ -22,9 +23,11 @@ import (
 )
 
 const (
-	fieldOwner  = "koku-server-operator"
-	requeueFast = 10 * time.Second
-	requeueSlow = 30 * time.Second
+	fieldOwner    = "koku-server-operator"
+	finalizerName = "cost.redhat.com/cleanup"
+	requeueFast   = 10 * time.Second
+	requeueSlow   = 30 * time.Second
+	requeueDrift  = 5 * time.Minute
 )
 
 type CostManagementServiceConfigReconciler struct {
@@ -57,6 +60,20 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 		return ctrl.Result{}, err
 	}
 
+	// Deletion path: clean up cluster-scoped resources then remove finalizer.
+	if !cfg.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, cfg)
+	}
+
+	// Ensure our finalizer is registered before touching any cluster-scoped resource.
+	if !controllerutil.ContainsFinalizer(cfg, finalizerName) {
+		controllerutil.AddFinalizer(cfg, finalizerName)
+		if err := r.Update(ctx, cfg); err != nil {
+			return ctrl.Result{}, fmt.Errorf("adding finalizer: %w", err)
+		}
+		return ctrl.Result{}, nil // requeue triggered by the Update
+	}
+
 	original := cfg.DeepCopy()
 
 	result, reconcileErr := r.reconcile(ctx, cfg)
@@ -69,6 +86,33 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 	}
 
 	return result, reconcileErr
+}
+
+// reconcileDelete removes cluster-scoped resources that cannot be cleaned up via
+// ownerReferences, then strips the finalizer so the CR can be fully deleted.
+func (r *CostManagementServiceConfigReconciler) reconcileDelete(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("deleting cluster-scoped resources before CR removal")
+
+	// All cluster-scoped resources the operator creates, keyed by type.
+	// Add entries here whenever a new cluster-scoped resource type is introduced.
+	clusterScoped := []client.Object{
+		resources.KruizeClusterRoleBinding(cfg),
+		resources.KruizeClusterRole(cfg),
+		// Future: ConsoleLink for UI (COST-7690), RBAC ClusterRole (COST-7689)
+	}
+
+	for _, obj := range clusterScoped {
+		if err := r.Delete(ctx, obj); err != nil && !errors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("deleting %s %s: %w", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), err)
+		}
+	}
+
+	controllerutil.RemoveFinalizer(cfg, finalizerName)
+	if err := r.Update(ctx, cfg); err != nil {
+		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
+	}
+	return ctrl.Result{}, nil
 }
 
 // reconcile drives the ordered, staged rollout:
@@ -104,7 +148,9 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "AllComponentsReady", "All components are running")
 	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "ReconcileComplete", "")
 	cfg.Status.Phase = costv1alpha1.PhaseReady
-	return ctrl.Result{}, nil
+	// Periodic drift correction: re-apply all desired state every 5 minutes so
+	// manual edits to managed resources are reverted without waiting for an event.
+	return ctrl.Result{RequeueAfter: requeueDrift}, nil
 }
 
 // -----------------------------------------------------------------------------
@@ -450,13 +496,17 @@ func (r *CostManagementServiceConfigReconciler) ensureSecret(ctx context.Context
 
 func setOwnerRef(owner *costv1alpha1.CostManagementServiceConfig, obj client.Object) {
 	if obj.GetNamespace() == "" {
-		return // cluster-scoped: owner refs don't apply
+		return // cluster-scoped: owner refs don't apply, use finalizer instead
 	}
+	isController := true
+	blockDeletion := true
 	ref := metav1.OwnerReference{
-		APIVersion: costv1alpha1.GroupVersion.String(),
-		Kind:       "CostManagementServiceConfig",
-		Name:       owner.Name,
-		UID:        owner.UID,
+		APIVersion:         costv1alpha1.GroupVersion.String(),
+		Kind:               "CostManagementServiceConfig",
+		Name:               owner.Name,
+		UID:                owner.UID,
+		Controller:         &isController,
+		BlockOwnerDeletion: &blockDeletion,
 	}
 	refs := obj.GetOwnerReferences()
 	for i, r := range refs {
