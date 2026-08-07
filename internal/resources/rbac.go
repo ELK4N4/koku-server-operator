@@ -48,7 +48,7 @@ func rbacEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVar {
 // rbacVolumesAndMounts returns shared volumes for RBAC pods (/tmp + optional Valkey TLS).
 func rbacVolumesAndMounts(cfg *costv1alpha1.CostManagementServiceConfig) ([]corev1.Volume, []corev1.VolumeMount) {
 	vols := []corev1.Volume{{
-		Name: "tmp",
+		Name:         "tmp",
 		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
 	}}
 	mounts := []corev1.VolumeMount{{Name: "tmp", MountPath: "/tmp"}}
