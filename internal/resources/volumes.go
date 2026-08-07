@@ -104,6 +104,27 @@ func KokuVolumeMounts(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Vo
 	return mounts
 }
 
+// ubiMinimalNonRootUID is an explicit UID for ubi-minimal init containers.
+// The image USER is root; with a pod-level runAsNonRoot SecurityContext, kubelet
+// rejects the container unless runAsUser is set to a non-root UID.
+const ubiMinimalNonRootUID int64 = 1001
+
+// ubiMinimalInitSC is the security context for ubi-minimal-based init containers
+// that must co-exist with nonRootPodSC() on the pod.
+func ubiMinimalInitSC() *corev1.SecurityContext {
+	f := false
+	t := true
+	uid := ubiMinimalNonRootUID
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &f,
+		Privileged:               &f,
+		ReadOnlyRootFilesystem:   &t,
+		RunAsNonRoot:             &t,
+		RunAsUser:                &uid,
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+	}
+}
+
 // CACombineInitContainer returns the init container that merges system and
 // cluster CA certificates into a combined bundle.
 func CACombineInitContainer(_ *costv1alpha1.CostManagementServiceConfig) corev1.Container {
@@ -116,7 +137,7 @@ func CACombineInitContainer(_ *costv1alpha1.CostManagementServiceConfig) corev1.
 			{Name: "ca-source", MountPath: "/ca-source", ReadOnly: true},
 			{Name: "combined-ca-bundle", MountPath: "/ca-output"},
 		},
-		SecurityContext: restrictedContainerSC(),
+		SecurityContext: ubiMinimalInitSC(),
 	}
 }
 
@@ -136,7 +157,7 @@ func WaitForValkeyInitContainer(cfg *costv1alpha1.CostManagementServiceConfig) c
 			"bash", "-c",
 			`until bash -c "echo >/dev/tcp/` + host + `/` + port + `" 2>/dev/null; do echo 'waiting for valkey'; sleep 2; done`,
 		},
-		SecurityContext: restrictedContainerSC(),
+		SecurityContext: ubiMinimalInitSC(),
 	}
 }
 
