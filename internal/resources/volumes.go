@@ -104,16 +104,30 @@ func KokuVolumeMounts(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Vo
 	return mounts
 }
 
-// CACombineInitContainer returns the init container that merges system and
-// cluster CA certificates into a combined bundle.
-//
-// Note: ubi-minimal's image USER is root. Setting runAsNonRoot=true without an
-// explicit runAsUser makes kubelet reject the container ("image will run as
-// root"). OpenShift assigns an arbitrary non-root UID via SCC when runAsNonRoot
-// is omitted; drop capabilities still keep the container reasonably locked down.
-func CACombineInitContainer(_ *costv1alpha1.CostManagementServiceConfig) corev1.Container {
+// ubiMinimalNonRootUID is an explicit UID for ubi-minimal init containers.
+// The image USER is root; with a pod-level runAsNonRoot SecurityContext, kubelet
+// rejects the container unless runAsUser is set to a non-root UID.
+const ubiMinimalNonRootUID int64 = 1001
+
+// ubiMinimalInitSC is the security context for ubi-minimal-based init containers
+// that must co-exist with nonRootPodSC() on the pod.
+func ubiMinimalInitSC() *corev1.SecurityContext {
 	f := false
 	t := true
+	uid := ubiMinimalNonRootUID
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: &f,
+		Privileged:               &f,
+		ReadOnlyRootFilesystem:   &t,
+		RunAsNonRoot:             &t,
+		RunAsUser:                &uid,
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+	}
+}
+
+// CACombineInitContainer returns the init container that merges system and
+// cluster CA certificates into a combined bundle.
+func CACombineInitContainer(_ *costv1alpha1.CostManagementServiceConfig) corev1.Container {
 	return corev1.Container{
 		Name:    "prepare-ca-bundle",
 		Image:   "registry.access.redhat.com/ubi9/ubi-minimal:9.7",
@@ -123,12 +137,7 @@ func CACombineInitContainer(_ *costv1alpha1.CostManagementServiceConfig) corev1.
 			{Name: "ca-source", MountPath: "/ca-source", ReadOnly: true},
 			{Name: "combined-ca-bundle", MountPath: "/ca-output"},
 		},
-		SecurityContext: &corev1.SecurityContext{
-			AllowPrivilegeEscalation: &f,
-			Privileged:               &f,
-			ReadOnlyRootFilesystem:   &t,
-			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-		},
+		SecurityContext: ubiMinimalInitSC(),
 	}
 }
 
@@ -140,8 +149,6 @@ func WaitForValkeyInitContainer(cfg *costv1alpha1.CostManagementServiceConfig) c
 	if cfg.Spec.Cache.Port != 0 {
 		port = int32String(cfg.Spec.Cache.Port)
 	}
-	f := false
-	t := true
 	return corev1.Container{
 		Name:  "wait-for-valkey",
 		Image: "registry.access.redhat.com/ubi9/ubi-minimal:9.7",
@@ -150,14 +157,7 @@ func WaitForValkeyInitContainer(cfg *costv1alpha1.CostManagementServiceConfig) c
 			"bash", "-c",
 			`until bash -c "echo >/dev/tcp/` + host + `/` + port + `" 2>/dev/null; do echo 'waiting for valkey'; sleep 2; done`,
 		},
-		// Same as CACombineInitContainer: ubi-minimal USER is root, so avoid
-		// runAsNonRoot=true without an explicit runAsUser.
-		SecurityContext: &corev1.SecurityContext{
-			AllowPrivilegeEscalation: &f,
-			Privileged:               &f,
-			ReadOnlyRootFilesystem:   &t,
-			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-		},
+		SecurityContext: ubiMinimalInitSC(),
 	}
 }
 
