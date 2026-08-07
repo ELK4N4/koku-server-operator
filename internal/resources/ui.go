@@ -195,10 +195,16 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 			},
 		},
 		{
-			// Service CA for Keycloak TLS verification.
+			// Service CA for Keycloak TLS verification (ConfigMap injected by OpenShift).
 			Name: "keycloak-ca",
 			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{SecretName: NameServiceCAConfigMap(cfg)},
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: NameServiceCAConfigMap(cfg)},
+					Items: []corev1.KeyToPath{
+						// inject-cabundle writes service-ca.crt; oauth2-proxy expects ca.crt.
+						{Key: "service-ca.crt", Path: "ca.crt"},
+					},
+				},
 			},
 		},
 	}
