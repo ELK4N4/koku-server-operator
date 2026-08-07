@@ -97,9 +97,9 @@ func (r *CostManagementServiceConfigReconciler) reconcileDelete(ctx context.Cont
 	// All cluster-scoped resources the operator creates, keyed by type.
 	// Add entries here whenever a new cluster-scoped resource type is introduced.
 	clusterScoped := []client.Object{
+		resources.ConsoleLink(cfg),
 		resources.KruizeClusterRoleBinding(cfg),
 		resources.KruizeClusterRole(cfg),
-		// Future: ConsoleLink for UI (COST-7690), RBAC ClusterRole (COST-7689)
 	}
 
 	for _, obj := range clusterScoped {
@@ -499,6 +499,33 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 
 	r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionTrue,
 		"GatewayReady", "Envoy JWT gateway and API Route are ready")
+
+	// UI — cookie secret (operator-generated), nginx config, deployment, service.
+	if err := r.ensureSecret(ctx, cfg, resources.UICookieSecret(cfg)); err != nil {
+		return Result{}, fmt.Errorf("ui cookie secret: %w", err)
+	}
+	for _, obj := range []client.Object{
+		resources.UINginxConfigMap(cfg),
+		resources.UIDeployment(cfg),
+		resources.UIService(cfg),
+	} {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return Result{}, fmt.Errorf("ui %s: %w", obj.GetName(), err)
+		}
+	}
+
+	// UI Route (deferred until cluster domain is resolved).
+	if uiRoute := resources.UIRoute(cfg); uiRoute != nil {
+		if err := r.apply(ctx, cfg, uiRoute); err != nil {
+			return Result{}, fmt.Errorf("ui route: %w", err)
+		}
+	}
+
+	// ConsoleLink is cluster-scoped — apply without ownerRef, cleaned up by finalizer.
+	if err := r.applyClusterScoped(ctx, resources.ConsoleLink(cfg)); err != nil {
+		return Result{}, fmt.Errorf("consolelink: %w", err)
+	}
+
 	return Result{}, nil
 }
 
