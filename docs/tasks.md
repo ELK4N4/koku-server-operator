@@ -25,7 +25,7 @@ Last audited: 2026-08-07 against implementation in `internal/controller/` and `i
 | [COST-7681](https://redhat.atlassian.net/browse/COST-7681) | Implement Server-Side Apply and ownership model | 🔄 | SSA with `ForceOwnership` ✅, `Controller: true` + `BlockOwnerDeletion: true` on ownerRefs ✅, finalizer `cost.redhat.com/cleanup` ✅, `reconcileDelete()` removes Kruize ClusterRole/Binding ✅, drift correction 5-min requeue ✅. Missing: finalizer cleanup for ConsoleLink (COST-7690) and RBAC ClusterRole (COST-7689) — gated on those tickets. |
 | [COST-7682](https://redhat.atlassian.net/browse/COST-7682) | Implement cluster discovery | ✅ | Cluster domain from `config.openshift.io/v1/Ingress/cluster` ✅, default StorageClass by annotation ✅, `DiscoveryComplete` condition ✅, `status.discoveredConfig` populated ✅, user override via `spec.global.*` ✅. Tests: 11 unit tests with fake client. |
 | [COST-7683](https://redhat.atlassian.net/browse/COST-7683) | Implement S3 backend auto-detection | ✅ | Three-path resolution: user `secretName` → Bound OBC → NooBaa ✅. Sets `StorageReady` condition + `status.discoveredConfig.s3` ✅. Copies OBC/NooBaa credentials into `<cr>-storage-credentials` Secret ✅. Failure does not block the pipeline. |
-| [COST-7684](https://redhat.atlassian.net/browse/COST-7684) | Implement external dependency validation | ❌ | No connectivity probes for DB, Cache, Kafka, or OIDC. No Secret key validation. Missing conditions: `KafkaReady`, `AuthenticationReady`. |
+| [COST-7684](https://redhat.atlassian.net/browse/COST-7684) | Implement external dependency validation | ✅ | TCP probes for external DB + Cache (blocking) ✅, Kafka TCP probe (non-blocking) ✅, OIDC JWKS HTTP probe when `keycloak.url` set (non-blocking) ✅. Secret key validation for `database.secretName`, `cache.auth.secretName`, `kafka.sasl.existingSecret` ✅. Conditions: `DatabaseReady`, `CacheReady`, `KafkaReady`, `AuthenticationReady` ✅. |
 
 ## Infrastructure
 
@@ -81,8 +81,7 @@ Items that need fixing before GA:
 
 ## Next Priority
 
-1. **[COST-7684](https://redhat.atlassian.net/browse/COST-7684)** — External dependency validation (TCP + HTTP probes for DB, Cache, Kafka, OIDC)
-2. **[COST-7689](https://redhat.atlassian.net/browse/COST-7689)** — OLM bundle generation and validation
-3. **[COST-7695](https://redhat.atlassian.net/browse/COST-7695)** — OLM bundle generation and validation
-4. **[COST-7691](https://redhat.atlassian.net/browse/COST-7691)** — UI Route + NetworkPolicies + phase→Ready transition
-5. **[COST-7690](https://redhat.atlassian.net/browse/COST-7690)** — UI Deployment + ConsoleLink
+1. **[COST-7689](https://redhat.atlassian.net/browse/COST-7689)** — RBAC worker Deployment
+2. **[COST-7695](https://redhat.atlassian.net/browse/COST-7695)** — OLM bundle generation and validation
+3. **[COST-7691](https://redhat.atlassian.net/browse/COST-7691)** — UI Route + NetworkPolicies + phase→Ready transition
+4. **[COST-7690](https://redhat.atlassian.net/browse/COST-7690)** — UI Deployment + ConsoleLink
