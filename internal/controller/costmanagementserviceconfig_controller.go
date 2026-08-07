@@ -43,6 +43,7 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=config.openshift.io,resources=ingresses,verbs=get
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
 
 func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -253,7 +254,30 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 // -----------------------------------------------------------------------------
 
 func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	// Kruize (needed by ROS Processor and Poller — deploy before ROS).
+	kruizeObjs := []client.Object{
+		resources.KruizeServiceAccount(cfg),
+		resources.KruizeConfigMap(cfg),
+		resources.KruizeDeployment(cfg),
+		resources.KruizeService(cfg),
+	}
+	for _, obj := range kruizeObjs {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return Result{}, fmt.Errorf("kruize %s: %w", obj.GetName(), err)
+		}
+	}
+	// Kruize ClusterRole/ClusterRoleBinding are cluster-scoped — no ownerRef possible.
+	// TODO: add finalizer to clean these up when the CR is deleted (COST-7681).
+	for _, obj := range []client.Object{resources.KruizeClusterRole(cfg), resources.KruizeClusterRoleBinding(cfg)} {
+		if err := r.applyClusterScoped(ctx, obj); err != nil {
+			return Result{}, fmt.Errorf("kruize rbac %s: %w", obj.GetName(), err)
+		}
+	}
+
+	// Koku core + ROS shared config.
 	objs := []client.Object{
+		resources.CdappConfigMap(cfg),
+		resources.ROSServiceAccount(cfg),
 		resources.KokuAPIDeployment(cfg),
 		resources.KokuAPIService(cfg),
 		resources.MasuDeployment(cfg),
@@ -293,7 +317,25 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		objs = append(objs, d)
 	}
 
-	// TODO: ROS, RBAC, Kruize, Ingress builders — to be implemented in follow-up.
+	// ROS components
+	rosObjs := []client.Object{
+		resources.ROSAPIDeployment(cfg),
+		resources.ROSAPIService(cfg),
+		resources.ROSProcessorDeployment(cfg),
+		resources.ROSPollerDeployment(cfg),
+		resources.ROSHousekeeperDeployment(cfg),
+	}
+	objs = append(objs, rosObjs...)
+
+	// Kruize delete-partitions CronJob (if enabled)
+	if costv1alpha1.BoolVal(cfg.Spec.Kruize.Partitions.DeleteEnabled, true) {
+		objs = append(objs, resources.KruizeDeletePartitionsCronJob(cfg))
+	}
+
+	// ROS partition-cleaner CronJob (if enabled)
+	if costv1alpha1.BoolVal(cfg.Spec.ROS.Housekeeper.PartitionCleaner.Enabled, true) {
+		objs = append(objs, resources.ROSPartitionCleanerCronJob(cfg))
+	}
 
 	for _, obj := range objs {
 		if err := r.apply(ctx, cfg, obj); err != nil {
@@ -301,7 +343,6 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		}
 	}
 
-	// ROS, RBAC, Kruize — stubs until COST-7686/7687/7689 resource builders land.
 	return Result{}, nil
 }
 
@@ -317,6 +358,12 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(_ context.Context,
 // -----------------------------------------------------------------------------
 // Apply / create helpers
 // -----------------------------------------------------------------------------
+
+// applyClusterScoped applies a cluster-scoped resource (no namespace, no ownerRef).
+// These resources require finalizer-based cleanup — see COST-7681.
+func (r *CostManagementServiceConfigReconciler) applyClusterScoped(ctx context.Context, obj client.Object) error {
+	return r.Patch(ctx, obj, client.Apply, client.ForceOwnership, client.FieldOwner(fieldOwner))
+}
 
 // apply creates or updates obj using Server-Side Apply.
 func (r *CostManagementServiceConfigReconciler) apply(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig, obj client.Object) error {
@@ -465,5 +512,6 @@ func (r *CostManagementServiceConfigReconciler) SetupWithManager(mgr ctrl.Manage
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
+		Owns(&corev1.ServiceAccount{}).
 		Complete(r)
 }
