@@ -26,7 +26,9 @@ func rbacEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVar {
 		sslMode = "disable"
 	}
 	env := []corev1.EnvVar{
-		EnvVal("API_PATH_PREFIX", "/api/rbac/v1"),
+		// Chart sets /api/rbac; Django mounts v1 under that prefix. Using
+		// /api/rbac/v1 makes unauthenticated /api/rbac/v1/status/ probes 401.
+		EnvVal("API_PATH_PREFIX", "/api/rbac"),
 		EnvVal("DATABASE_NAME", rbacDBName),
 		EnvFromSecret("DATABASE_USER", dbSecret, "rbac-user"),
 		EnvFromSecret("DATABASE_PASSWORD", dbSecret, "rbac-password"),
