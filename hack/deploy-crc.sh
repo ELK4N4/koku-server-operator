@@ -29,7 +29,12 @@ oc create clusterrolebinding koku-operator-dev \
   --serviceaccount="$NS:default" \
   2>/dev/null || echo "  (binding already exists)"
 
-echo "[3/3] Ready. Run the operator with:"
+# Grant anyuid SCC so bundled PostgreSQL/Valkey pods can run with their
+# required UIDs (postgres=999, valkey=999). Skip if not on OpenShift.
+echo "[3/4] Granting anyuid SCC (bundled DB/Cache mode)..."
+oc adm policy add-scc-to-user anyuid -z default -n "$NS" 2>/dev/null || true
+
+echo "[4/4] Ready. Run the operator with:"
 echo ""
 echo "  NAMESPACE=$NS go run ./cmd/main.go --dev"
 echo ""
