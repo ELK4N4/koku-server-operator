@@ -53,7 +53,7 @@ func UICookieSecret(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.Secre
 			Labels:    Labels(cfg, "ui"),
 		},
 		StringData: map[string]string{
-			"session-secret": randomPassword(32),
+			"session-secret": randomPassword(),
 		},
 	}
 }

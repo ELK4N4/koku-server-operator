@@ -43,6 +43,43 @@ func TestKeycloakIssuerAndJWKS(t *testing.T) {
 	}
 }
 
+func TestKeycloakIssuerURLOverrideKeepsInClusterJWKS(t *testing.T) {
+	cfg := testCfg()
+	cfg.Spec.Auth.Keycloak.URL = "http://keycloak-service.keycloak.svc.cluster.local:8080"
+	cfg.Spec.Auth.Keycloak.IssuerURL = "https://keycloak.apps.example.com"
+	cfg.Spec.Auth.Keycloak.Realm = "kubernetes"
+
+	wantIssuer := "https://keycloak.apps.example.com/realms/kubernetes"
+	if got := KeycloakIssuerURL(cfg); got != wantIssuer {
+		t.Errorf("KeycloakIssuerURL = %q, want %q", got, wantIssuer)
+	}
+	wantJWKS := "http://keycloak-service.keycloak.svc.cluster.local:8080/realms/kubernetes/protocol/openid-connect/certs"
+	if got := KeycloakJWKSURL(cfg); got != wantJWKS {
+		t.Errorf("KeycloakJWKSURL = %q, want %q", got, wantJWKS)
+	}
+
+	yaml := EnvoyYAML(cfg)
+	if !strings.Contains(yaml, "issuer: "+wantIssuer) {
+		t.Errorf("EnvoyYAML missing issuer %q", wantIssuer)
+	}
+	if !strings.Contains(yaml, "uri: "+wantJWKS) {
+		t.Errorf("EnvoyYAML missing JWKS uri %q", wantJWKS)
+	}
+	// JWKS cluster must target the in-cluster Service, not the public hostname.
+	if !strings.Contains(yaml, "address: keycloak-service.keycloak.svc.cluster.local") {
+		t.Error("EnvoyYAML JWKS cluster should use in-cluster Keycloak Service host")
+	}
+	if strings.Contains(yaml, "transport_socket:") {
+		t.Error("in-cluster http JWKS should not enable upstream TLS")
+	}
+
+	// Full issuer override (includes /realms/) is used as-is.
+	cfg.Spec.Auth.Keycloak.IssuerURL = "https://keycloak.apps.example.com/realms/custom"
+	if got := KeycloakIssuerURL(cfg); got != "https://keycloak.apps.example.com/realms/custom" {
+		t.Errorf("full IssuerURL = %q", got)
+	}
+}
+
 func TestKeycloakDefaults(t *testing.T) {
 	cfg := &costv1alpha1.CostManagementServiceConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "cm", Namespace: "ns"},

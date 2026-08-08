@@ -79,7 +79,10 @@ spec:
   # Envoy JWT gateway requires a reachable Keycloak/RHBK JWKS endpoint.
   auth:
     keycloak:
+      # JWKS fetch URL (prefer in-cluster Service). When RHBK sets a public
+      # hostname, tokens use that URL as iss — set issuerURL to match.
       url: "https://keycloak.auth.svc.cluster.local"
+      # issuerURL: "https://keycloak-keycloak.apps.example.com"
       realm: "kubernetes"
       audiences:
         - "cost-management-operator"

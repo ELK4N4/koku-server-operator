@@ -1,4 +1,9 @@
-# Single-node Redpanda (Kafka API compatible). Dev/test only.
+# Optional lightweight Kafka API stand-in (single-node Redpanda). Dev/test only.
+# Not included in the default infra kustomization — prefer AMQ Streams via
+# ../deploy-kafka.sh when running chart infra tests (strimzi.io/kind=Kafka).
+# Apply explicitly: kubectl apply -f config/samples/byoi/infra/kafka.yaml
+# Then set CR bootstrapServers to kafka.cost-byoi-infra.svc.cluster.local:9092
+#
 # emptyDir is intentional — fixture does not need durable broker storage, and
 # avoids OpenShift PVC ownership issues with the redpanda UID.
 apiVersion: v1
