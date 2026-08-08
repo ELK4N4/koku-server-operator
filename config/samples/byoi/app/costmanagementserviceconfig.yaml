@@ -28,7 +28,8 @@ spec:
       enabled: false
 
   kafka:
-    bootstrapServers: "kafka.cost-byoi-infra.svc.cluster.local:9092"
+    # AMQ Streams from cost-onprem-chart ./scripts/deploy-kafka.sh (default names).
+    bootstrapServers: "cost-onprem-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
     securityProtocol: "PLAINTEXT"
 
   objectStorage:

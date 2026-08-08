@@ -6,8 +6,13 @@ does **not** provision DB/cache; it only connects.
 
 | Namespace | Contents |
 |-----------|----------|
-| `cost-byoi-infra` | PostgreSQL, Valkey, Redpanda (Kafka API), MinIO |
+| `cost-byoi-infra` | PostgreSQL, Valkey, MinIO |
+| `kafka` | AMQ Streams (Streams for Apache Kafka) — **not** part of this kustomize |
 | `cost-byoi` | App Secrets + `CostManagementServiceConfig` |
+
+Kafka is provided by AMQ Streams (chart `deploy-kafka.sh`), not a bundled
+Redpanda Deployment. Chart infrastructure tests look for `strimzi.io/kind=Kafka`
+pods and KafkaTopic CRs; a Kafka-API-compatible stand-in is not enough.
 
 Keycloak/OIDC is intentionally omitted (placeholder URL in the CR).
 
@@ -18,24 +23,51 @@ Keycloak/OIDC is intentionally omitted (placeholder URL in the CR).
 - Operator installed and running on the cluster
 - `kubectl` (or `oc`) with cluster-admin (or enough rights for Deployments/PVCs/SCC)
 - Default StorageClass available
+- AMQ Streams Kafka cluster (see below)
 
 On OpenShift, grant `anyuid` to the infra ServiceAccount (official postgres /
-Kafka / MinIO images need it):
+MinIO images need it):
 
 ```bash
 oc adm policy add-scc-to-user anyuid -z byoi-infra -n cost-byoi-infra
 ```
 
+## Kafka (AMQ Streams)
+
+Deploy Kafka **before** applying the BYOI CR. From a checkout of
+[cost-onprem-chart](https://github.com/insights-onprem/cost-onprem-chart):
+
+```bash
+# Defaults: KAFKA_NAMESPACE=kafka, cluster name=cost-onprem-kafka
+STORAGE_CLASS=gp3-csi LOG_LEVEL=INFO ./scripts/deploy-kafka.sh
+# Bootstrap written to /tmp/kafka-bootstrap-servers.env — typically:
+#   cost-onprem-kafka-kafka-bootstrap.kafka.svc:9092
+```
+
+Point `spec.kafka.bootstrapServers` at that bootstrap address (the sample CR
+already uses the default). For chart pytest:
+
+```bash
+export KAFKA_NAMESPACE=kafka
+```
+
+Tear down Kafka separately when finished:
+
+```bash
+./scripts/deploy-kafka.sh cleanup
+```
+
 ## Apply
 
 ```bash
-# 1. Infrastructure
+# 0. Kafka (AMQ Streams) — see above
+
+# 1. Infrastructure (Postgres, Valkey, MinIO)
 kubectl apply -k config/samples/byoi/infra
 
 # Wait until pods are Ready (adjust timeout as needed)
 kubectl -n cost-byoi-infra rollout status deploy/postgresql --timeout=180s
 kubectl -n cost-byoi-infra rollout status deploy/valkey --timeout=120s
-kubectl -n cost-byoi-infra rollout status deploy/kafka --timeout=180s
 kubectl -n cost-byoi-infra rollout status deploy/minio --timeout=120s
 kubectl -n cost-byoi-infra wait --for=condition=complete job/minio-init --timeout=120s
 
@@ -87,6 +119,8 @@ OpenShift user workload monitoring (`enableUserWorkload: true` in `cluster-monit
 kubectl delete -k config/samples/byoi/app --ignore-not-found
 kubectl delete -k config/samples/byoi/infra --ignore-not-found
 kubectl delete -k config/samples/byoi/monitoring --ignore-not-found
+# Kafka (if deployed via cost-onprem-chart):
+#   ./scripts/deploy-kafka.sh cleanup
 ```
 
 ## Endpoints (from `cost-byoi`)
@@ -95,7 +129,7 @@ kubectl delete -k config/samples/byoi/monitoring --ignore-not-found
 |---------|---------|
 | PostgreSQL | `postgresql.cost-byoi-infra.svc.cluster.local:5432` |
 | Valkey | `valkey.cost-byoi-infra.svc.cluster.local:6379` |
-| Kafka (Redpanda, emptyDir) | `kafka.cost-byoi-infra.svc.cluster.local:9092` |
+| Kafka (AMQ Streams) | `cost-onprem-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092` |
 | MinIO (S3) | `minio.cost-byoi-infra.svc.cluster.local:9000` (HTTP) |
 | Prometheus | `prometheus.cost-byoi-infra.svc.cluster.local:9090` (when monitoring applied) |
 | Grafana | `grafana.cost-byoi-infra.svc.cluster.local:3000` (when monitoring applied) |

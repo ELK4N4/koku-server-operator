@@ -7,5 +7,4 @@ resources:
   - credentials.yaml
   - postgresql.yaml
   - valkey.yaml
-  - kafka.yaml
   - minio.yaml
