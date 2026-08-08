@@ -50,10 +50,6 @@ func RBACSeedJobTag(imageTag string) string {
 
 // MigrationJob builds the Koku Django migration Job.
 func MigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag string) *batchv1.Job {
-	backoff := MigrationBackoffLimit
-	deadline := MigrationDeadlineSeconds
-	ttl := int32(3600)
-
 	image := cfg.Spec.CostManagement.API.Image.Repository + ":" + cfg.Spec.CostManagement.API.Image.Tag
 	if image == ":" {
 		image = "quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku:latest"
@@ -71,7 +67,6 @@ func MigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag string
 		"cost-management-migration", migrationScript(), env,
 		KokuVolumeMounts(cfg), KokuVolumes(cfg),
 		[]corev1.Container{CACombineInitContainer(cfg)},
-		backoff, deadline, ttl,
 	)
 }
 
@@ -102,10 +97,6 @@ echo "=== Migrations completed ==="`
 
 // ROSMigrationJob builds the ROS schema migration Job.
 func ROSMigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag string) *batchv1.Job {
-	backoff := MigrationBackoffLimit
-	deadline := MigrationDeadlineSeconds
-	ttl := int32(3600)
-
 	image := cfg.Spec.ROS.Image.Repository + ":" + cfg.Spec.ROS.Image.Tag
 
 	dbSecret := NameDBCredentials(cfg)
@@ -135,7 +126,6 @@ func ROSMigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag str
 
 	return migrationJob(cfg, NameROSMigration(cfg), image, imageTag,
 		"ros-migration", script, env, mounts, vols, nil,
-		backoff, deadline, ttl,
 	)
 }
 
@@ -167,10 +157,6 @@ echo "=== ROS migrations completed ==="`
 // Combines migrate, built-in seeds, cost-management/sources role seed,
 // admin_default groups, bootstrap_tenants, and platform_default cleanup.
 func RBACMigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag string) *batchv1.Job {
-	backoff := MigrationBackoffLimit
-	deadline := MigrationDeadlineSeconds
-	ttl := int32(3600)
-
 	image := cfg.Spec.RBAC.Image.Repository + ":" + cfg.Spec.RBAC.Image.Tag
 
 	env := rbacMigrationEnv(cfg)
@@ -184,7 +170,6 @@ func RBACMigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag st
 
 	return migrationJob(cfg, NameRBACMigration(cfg), image, RBACSeedJobTag(imageTag),
 		"rbac-migration", script, env, mounts, vols, nil,
-		backoff, deadline, ttl,
 	)
 }
 
@@ -387,9 +372,6 @@ func AdminBootstrapJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag s
 		return nil
 	}
 
-	backoff := MigrationBackoffLimit
-	deadline := MigrationDeadlineSeconds
-	ttl := int32(3600)
 	image := cfg.Spec.RBAC.Image.Repository + ":" + cfg.Spec.RBAC.Image.Tag
 
 	env := append(rbacEnv(cfg),
@@ -406,7 +388,6 @@ func AdminBootstrapJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag s
 
 	return migrationJob(cfg, NameRBACAdminBootstrap(cfg), image, RBACSeedJobTag(imageTag),
 		"rbac-admin-bootstrap", script, env, mounts, vols, nil,
-		backoff, deadline, ttl,
 	)
 }
 
@@ -496,8 +477,10 @@ func migrationJob(
 	mounts []corev1.VolumeMount,
 	vols []corev1.Volume,
 	initContainers []corev1.Container,
-	backoff int32, deadline int64, ttlSecs int32,
 ) *batchv1.Job {
+	backoff := MigrationBackoffLimit
+	deadline := MigrationDeadlineSeconds
+	ttlSecs := int32(3600)
 	return &batchv1.Job{
 		TypeMeta: metav1.TypeMeta{APIVersion: "batch/v1", Kind: "Job"},
 		ObjectMeta: metav1.ObjectMeta{
