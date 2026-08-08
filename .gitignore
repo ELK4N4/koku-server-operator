@@ -25,3 +25,6 @@ go.work
 *.swp
 *.swo
 *~
+
+# Git worktrees (local agent/dev isolation)
+.worktrees/
