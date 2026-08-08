@@ -1,7 +1,7 @@
 # Operator Task Tracker
 
 Tracks implementation status against the COST-7678–7700 Jira backlog.
-Last audited: 2026-08-07 against implementation in `internal/controller/` and `internal/resources/`.
+Last audited: 2026-08-08 against implementation in `internal/controller/` and `internal/resources/`.
 
 ## Legend
 - ✅ Done — implements the ticket's acceptance criteria
@@ -14,14 +14,14 @@ Last audited: 2026-08-07 against implementation in `internal/controller/` and `i
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| [COST-7678](https://redhat.atlassian.net/browse/COST-7678) | Define CostManagement CRD types | 🔄 | `*bool` for 12 defaulted fields ✅, `metav1.Condition` replacing `ComponentStatuses` ✅, `DiscoveredConfig` in status ✅, `Profile` enum (standard/ha) ✅, phase names fixed (Pending/Progressing/Ready/Degraded) ✅. File split skipped intentionally (see design doc §3). Missing: webhooks (`defaults.go`, `validation.go`), Django key charset fix (`crypto/rand` with specific charset). |
+| [COST-7678](https://redhat.atlassian.net/browse/COST-7678) | Define CostManagement CRD types | 🔄 | `*bool` for 12 defaulted fields ✅, `metav1.Condition` replacing `ComponentStatuses` ✅, `DiscoveredConfig` in status ✅, `Profile` enum (standard/ha) ✅, phase names fixed (Pending/Progressing/Ready/Degraded) ✅, Django key charset ✅. File split skipped intentionally (see design doc §3). Missing: webhooks (`defaults.go`, `validation.go`). |
 | [COST-7679](https://redhat.atlassian.net/browse/COST-7679) | Create sample CRs and generate manifests | 🔄 | Bundled CR ✅, BYOI CR ✅, BYOI kustomize fixture ✅, CRD installs on CRC ✅. Missing: HA profile sample, CEL validation verified. |
 
 ## Reconciler Core
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| [COST-7680](https://redhat.atlassian.net/browse/COST-7680) | Implement phase-gated reconciler skeleton | 🔄 | `runPhases()` + `PhaseError` pattern ✅, 7-stage pipeline ✅. Missing: pause/resume via annotation, Kubernetes Events on state transitions. |
+| [COST-7680](https://redhat.atlassian.net/browse/COST-7680) | Implement phase-gated reconciler skeleton | 🔄 | `runPhases()` + `PhaseError` pattern ✅, 9-stage pipeline ✅, Kubernetes Events (Ready/MigrationStarted/Complete/Failed/ReconcileError) ✅. Missing: pause/resume via annotation. |
 | [COST-7681](https://redhat.atlassian.net/browse/COST-7681) | Implement Server-Side Apply and ownership model | ✅ | SSA with `ForceOwnership` ✅, `Controller: true` + `BlockOwnerDeletion: true` on ownerRefs ✅, finalizer `cost.redhat.com/cleanup` ✅, `reconcileDelete()` removes ConsoleLink + Kruize ClusterRole/Binding ✅, drift correction 5-min requeue ✅. |
 | [COST-7682](https://redhat.atlassian.net/browse/COST-7682) | Implement cluster discovery | ✅ | Cluster domain from `config.openshift.io/v1/Ingress/cluster` ✅, default StorageClass by annotation ✅, `DiscoveryComplete` condition ✅, `status.discoveredConfig` populated ✅, user override via `spec.global.*` ✅. Tests: 11 unit tests with fake client. |
 | [COST-7683](https://redhat.atlassian.net/browse/COST-7683) | Implement S3 backend auto-detection | ✅ | Three-path resolution: user `secretName` → Bound OBC → NooBaa ✅. Sets `StorageReady` condition + `status.discoveredConfig.s3` ✅. Copies OBC/NooBaa credentials into `<cr>-storage-credentials` Secret ✅. Failure does not block the pipeline. |
@@ -37,7 +37,7 @@ Last audited: 2026-08-07 against implementation in `internal/controller/` and `i
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API + Masu + Listener `1/1 Running` on CRC ✅, ROS API + Processor ✅, Kruize Deployment + Service + ClusterRole/Binding ✅, Bundled DB/Cache (dev-only extension) ✅. Missing: profile-based sizing, 5-minute readiness timeout with Degraded condition, Django key correct charset. |
+| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API + Masu + Listener `1/1 Running` on CRC ✅, ROS API + Processor ✅, Kruize Deployment + Service + ClusterRole/Binding ✅, Bundled DB/Cache (dev-only extension) ✅. Missing: profile-based sizing, 5-minute readiness timeout with Degraded condition. |
 | [COST-7687](https://redhat.atlassian.net/browse/COST-7687) | Implement workers and scheduled jobs | ✅ | Celery Beat + 10 workers ✅, ROS Processor + Recommendation Poller + Housekeeper ✅, ROS Partition Cleaner CronJob ✅, Kruize DeletePartitions CronJob ✅. Ticket's six on-prem queues all present. |
 | [COST-7688](https://redhat.atlassian.net/browse/COST-7688) | Implement Gateway and Ingress | ✅ | Envoy JWT proxy Deployment + Service + ConfigMap wired to OIDC issuer/audiences ✅, OpenShift Route for gateway API ✅, insights-ingress-go Deployment + Service ✅ (S3/Kafka/CA wiring, port 8080 matching Envoy backend config). |
 | [COST-7689](https://redhat.atlassian.net/browse/COST-7689) | Implement RBAC Service | ✅ | RBAC API Deployment + Service + RBAC Celery worker Deployment ✅. Deployed in Stage 4 before Koku. Both wired with rbac-user/rbac-password from DB credentials secret + cache env vars. |
@@ -65,23 +65,16 @@ Last audited: 2026-08-07 against implementation in `internal/controller/` and `i
 
 ---
 
-## Deviations from Ticket Spec
+## Intentional Deviations and Known Gaps
 
-Items where we intentionally diverge from the JIRA acceptance criteria:
-
-1. **Bundled infrastructure** (COST-7678, COST-7686) — Tickets spec external-only infra. We keep `Deploy: true` options for DB and Cache as a dev/PoC extension. External-only BYOI is fully supported; both modes coexist.
-
-Items that need fixing before GA:
-
-2. **Django key charset** — Fixed in PR #16; previously used `base64.URLEncoding`.
-
-3. **Profile-based sizing** — `profiles` field present in CRD but resource sizing maps not implemented (COST-7693).
+See [docs/design/design-vs-jira.md](design/design-vs-jira.md) for the full analysis.
+Short version: bundled infra is dev-only (intentional), profile-based sizing is not yet implemented (COST-7693 gap), `RealmUser.Password` in spec is a security issue to fix pre-GA.
 
 ---
 
 ## Next Priority
 
 1. **[COST-7695](https://redhat.atlassian.net/browse/COST-7695)** — OLM bundle generation and validation
-2. **[COST-7694](https://redhat.atlassian.net/browse/COST-7694)** — Django key charset fix + secret rotation trigger
+2. **[COST-7694](https://redhat.atlassian.net/browse/COST-7694)** — Secret rotation trigger + `SecretRotated` Event
 3. **[COST-7691](https://redhat.atlassian.net/browse/COST-7691)** — NetworkPolicies + phase→Ready transition (UI Route in progress elsewhere)
 4. **[COST-7696](https://redhat.atlassian.net/browse/COST-7696)** — CI bundle pipeline (needs COST-7695 first)
