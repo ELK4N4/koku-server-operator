@@ -42,6 +42,33 @@ func TestUIDeploymentOAuthProxyHasNumericUID(t *testing.T) {
 	}
 }
 
+func TestUIDeploymentOAuthProxyHonorsInsecureSkipVerify(t *testing.T) {
+	cfg := uiTestCfg()
+	cfg.Spec.Auth.Keycloak.TLS.InsecureSkipVerify = true
+	dep := UIDeployment(cfg)
+	proxy := containerByName(t, dep.Spec.Template.Spec.Containers, "oauth-proxy")
+	found := false
+	for _, arg := range proxy.Args {
+		if arg == "--ssl-insecure-skip-verify=true" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("oauth-proxy missing --ssl-insecure-skip-verify=true when auth.keycloak.tls.insecureSkipVerify=true")
+	}
+
+	cfgSecure := uiTestCfg()
+	cfgSecure.Spec.Auth.Keycloak.TLS.InsecureSkipVerify = false
+	depSecure := UIDeployment(cfgSecure)
+	proxySecure := containerByName(t, depSecure.Spec.Template.Spec.Containers, "oauth-proxy")
+	for _, arg := range proxySecure.Args {
+		if arg == "--ssl-insecure-skip-verify=true" {
+			t.Fatal("oauth-proxy must not set --ssl-insecure-skip-verify when insecureSkipVerify=false")
+		}
+	}
+}
+
 func TestUIDeploymentAppHasWritableNginxPaths(t *testing.T) {
 	dep := UIDeployment(uiTestCfg())
 	app := containerByName(t, dep.Spec.Template.Spec.Containers, "app")
