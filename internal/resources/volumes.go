@@ -104,23 +104,18 @@ func KokuVolumeMounts(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Vo
 	return mounts
 }
 
-// ubiMinimalNonRootUID is an explicit UID for ubi-minimal init containers.
-// The image USER is root; with a pod-level runAsNonRoot SecurityContext, kubelet
-// rejects the container unless runAsUser is set to a non-root UID.
-const ubiMinimalNonRootUID int64 = 1001
-
-// ubiMinimalInitSC is the security context for ubi-minimal-based init containers
-// that must co-exist with nonRootPodSC() on the pod.
+// ubiMinimalInitSC is the security context for ubi-minimal-based init containers.
+// RunAsUser is intentionally omitted: OpenShift's SCC admission webhook injects
+// the namespace-allocated UID, so a hardcoded value would be rejected by
+// restricted-v2 which enforces the namespace UID range.
 func ubiMinimalInitSC() *corev1.SecurityContext {
 	f := false
 	t := true
-	uid := ubiMinimalNonRootUID
 	return &corev1.SecurityContext{
 		AllowPrivilegeEscalation: &f,
 		Privileged:               &f,
 		ReadOnlyRootFilesystem:   &t,
 		RunAsNonRoot:             &t,
-		RunAsUser:                &uid,
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}
 }
@@ -161,26 +156,19 @@ func WaitForValkeyInitContainer(cfg *costv1alpha1.CostManagementServiceConfig) c
 	}
 }
 
-// kokuImageUID is the numeric UID of the koku image USER ("koku").
-// Pod-level runAsNonRoot requires an explicit numeric runAsUser when the
-// image USER is a name rather than a UID; otherwise kubelet rejects the pod
-// with CreateContainerConfigError.
-const kokuImageUID int64 = 1000
-
 // kokuAppContainerSC is used for koku application containers (API, Masu,
 // Listener, Celery). readOnlyRootFilesystem is omitted because koku's Django
-// settings.py unconditionally configures a file log handler at
-// /opt/koku/koku/app.log; Django instantiates all handler objects at startup
+// settings.py unconditionally configures a file log handler at startup
 // regardless of DJANGO_LOG_HANDLERS, causing a boot failure on a read-only FS.
+// RunAsUser is omitted so OpenShift's SCC webhook injects the namespace-allocated
+// UID instead of a hardcoded value that would be rejected by restricted-v2.
 func kokuAppContainerSC() *corev1.SecurityContext {
 	f := false
 	t := true
-	uid := kokuImageUID
 	return &corev1.SecurityContext{
 		AllowPrivilegeEscalation: &f,
 		Privileged:               &f,
 		RunAsNonRoot:             &t,
-		RunAsUser:                &uid,
 	}
 }
 
@@ -203,34 +191,31 @@ func restrictedContainerSC() *corev1.SecurityContext {
 	}
 }
 
-// uiOAuthProxyContainerSC is for the oauth2-proxy sidecar. The rhceph image
-// USER is root; an explicit non-root UID is required alongside pod runAsNonRoot.
+// uiOAuthProxyContainerSC is for the oauth2-proxy sidecar.
+// RunAsUser omitted — OpenShift SCC webhook injects the namespace UID.
 func uiOAuthProxyContainerSC() *corev1.SecurityContext {
 	f := false
 	t := true
-	uid := ubiMinimalNonRootUID
 	return &corev1.SecurityContext{
 		AllowPrivilegeEscalation: &f,
 		Privileged:               &f,
 		ReadOnlyRootFilesystem:   &t,
 		RunAsNonRoot:             &t,
-		RunAsUser:                &uid,
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}
 }
 
-// uiAppContainerSC is for the koku-ui-onprem nginx container (image USER 1001).
+// uiAppContainerSC is for the koku-ui-onprem nginx container.
 // Writable nginx paths are provided via emptyDir mounts in UIDeployment.
+// RunAsUser omitted — OpenShift SCC webhook injects the namespace UID.
 func uiAppContainerSC() *corev1.SecurityContext {
 	f := false
 	t := true
-	uid := ubiMinimalNonRootUID
 	return &corev1.SecurityContext{
 		AllowPrivilegeEscalation: &f,
 		Privileged:               &f,
 		ReadOnlyRootFilesystem:   &t,
 		RunAsNonRoot:             &t,
-		RunAsUser:                &uid,
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}
 }

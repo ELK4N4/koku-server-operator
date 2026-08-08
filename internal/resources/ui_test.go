@@ -31,12 +31,16 @@ func uiTestCfg() *costv1alpha1.CostManagementServiceConfig {
 	return cfg
 }
 
-func TestUIDeploymentOAuthProxyHasNumericUID(t *testing.T) {
+func TestUIDeploymentOAuthProxySecurityContext(t *testing.T) {
 	dep := UIDeployment(uiTestCfg())
 	proxy := containerByName(t, dep.Spec.Template.Spec.Containers, "oauth-proxy")
 	sc := proxy.SecurityContext
-	if sc == nil || sc.RunAsUser == nil || *sc.RunAsUser == 0 {
-		t.Fatalf("oauth-proxy SecurityContext.RunAsUser = %v; want non-zero numeric UID (image runs as root)", sc)
+	if sc == nil {
+		t.Fatal("oauth-proxy SecurityContext is nil")
+	}
+	// RunAsUser must be absent — OpenShift SCC webhook injects the namespace UID.
+	if sc.RunAsUser != nil {
+		t.Errorf("oauth-proxy RunAsUser = %d; want nil (OpenShift SCC injects namespace UID)", *sc.RunAsUser)
 	}
 	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
 		t.Error("oauth-proxy must set runAsNonRoot=true")
@@ -93,8 +97,10 @@ func TestUIDeploymentAppHasWritableNginxPaths(t *testing.T) {
 	}
 
 	sc := app.SecurityContext
-	if sc == nil || sc.RunAsUser == nil || *sc.RunAsUser != ubiMinimalNonRootUID {
-		t.Errorf("app RunAsUser = %v; want %d (koku-ui-onprem USER)", sc, ubiMinimalNonRootUID)
+	if sc == nil {
+		t.Error("app container SecurityContext is nil")
+	} else if sc.RunAsUser != nil {
+		t.Errorf("app RunAsUser = %d; want nil (OpenShift SCC injects namespace UID)", *sc.RunAsUser)
 	}
 }
 
