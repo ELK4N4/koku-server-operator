@@ -448,6 +448,13 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		objs = append(objs, resources.ROSPartitionCleanerCronJob(cfg))
 	}
 
+	// Ingress upload handler — must be deployed before reconcileEdge so the
+	// Envoy gateway has a live backend for /api/ingress/ routes.
+	objs = append(objs,
+		resources.IngressDeployment(cfg),
+		resources.IngressService(cfg),
+	)
+
 	for _, obj := range objs {
 		if err := r.apply(ctx, cfg, obj); err != nil {
 			return Result{}, fmt.Errorf("worker %s: %w", obj.GetName(), err)
