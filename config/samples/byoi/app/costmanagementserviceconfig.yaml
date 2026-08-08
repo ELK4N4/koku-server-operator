@@ -74,7 +74,10 @@ spec:
   # Placeholder URL — replace with a real Keycloak before exercising the /api Route.
   auth:
     keycloak:
-      url: "http://keycloak.not-deployed.svc.cluster.local"
+      # JWKS fetch URL (prefer in-cluster Service). When RHBK sets a public
+      # hostname, tokens use that URL as iss — set issuerURL to match.
+      url: "http://keycloak-service.keycloak.svc.cluster.local:8080"
+      # issuerURL: "https://keycloak-keycloak.apps.example.com"
       realm: "kubernetes"
       audiences:
         - "cost-management-operator"

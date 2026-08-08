@@ -237,8 +237,17 @@ type EnvoySpec struct {
 }
 
 type KeycloakSpec struct {
-	// Full URL of the Keycloak instance. Auto-detected when empty.
+	// Full URL of the Keycloak instance used for JWKS fetch (and issuer when
+	// issuerURL is unset). Prefer an in-cluster http(s) Service URL so Envoy
+	// can reach JWKS without depending on the OpenShift router.
+	// Example: http://keycloak-service.keycloak.svc.cluster.local:8080
 	URL string `json:"url,omitempty"`
+	// IssuerURL is the JWT iss value Envoy validates (must match tokens).
+	// RHBK with a configured hostname issues tokens with the public Route URL
+	// as iss even when clients obtain them via the in-cluster Service — set
+	// this to that frontend base URL (or the full .../realms/<realm> issuer).
+	// When empty, issuer is derived from url + realm.
+	IssuerURL string `json:"issuerURL,omitempty"`
 	// Keycloak namespace. Defaults to "keycloak".
 	Namespace string `json:"namespace,omitempty"`
 	// +kubebuilder:default:=kubernetes

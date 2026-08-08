@@ -41,14 +41,26 @@ func KeycloakRealm(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	return defaultKeycloakRealm
 }
 
-// KeycloakIssuerURL is {url}/realms/{realm}.
+// KeycloakIssuerURL is the JWT iss Envoy validates.
+// Prefer spec.auth.keycloak.issuerURL when set (RHBK public hostname); otherwise
+// derive from url + realm. JWKS still uses KeycloakURL so in-cluster fetch works.
 func KeycloakIssuerURL(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	if iss := strings.TrimSpace(cfg.Spec.Auth.Keycloak.IssuerURL); iss != "" {
+		iss = strings.TrimRight(iss, "/")
+		// Allow either a full issuer (.../realms/<realm>) or a Keycloak base URL.
+		if strings.Contains(iss, "/realms/") {
+			return iss
+		}
+		return iss + "/realms/" + KeycloakRealm(cfg)
+	}
 	return KeycloakURL(cfg) + "/realms/" + KeycloakRealm(cfg)
 }
 
-// KeycloakJWKSURL is the OIDC JWKS endpoint.
+// KeycloakJWKSURL is the OIDC JWKS endpoint used by Envoy's remote_jwks fetch.
+// Always derived from url (not issuerURL) so JWKS can stay on the in-cluster Service
+// while iss matches the public RHBK hostname.
 func KeycloakJWKSURL(cfg *costv1alpha1.CostManagementServiceConfig) string {
-	return KeycloakIssuerURL(cfg) + "/protocol/openid-connect/certs"
+	return KeycloakURL(cfg) + "/realms/" + KeycloakRealm(cfg) + "/protocol/openid-connect/certs"
 }
 
 // KeycloakAudiences returns JWT audiences (CR defaults apply via kubebuilder when empty).
