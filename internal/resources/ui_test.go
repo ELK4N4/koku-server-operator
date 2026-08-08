@@ -50,7 +50,7 @@ func TestUIDeploymentAppHasWritableNginxPaths(t *testing.T) {
 	for _, m := range app.VolumeMounts {
 		mounts[m.MountPath] = m.Name
 	}
-	for _, path := range []string{"/var/lib/nginx/tmp", "/var/log/nginx", "/tmp"} {
+	for _, path := range []string{"/var/lib/nginx/tmp", "/var/log/nginx", "/tmp", "/run"} {
 		if mounts[path] == "" {
 			t.Errorf("app missing VolumeMount for %s (needed with readOnlyRootFilesystem)", path)
 		}
