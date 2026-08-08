@@ -10,9 +10,10 @@ does **not** provision DB/cache; it only connects.
 | `kafka` | AMQ Streams (Streams for Apache Kafka) — **not** part of this kustomize |
 | `cost-byoi` | App Secrets + `CostManagementServiceConfig` |
 
-Kafka is provided by AMQ Streams (chart `deploy-kafka.sh`), not a bundled
-Redpanda Deployment. Chart infrastructure tests look for `strimzi.io/kind=Kafka`
-pods and KafkaTopic CRs; a Kafka-API-compatible stand-in is not enough.
+Kafka is provided by AMQ Streams via `./config/samples/byoi/deploy-kafka.sh`
+(vendored from cost-onprem-chart), not a bundled Redpanda Deployment. Chart
+infrastructure tests look for `strimzi.io/kind=Kafka` pods and KafkaTopic CRs;
+a Kafka-API-compatible stand-in is not enough.
 
 Keycloak/OIDC is intentionally omitted (placeholder URL in the CR).
 
@@ -34,18 +35,18 @@ oc adm policy add-scc-to-user anyuid -z byoi-infra -n cost-byoi-infra
 
 ## Kafka (AMQ Streams)
 
-Deploy Kafka **before** applying the BYOI CR. From a checkout of
-[cost-onprem-chart](https://github.com/insights-onprem/cost-onprem-chart):
+Deploy Kafka **before** applying the BYOI CR. Use the copy of the chart’s
+deploy script vendored next to this fixture (see source comment in the file):
 
 ```bash
-# Defaults: KAFKA_NAMESPACE=kafka, cluster name=cost-onprem-kafka
-STORAGE_CLASS=gp3-csi LOG_LEVEL=INFO ./scripts/deploy-kafka.sh
+# From the operator repo root. Defaults: KAFKA_NAMESPACE=kafka, cluster=cost-onprem-kafka
+STORAGE_CLASS=gp3-csi LOG_LEVEL=INFO ./config/samples/byoi/deploy-kafka.sh
 # Bootstrap written to /tmp/kafka-bootstrap-servers.env — typically:
 #   cost-onprem-kafka-kafka-bootstrap.kafka.svc:9092
 ```
 
 Point `spec.kafka.bootstrapServers` at that bootstrap address (the sample CR
-already uses the default). For chart pytest:
+already uses the default). For chart pytest against an operator deploy:
 
 ```bash
 export KAFKA_NAMESPACE=kafka
@@ -54,7 +55,7 @@ export KAFKA_NAMESPACE=kafka
 Tear down Kafka separately when finished:
 
 ```bash
-./scripts/deploy-kafka.sh cleanup
+./config/samples/byoi/deploy-kafka.sh cleanup
 ```
 
 ## Apply
@@ -119,8 +120,8 @@ OpenShift user workload monitoring (`enableUserWorkload: true` in `cluster-monit
 kubectl delete -k config/samples/byoi/app --ignore-not-found
 kubectl delete -k config/samples/byoi/infra --ignore-not-found
 kubectl delete -k config/samples/byoi/monitoring --ignore-not-found
-# Kafka (if deployed via cost-onprem-chart):
-#   ./scripts/deploy-kafka.sh cleanup
+# Kafka:
+#   ./config/samples/byoi/deploy-kafka.sh cleanup
 ```
 
 ## Endpoints (from `cost-byoi`)
