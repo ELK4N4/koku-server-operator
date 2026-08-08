@@ -39,7 +39,7 @@ Last audited: 2026-08-07 against implementation in `internal/controller/` and `i
 |--------|---------|--------|-------|
 | [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API + Masu + Listener `1/1 Running` on CRC ✅, ROS API + Processor ✅, Kruize Deployment + Service + ClusterRole/Binding ✅, Bundled DB/Cache (dev-only extension) ✅. Missing: profile-based sizing, 5-minute readiness timeout with Degraded condition, Django key correct charset. |
 | [COST-7687](https://redhat.atlassian.net/browse/COST-7687) | Implement workers and scheduled jobs | ✅ | Celery Beat + 10 workers ✅, ROS Processor + Recommendation Poller + Housekeeper ✅, ROS Partition Cleaner CronJob ✅, Kruize DeletePartitions CronJob ✅. Ticket's six on-prem queues all present. |
-| [COST-7688](https://redhat.atlassian.net/browse/COST-7688) | Implement Gateway and Ingress | 🔄 | Envoy JWT proxy Deployment + Service + ConfigMap wired to OIDC issuer/audiences ✅, OpenShift Route for gateway API ✅. Missing: insights-ingress-go Deployment + Service. **Bug:** Envoy config (`envoy.go`) already routes `/api/ingress/` to the ingress service cluster, but no `IngressDeployment()` or `IngressService()` builder exists — the backend is wired but the target pod never starts. |
+| [COST-7688](https://redhat.atlassian.net/browse/COST-7688) | Implement Gateway and Ingress | ✅ | Envoy JWT proxy Deployment + Service + ConfigMap wired to OIDC issuer/audiences ✅, OpenShift Route for gateway API ✅, insights-ingress-go Deployment + Service ✅ (S3/Kafka/CA wiring, port 8080 matching Envoy backend config). |
 | [COST-7689](https://redhat.atlassian.net/browse/COST-7689) | Implement RBAC Service | ✅ | RBAC API Deployment + Service + RBAC Celery worker Deployment ✅. Deployed in Stage 4 before Koku. Both wired with rbac-user/rbac-password from DB credentials secret + cache env vars. |
 | [COST-7690](https://redhat.atlassian.net/browse/COST-7690) | Implement UI and ConsoleLink | ✅ | UI Deployment (oauth2-proxy sidecar + nginx app container) ✅, ClusterIP Service with OpenShift service-CA TLS annotation ✅, UINginxConfigMap (proxies `/api/` to Envoy) ✅, operator-generated cookie Secret ✅, ConsoleLink (cluster-scoped, finalizer cleanup in `reconcileDelete`) ✅. UIRoute deferred to COST-7691. |
 | [COST-7691](https://redhat.atlassian.net/browse/COST-7691) | Implement Routes, NetworkPolicies, and TLS | ❌ | UI Route, NetworkPolicies per component, dedicated ServiceAccounts per component, restricted-v2 SCC compliance, `status.phase → Ready` transition not implemented. Gateway Route done (COST-7688). |
@@ -81,7 +81,7 @@ Items that need fixing before GA:
 
 ## Next Priority
 
-1. **[COST-7688](https://redhat.atlassian.net/browse/COST-7688)** — Ingress upload service (Envoy already routes to it; backend pod missing)
-2. **[COST-7695](https://redhat.atlassian.net/browse/COST-7695)** — OLM bundle generation and validation
-3. **[COST-7692](https://redhat.atlassian.net/browse/COST-7692)** — Monitoring: ServiceMonitors + PrometheusRules + K8s Events
-4. **[COST-7694](https://redhat.atlassian.net/browse/COST-7694)** — Django key charset fix + secret rotation trigger
+1. **[COST-7695](https://redhat.atlassian.net/browse/COST-7695)** — OLM bundle generation and validation
+2. **[COST-7692](https://redhat.atlassian.net/browse/COST-7692)** — Monitoring: ServiceMonitors + PrometheusRules + K8s Events
+3. **[COST-7694](https://redhat.atlassian.net/browse/COST-7694)** — Django key charset fix + secret rotation trigger
+4. **[COST-7691](https://redhat.atlassian.net/browse/COST-7691)** — NetworkPolicies + phase→Ready transition (UI Route in progress elsewhere)
