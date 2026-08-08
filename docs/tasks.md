@@ -50,7 +50,7 @@ Last audited: 2026-08-07 against implementation in `internal/controller/` and `i
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
 | [COST-7693](https://redhat.atlassian.net/browse/COST-7693) | Implement upgrade and scaling flows | 🔄 | Image-tag-triggered migration re-run per service ✅, SSA re-applies desired replicas ✅. Missing: automatic rollback on migration failure, rolling update strategy (maxSurge/maxUnavailable per workload type), profile-based replica scaling. |
-| [COST-7694](https://redhat.atlassian.net/browse/COST-7694) | Implement secret rotation and CA management | 🔄 | CA bundle combine init container ✅, service-ca ConfigMap with OCP injection annotation ✅. Missing: `cost.redhat.com/rotate-secrets` annotation trigger, Django key correct charset, pod template annotation rolling restart, `SecretRotated` Event. |
+| [COST-7694](https://redhat.atlassian.net/browse/COST-7694) | Implement secret rotation and CA management | 🔄 | CA bundle combine init container ✅, service-ca ConfigMap with OCP injection annotation ✅, Django key charset fixed (`abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)`) ✅. Missing: `cost.redhat.com/rotate-secrets` annotation trigger, pod template annotation rolling restart, `SecretRotated` Event. |
 
 ## OLM & CI
 
@@ -73,7 +73,7 @@ Items where we intentionally diverge from the JIRA acceptance criteria:
 
 Items that need fixing before GA:
 
-2. **Django key charset** — Ticket specifies `abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)`. We use `base64.URLEncoding`. Affects the generated secret value (COST-7694).
+2. **Django key charset** — Fixed in PR #16; previously used `base64.URLEncoding`.
 
 3. **Profile-based sizing** — `profiles` field present in CRD but resource sizing maps not implemented (COST-7693).
 
