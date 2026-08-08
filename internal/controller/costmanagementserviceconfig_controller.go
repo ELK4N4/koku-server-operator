@@ -366,7 +366,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 		}
 	}
 	// Kruize ClusterRole/ClusterRoleBinding are cluster-scoped — no ownerRef possible.
-	// TODO: add finalizer to clean these up when the CR is deleted (COST-7681).
+	// Cleaned up by the CR finalizer in reconcileDelete().
 	for _, obj := range []client.Object{resources.KruizeClusterRole(cfg), resources.KruizeClusterRoleBinding(cfg)} {
 		if err := r.applyClusterScoped(ctx, obj); err != nil {
 			return Result{}, fmt.Errorf("kruize rbac %s: %w", obj.GetName(), err)

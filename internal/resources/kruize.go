@@ -25,8 +25,6 @@ func NameKruizeConfigMap(cfg *costv1alpha1.CostManagementServiceConfig) string {
 }
 
 // NameKruizeClusterRole returns the ClusterRole name for Kruize.
-// NOTE: ClusterRoles are cluster-scoped; a finalizer on the CR is required to
-// garbage-collect them on CR deletion (COST-7681 gap — not yet implemented).
 func NameKruizeClusterRole(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	return cfg.Name + "-kruize"
 }
