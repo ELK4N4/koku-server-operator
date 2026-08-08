@@ -55,11 +55,38 @@ kubectl -n cost-byoi describe cmsc cost-management
 kubectl -n op-sdk-scaffold-system logs deploy/op-sdk-scaffold-controller-manager -f
 ```
 
+## Monitoring (optional)
+
+Standalone Prometheus + Grafana in `cost-byoi-infra`. No Prometheus Operator required — uses static scrape configs targeting port 9000 on each service.
+
+```bash
+kubectl apply -k config/samples/byoi/monitoring
+```
+
+Access Grafana (anonymous admin, no login needed):
+```bash
+kubectl -n cost-byoi-infra port-forward svc/grafana 3000:3000
+# open http://localhost:3000
+```
+
+Access Prometheus:
+```bash
+kubectl -n cost-byoi-infra port-forward svc/prometheus 9090:9090
+# open http://localhost:9090
+```
+
+> **Note:** Scrape targets reference CR name `cost-management` in namespace `cost-byoi`.
+> If your CR name or namespace differs, edit `monitoring/prometheus.yaml` before applying.
+
+When COST-7692 ServiceMonitors are implemented, this fixture can be replaced by enabling
+OpenShift user workload monitoring (`enableUserWorkload: true` in `cluster-monitoring-config`).
+
 ## Tear down
 
 ```bash
 kubectl delete -k config/samples/byoi/app --ignore-not-found
 kubectl delete -k config/samples/byoi/infra --ignore-not-found
+kubectl delete -k config/samples/byoi/monitoring --ignore-not-found
 ```
 
 ## Endpoints (from `cost-byoi`)
@@ -70,3 +97,5 @@ kubectl delete -k config/samples/byoi/infra --ignore-not-found
 | Valkey | `valkey.cost-byoi-infra.svc.cluster.local:6379` |
 | Kafka (Redpanda, emptyDir) | `kafka.cost-byoi-infra.svc.cluster.local:9092` |
 | MinIO (S3) | `minio.cost-byoi-infra.svc.cluster.local:9000` (HTTP) |
+| Prometheus | `prometheus.cost-byoi-infra.svc.cluster.local:9090` (when monitoring applied) |
+| Grafana | `grafana.cost-byoi-infra.svc.cluster.local:3000` (when monitoring applied) |

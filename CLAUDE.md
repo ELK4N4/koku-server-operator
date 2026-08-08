@@ -96,3 +96,4 @@ Full analysis in [docs/design/design-vs-jira.md](docs/design/design-vs-jira.md).
 - [docs/design/design-vs-jira.md](docs/design/design-vs-jira.md) — design decisions and best-practice analysis
 - [docs/jira/](docs/jira/) — JIRA ticket source (COST-7678–7700)
 - `../cost-onprem-chart/cost-onprem/` — Helm chart this operator replaces (reference for resource shapes, env vars, volumes)
+- [config/samples/byoi/README.md](config/samples/byoi/README.md) — BYOI dev fixture (PostgreSQL, Valkey, Kafka, MinIO, optional Prometheus + Grafana)
