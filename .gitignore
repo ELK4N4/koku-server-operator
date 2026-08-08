@@ -26,5 +26,7 @@ go.work
 *.swo
 *~
 
-# Git worktrees (local agent/dev isolation)
+# Git worktrees and Claude session data
 .worktrees/
+.claude/
+docs/.markdown-viewer-temp.html
