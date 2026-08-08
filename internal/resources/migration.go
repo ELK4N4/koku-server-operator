@@ -77,6 +77,7 @@ echo "DB ready after ${ELAPSED}s"
 mkdir -p /tmp/prometheus
 cd /opt/koku/koku
 python manage.py migrate --noinput
+echo "Migrations completed successfully"
 echo "=== Migrations completed ==="`
 }
 
