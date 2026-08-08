@@ -414,7 +414,7 @@ __LUA__
             address:
               socket_address:
                 address: __ROS_HOST__
-                port_value: 8080
+                port_value: 8000
   - name: koku-api-backend
     connect_timeout: 5s
     type: STRICT_DNS
@@ -450,7 +450,7 @@ __LUA__
             address:
               socket_address:
                 address: __RBAC_HOST__
-                port_value: 8000
+                port_value: 8080
   - name: keycloak_jwks
     connect_timeout: 5s
     type: STRICT_DNS

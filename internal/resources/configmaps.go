@@ -80,7 +80,7 @@ func AWSConfigMap(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.ConfigM
 			Labels:    Labels(cfg, "cost-management"),
 		},
 		Data: map[string]string{
-			"config": "[default]\nregion = " + region + "\ns3 =\n  addressing_style = " + style + "\n",
+			"config": "[default]\nregion = " + region + "\ns3 =\n  signature_version = s3v4\n  addressing_style = " + style + "\n",
 		},
 	}
 }

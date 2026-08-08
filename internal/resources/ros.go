@@ -348,8 +348,37 @@ func ROSProcessorDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *apps
 	falseVal := false
 
 	cdappVol, cdappMount := cdappVolumeAndMount(cfg)
-	volumes := []corev1.Volume{cdappVol}
-	mounts := []corev1.VolumeMount{cdappMount}
+	volumes := []corev1.Volume{
+		cdappVol,
+		// CA combine volumes (same ConfigMaps as KokuVolumes; mount path matches chart SSL_CERT_FILE).
+		{
+			Name: "ca-scripts",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: NameCACombineConfigMap(cfg)},
+					Items: []corev1.KeyToPath{
+						{Key: "combine-ca.sh", Path: "combine-ca.sh", Mode: int32Ptr(0755)},
+					},
+				},
+			},
+		},
+		{
+			Name: "ca-source",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: NameServiceCAConfigMap(cfg)},
+				},
+			},
+		},
+		{
+			Name:         "combined-ca-bundle",
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		},
+	}
+	mounts := []corev1.VolumeMount{
+		cdappMount,
+		{Name: "combined-ca-bundle", MountPath: "/etc/ssl/certs/ca-bundle", ReadOnly: true},
+	}
 	if v, m := kafkaTLSVolumeAndMount(cfg); v != nil {
 		volumes = append(volumes, *v)
 		mounts = append(mounts, *m)
@@ -385,6 +414,7 @@ func ROSProcessorDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *apps
 						waitForROSDB(cfg),
 						waitForKafka(cfg),
 						waitForKruize(cfg),
+						CACombineInitContainer(cfg),
 					},
 					Containers: []corev1.Container{{
 						Name:            "ros-processor",
