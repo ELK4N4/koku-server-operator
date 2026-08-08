@@ -2,13 +2,16 @@ package resources
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
 )
+
+// djangoKeyCharset is the character set specified by the COST-7694 ticket for
+// Django secret keys. It matches Django's own recommendation for SECRET_KEY.
+const djangoKeyCharset = "abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*(-_=+)"
 
 // DBCredentialsSecret builds the Secret that holds all database passwords.
 // If the secret already exists the caller should not overwrite it
@@ -26,15 +29,15 @@ func DBCredentialsSecret(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.
 		},
 		StringData: map[string]string{
 			"postgres-user":     "postgres",
-			"postgres-password": randomPassword(32),
+			"postgres-password": randomPassword(),
 			"koku-user":         "koku_user",
-			"koku-password":     randomPassword(32),
+			"koku-password":     randomPassword(),
 			"ros-user":          "ros_user",
-			"ros-password":      randomPassword(32),
+			"ros-password":      randomPassword(),
 			"kruize-user":       "kruize_user",
-			"kruize-password":   randomPassword(32),
+			"kruize-password":   randomPassword(),
 			"rbac-user":         "rbac_user",
-			"rbac-password":     randomPassword(32),
+			"rbac-password":     randomPassword(),
 		},
 	}
 }
@@ -52,7 +55,7 @@ func DjangoSecret(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.Secret 
 			Labels:    Labels(cfg, "cost-management"),
 		},
 		StringData: map[string]string{
-			"secret-key": randomPassword(50),
+			"secret-key": djangoSecretKey(50),
 		},
 	}
 }
@@ -78,10 +81,30 @@ func StorageCredentialsSecret(cfg *costv1alpha1.CostManagementServiceConfig) *co
 	}
 }
 
-func randomPassword(n int) string {
+// djangoSecretKey generates an n-character key using djangoKeyCharset.
+// The modulo bias is < 0.5% across the 50-char charset and is acceptable
+// for a non-cryptographic Django secret key.
+func djangoSecretKey(n int) string {
 	b := make([]byte, n)
 	_, _ = rand.Read(b)
-	return base64.URLEncoding.EncodeToString(b)[:n]
+	key := make([]byte, n)
+	for i, v := range b {
+		key[i] = djangoKeyCharset[int(v)%len(djangoKeyCharset)]
+	}
+	return string(key)
+}
+
+func randomPassword() string {
+	const n = 32
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	key := make([]byte, n)
+	// base64URL alphabet (A-Za-z0-9_-) is safe for all database password fields.
+	const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+	for i, v := range b {
+		key[i] = alpha[int(v)%len(alpha)]
+	}
+	return string(key)
 }
 
 // EnvFromSecret returns a corev1.EnvVar that reads a value from a named Secret key.
