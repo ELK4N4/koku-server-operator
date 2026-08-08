@@ -65,8 +65,9 @@ func main() {
 	}
 
 	if err = (&controller.CostManagementServiceConfigReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("koku-server-operator"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "CostManagementServiceConfig")
 		os.Exit(1)

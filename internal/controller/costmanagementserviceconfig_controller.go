@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -32,7 +33,8 @@ const (
 
 type CostManagementServiceConfigReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=costmanagement-service-cfg.openshift.io,resources=costmanagementserviceconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -41,13 +43,14 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=jobs;cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services;configmaps;secrets;serviceaccounts;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors;prometheusrules,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes/custom-host,verbs=create
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=config.openshift.io,resources=ingresses,verbs=get
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -138,16 +141,22 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 		func() (Result, error) { return r.reconcileCoreServices(ctx, cfg) },
 		func() (Result, error) { return r.reconcileWorkers(ctx, cfg) },
 		func() (Result, error) { return r.reconcileEdge(ctx, cfg) },
+		func() (Result, error) { return r.reconcileMonitoring(ctx, cfg) },
 	})
 
 	if err != nil {
 		applyPhaseError(cfg, err)
+		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "ReconcileError", "%v", err)
 		return ctrl.Result{RequeueAfter: requeueSlow}, err
 	}
 	if !result.IsZero() {
 		return ctrl.Result{RequeueAfter: result.RequeueAfter}, nil
 	}
 
+	// Emit Ready event only on the first transition to Ready (phase was not Ready before).
+	if cfg.Status.Phase != costv1alpha1.PhaseReady {
+		r.Recorder.Event(cfg, corev1.EventTypeNormal, "Ready", "All components are running")
+	}
 	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "AllComponentsReady", "All components are running")
 	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "ReconcileComplete", "")
 	cfg.Status.Phase = costv1alpha1.PhaseReady
@@ -289,6 +298,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 	// All steps completed.
 	r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionTrue, "MigrationComplete", "all schema migrations succeeded")
 	r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionFalse, "MigrationSucceeded", "")
+	r.Recorder.Event(cfg, corev1.EventTypeNormal, "MigrationComplete", "All schema migrations succeeded (Koku → ROS → RBAC)")
 	return Result{}, nil
 }
 
@@ -318,6 +328,8 @@ func (r *CostManagementServiceConfigReconciler) runMigrationStep(
 			return Result{}, fmt.Errorf("create %s: %w", jobName, createErr)
 		}
 		progress("job created")
+		r.Recorder.Eventf(cfg, corev1.EventTypeNormal, "MigrationStarted",
+			"Migration step %d/%d started: %s", stepNum, totalSteps, jobName)
 		return Result{RequeueAfter: requeueFast}, nil
 	}
 	if err != nil {
@@ -341,6 +353,8 @@ func (r *CostManagementServiceConfigReconciler) runMigrationStep(
 		r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse, "MigrationFailed", msg)
 		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, "MigrationFailed", msg)
 		cfg.Status.Phase = costv1alpha1.PhaseDegraded
+		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "MigrationFailed",
+			"Migration job %s exhausted retries — manual intervention required", jobName)
 		return Result{Stop: true}, nil
 	}
 
@@ -536,6 +550,35 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		return Result{}, fmt.Errorf("consolelink: %w", err)
 	}
 
+	return Result{}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Stage 8 — Monitoring (ServiceMonitors + PrometheusRules)
+// -----------------------------------------------------------------------------
+
+// reconcileMonitoring applies ServiceMonitor and PrometheusRule objects when
+// spec.monitoring.enabled is true (the default). Both types are Prometheus
+// Operator CRDs; the stage is silently skipped when those CRDs are absent so
+// the operator works on clusters without the monitoring stack.
+func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	if !costv1alpha1.BoolVal(cfg.Spec.Monitoring.Enabled, true) {
+		return Result{}, nil
+	}
+	for _, obj := range []client.Object{
+		resources.AppServiceMonitor(cfg),
+		resources.KruizeServiceMonitor(cfg),
+		resources.PrometheusRules(cfg),
+	} {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			// Monitoring CRDs may not be installed — log and continue rather than
+			// blocking the pipeline.
+			log.FromContext(ctx).Info("monitoring resource skipped (CRD absent?)",
+				"kind", obj.GetObjectKind().GroupVersionKind().Kind,
+				"name", obj.GetName(),
+				"error", err.Error())
+		}
+	}
 	return Result{}, nil
 }
 
