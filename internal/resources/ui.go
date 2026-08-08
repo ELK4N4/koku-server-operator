@@ -178,6 +178,12 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 		"--cookie-expire=" + spec.OAuthProxy.CookieExpire,
 		"--provider-ca-file=/etc/keycloak-ca/ca.crt",
 	}
+	// Public Keycloak Routes use the OpenShift router cert, not the service CA
+	// mounted at provider-ca-file. Honor auth.keycloak.tls.insecureSkipVerify
+	// so oauth2-proxy can complete OIDC discovery in that setup.
+	if cfg.Spec.Auth.Keycloak.TLS.InsecureSkipVerify {
+		proxyArgs = append(proxyArgs, "--ssl-insecure-skip-verify=true")
+	}
 
 	vols := []corev1.Volume{
 		{

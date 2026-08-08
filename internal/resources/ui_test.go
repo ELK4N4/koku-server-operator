@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"slices"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -39,6 +40,26 @@ func TestUIDeploymentOAuthProxyHasNumericUID(t *testing.T) {
 	}
 	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
 		t.Error("oauth-proxy must set runAsNonRoot=true")
+	}
+}
+
+func TestUIDeploymentOAuthProxyHonorsInsecureSkipVerify(t *testing.T) {
+	const skipVerifyArg = "--ssl-insecure-skip-verify=true"
+
+	cfg := uiTestCfg()
+	cfg.Spec.Auth.Keycloak.TLS.InsecureSkipVerify = true
+	dep := UIDeployment(cfg)
+	proxy := containerByName(t, dep.Spec.Template.Spec.Containers, "oauth-proxy")
+	if !slices.Contains(proxy.Args, skipVerifyArg) {
+		t.Fatal("oauth-proxy missing --ssl-insecure-skip-verify=true when auth.keycloak.tls.insecureSkipVerify=true")
+	}
+
+	cfgSecure := uiTestCfg()
+	cfgSecure.Spec.Auth.Keycloak.TLS.InsecureSkipVerify = false
+	depSecure := UIDeployment(cfgSecure)
+	proxySecure := containerByName(t, depSecure.Spec.Template.Spec.Containers, "oauth-proxy")
+	if slices.Contains(proxySecure.Args, skipVerifyArg) {
+		t.Fatal("oauth-proxy must not set --ssl-insecure-skip-verify when insecureSkipVerify=false")
 	}
 }
 
