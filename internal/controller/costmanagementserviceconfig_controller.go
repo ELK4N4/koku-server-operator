@@ -259,10 +259,10 @@ func (r *CostManagementServiceConfigReconciler) reconcileInfrastructure(ctx cont
 // Stage 3 — DB migration gate
 // -----------------------------------------------------------------------------
 
-// reconcileMigration runs the four migration Jobs sequentially:
-// Koku → ROS → RBAC migrate+seed. Each Job must complete before the next
-// is created. Previously-succeeded Jobs are not re-created unless the image
-// tag changed (upgrade detection).
+// reconcileMigration runs migration Jobs sequentially:
+// Koku → ROS → RBAC migrate+seed → (optional) RBAC admin-bootstrap.
+// Each Job must complete before the next is created. Previously-succeeded
+// Jobs are not re-created unless the image-tag annotation changed.
 func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
 	type migStep struct {
 		name     string
@@ -283,9 +283,16 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 		},
 		{
 			name:     resources.NameRBACMigration(cfg),
-			imageTag: cfg.Spec.RBAC.Image.Tag,
+			imageTag: resources.RBACSeedJobTag(cfg.Spec.RBAC.Image.Tag),
 			build:    func() *batchv1.Job { return resources.RBACMigrationJob(cfg, cfg.Spec.RBAC.Image.Tag) },
 		},
+	}
+	if resources.AdminBootstrapJob(cfg, cfg.Spec.RBAC.Image.Tag) != nil {
+		steps = append(steps, migStep{
+			name:     resources.NameRBACAdminBootstrap(cfg),
+			imageTag: resources.RBACSeedJobTag(cfg.Spec.RBAC.Image.Tag),
+			build:    func() *batchv1.Job { return resources.AdminBootstrapJob(cfg, cfg.Spec.RBAC.Image.Tag) },
+		})
 	}
 
 	for i, step := range steps {
