@@ -173,31 +173,8 @@ func RBACMigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag st
 }
 
 func rbacMigrationEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVar {
-	dbSecret := NameDBCredentials(cfg)
-	host := DatabaseHost(cfg)
-	port := cfg.Spec.Database.Port
-	if port == 0 {
-		port = 5432
-	}
-	env := []corev1.EnvVar{
-		EnvVal("API_PATH_PREFIX", "/api/rbac/v1"),
-		EnvVal("DATABASE_NAME", rbacDBName),
-		EnvFromSecret("DATABASE_USER", dbSecret, "rbac-user"),
-		EnvFromSecret("DATABASE_PASSWORD", dbSecret, "rbac-password"),
-		EnvVal("DATABASE_HOST", host),
-		EnvVal("DATABASE_PORT", int32String(port)),
-		EnvVal("REDIS_HOST", CacheHost(cfg)),
-		EnvVal("REDIS_PORT", "6379"),
-		// Disable features that need external services during migration
-		EnvVal("CLOWDER_ENABLED", "false"),
-	}
-	if cfg.Spec.Cache.Auth.Enabled && cfg.Spec.Cache.Auth.SecretName != "" {
-		env = append(env,
-			EnvFromSecretOptional("REDIS_USERNAME", cfg.Spec.Cache.Auth.SecretName, "redis-username"),
-			EnvFromSecret("REDIS_PASSWORD", cfg.Spec.Cache.Auth.SecretName, "redis-password"),
-		)
-	}
-	return env
+	// Same on-prem env as API/worker so seeds (V2 UUIDs, BOP bypass) succeed.
+	return rbacEnv(cfg)
 }
 
 func rbacMigrationScript(host, port string) string {

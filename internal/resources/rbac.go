@@ -12,12 +12,18 @@ import (
 const rbacAPIPort = int32(8080)
 
 // rbacEnv returns the standard env vars for all RBAC containers.
+// Values mirror cost-onprem-chart _helpers-rbac.tpl (on-prem: no BOP, no Kafka,
+// placeholder system role UUIDs for V2 bootstrap).
 func rbacEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVar {
 	dbSecret := NameDBCredentials(cfg)
 	host := DatabaseHost(cfg)
 	port := cfg.Spec.Database.Port
 	if port == 0 {
 		port = 5432
+	}
+	sslMode := cfg.Spec.Database.SSLMode
+	if sslMode == "" {
+		sslMode = "disable"
 	}
 	env := []corev1.EnvVar{
 		EnvVal("API_PATH_PREFIX", "/api/rbac/v1"),
@@ -28,7 +34,23 @@ func rbacEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVar {
 		EnvVal("DATABASE_PORT", int32String(port)),
 		EnvVal("REDIS_HOST", CacheHost(cfg)),
 		EnvVal("REDIS_PORT", "6379"),
+		EnvFromSecret("DJANGO_SECRET_KEY", NameDjangoSecret(cfg), "secret-key"),
+		EnvVal("V2_BOOTSTRAP_TENANT", "True"),
+		// Placeholder UUIDs required by RBAC V2/Kessel bootstrap (same as chart).
+		EnvVal("SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID", "00000000-0000-4000-a000-000000000001"),
+		EnvVal("SYSTEM_DEFAULT_TENANT_ROLE_UUID", "00000000-0000-4000-a000-000000000002"),
+		EnvVal("SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID", "00000000-0000-4000-a000-000000000003"),
+		EnvVal("SYSTEM_ADMIN_TENANT_ROLE_UUID", "00000000-0000-4000-a000-000000000004"),
 		EnvVal("CLOWDER_ENABLED", "false"),
+		// On-prem has no Back Office Proxy; accept X-Rh-Identity from Envoy.
+		EnvVal("BYPASS_BOP_VERIFICATION", "True"),
+		EnvVal("KAFKA_ENABLED", "false"),
+		EnvVal("PGSSLMODE", sslMode),
+		EnvVal("DJANGO_LOG_LEVEL", "INFO"),
+		EnvVal("RBAC_LOG_LEVEL", "INFO"),
+		EnvVal("DJANGO_LOG_FORMATTER", "simple"),
+		EnvVal("DJANGO_LOG_HANDLERS", "console"),
+		EnvVal("ACCESS_CACHE_ENABLED", "True"),
 	}
 	if cfg.Spec.Cache.Auth.Enabled && cfg.Spec.Cache.Auth.SecretName != "" {
 		env = append(env,
