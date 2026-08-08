@@ -118,6 +118,25 @@ func TestEnvoyYAMLContainsIssuerAudiencesAndKokuCluster(t *testing.T) {
 			t.Errorf("EnvoyYAML missing %q", want)
 		}
 	}
+	// Backend ports must match ROS Service (8000) and RBAC Service (8080).
+	rosIdx := strings.Index(yaml, "name: ros-api-backend")
+	rbacIdx := strings.Index(yaml, "name: rbac-api-backend")
+	kokuIdx := strings.Index(yaml, "name: koku-api-backend")
+	if rosIdx < 0 || rbacIdx < 0 || kokuIdx < 0 {
+		t.Fatal("missing ros/rbac/koku backend clusters")
+	}
+	rosBlock := yaml[rosIdx:kokuIdx]
+	if !strings.Contains(rosBlock, "port_value: 8000") {
+		t.Error("ros-api-backend should use port 8000")
+	}
+	rbacEnd := strings.Index(yaml[rbacIdx+1:], "\n  - name:")
+	rbacBlock := yaml[rbacIdx:]
+	if rbacEnd >= 0 {
+		rbacBlock = yaml[rbacIdx : rbacIdx+1+rbacEnd]
+	}
+	if !strings.Contains(rbacBlock, "port_value: 8080") {
+		t.Error("rbac-api-backend should use port 8080")
+	}
 	for _, tok := range []string{"__HTTP_PORT__", "__ISSUER__", "__LUA__", "__KOKU_HOST__", "__KC_TLS__"} {
 		if strings.Contains(yaml, tok) {
 			t.Errorf("EnvoyYAML left unsubstituted token %q", tok)
