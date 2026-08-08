@@ -210,6 +210,7 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 		// Writable paths for nginx under readOnlyRootFilesystem.
 		{Name: "nginx-tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 		{Name: "nginx-log", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		{Name: "nginx-run", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 		{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 	}
 
@@ -275,6 +276,8 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 								{Name: "nginx-config", MountPath: "/opt/app-root/etc/nginx.default.d/nginx.conf", SubPath: "nginx.conf"},
 								{Name: "nginx-tmp", MountPath: "/var/lib/nginx/tmp"},
 								{Name: "nginx-log", MountPath: "/var/log/nginx"},
+								// pid /run/nginx.pid from the image's nginx.conf
+								{Name: "nginx-run", MountPath: "/run"},
 								{Name: "tmp", MountPath: "/tmp"},
 							},
 							SecurityContext: uiAppContainerSC(),
