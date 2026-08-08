@@ -6,14 +6,17 @@ does **not** provision DB/cache; it only connects.
 
 | Namespace | Contents |
 |-----------|----------|
-| `cost-byoi-infra` | PostgreSQL, Valkey, MinIO |
-| `kafka` | AMQ Streams (Streams for Apache Kafka) — **not** part of this kustomize |
+| `cost-byoi-infra` | PostgreSQL, Valkey, MinIO (+ optional Redpanda — see below) |
+| `kafka` | AMQ Streams (recommended) — via `deploy-kafka.sh`, not the infra kustomize |
 | `cost-byoi` | App Secrets + `CostManagementServiceConfig` |
 
-Kafka is provided by AMQ Streams via `./config/samples/byoi/deploy-kafka.sh`
-(vendored from cost-onprem-chart), not a bundled Redpanda Deployment. Chart
-infrastructure tests look for `strimzi.io/kind=Kafka` pods and KafkaTopic CRs;
-a Kafka-API-compatible stand-in is not enough.
+**Kafka options**
+
+1. **AMQ Streams (recommended)** — `./config/samples/byoi/deploy-kafka.sh`  
+   Required for chart infra tests (`strimzi.io/kind=Kafka`, KafkaTopics).
+2. **Lightweight Redpanda** — `config/samples/byoi/infra/kafka.yaml`  
+   Kafka-API compatible, emptyDir, no OLM. Fine for smoke connectivity; **not**
+   enough for AMQ Streams–specific pytest. Not in the default infra kustomize.
 
 Keycloak/OIDC is intentionally omitted (placeholder URL in the CR).
 
@@ -58,10 +61,33 @@ Tear down Kafka separately when finished:
 ./config/samples/byoi/deploy-kafka.sh cleanup
 ```
 
+### Lightweight alternative (Redpanda)
+
+Single-node Redpanda in `cost-byoi-infra` — optional, not part of
+`kubectl apply -k config/samples/byoi/infra`:
+
+```bash
+# Needs anyuid on byoi-infra (same as postgres/minio)
+kubectl apply -f config/samples/byoi/infra/kafka.yaml
+kubectl -n cost-byoi-infra rollout status deploy/kafka --timeout=180s
+```
+
+Point the CR at Redpanda instead of AMQ Streams:
+
+```yaml
+spec:
+  kafka:
+    bootstrapServers: "kafka.cost-byoi-infra.svc.cluster.local:9092"
+    securityProtocol: "PLAINTEXT"
+```
+
+Do **not** use `KAFKA_NAMESPACE=cost-byoi-infra` for chart kafka suite expectations
+that require Strimzi; use AMQ Streams for those.
+
 ## Apply
 
 ```bash
-# 0. Kafka (AMQ Streams) — see above
+# 0. Kafka — AMQ Streams (recommended) or Redpanda (lightweight); see above
 
 # 1. Infrastructure (Postgres, Valkey, MinIO)
 kubectl apply -k config/samples/byoi/infra
@@ -130,7 +156,8 @@ kubectl delete -k config/samples/byoi/monitoring --ignore-not-found
 |---------|---------|
 | PostgreSQL | `postgresql.cost-byoi-infra.svc.cluster.local:5432` |
 | Valkey | `valkey.cost-byoi-infra.svc.cluster.local:6379` |
-| Kafka (AMQ Streams) | `cost-onprem-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092` |
+| Kafka (AMQ Streams, recommended) | `cost-onprem-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092` |
+| Kafka (Redpanda, optional) | `kafka.cost-byoi-infra.svc.cluster.local:9092` |
 | MinIO (S3) | `minio.cost-byoi-infra.svc.cluster.local:9000` (HTTP) |
 | Prometheus | `prometheus.cost-byoi-infra.svc.cluster.local:9090` (when monitoring applied) |
 | Grafana | `grafana.cost-byoi-infra.svc.cluster.local:3000` (when monitoring applied) |

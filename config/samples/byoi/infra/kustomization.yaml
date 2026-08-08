@@ -8,3 +8,5 @@ resources:
   - postgresql.yaml
   - valkey.yaml
   - minio.yaml
+  # kafka.yaml (Redpanda) is optional — apply with kubectl apply -f …/kafka.yaml
+  # Prefer ../deploy-kafka.sh (AMQ Streams) for chart infra tests.

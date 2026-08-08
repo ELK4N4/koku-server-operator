@@ -1,0 +1,107 @@
+# Optional lightweight Kafka API stand-in (single-node Redpanda). Dev/test only.
+# Not included in the default infra kustomization — prefer AMQ Streams via
+# ../deploy-kafka.sh when running chart infra tests (strimzi.io/kind=Kafka).
+# Apply explicitly: kubectl apply -f config/samples/byoi/infra/kafka.yaml
+# Then set CR bootstrapServers to kafka.cost-byoi-infra.svc.cluster.local:9092
+#
+# emptyDir is intentional — fixture does not need durable broker storage, and
+# avoids OpenShift PVC ownership issues with the redpanda UID.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: cost-byoi-infra
+  labels:
+    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/component: kafka
+spec:
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: kafka
+  selector:
+    app.kubernetes.io/name: kafka
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: cost-byoi-infra
+  labels:
+    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/component: kafka
+    app.kubernetes.io/name: kafka
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: koku-server-operator-byoi
+        app.kubernetes.io/component: kafka
+        app.kubernetes.io/name: kafka
+    spec:
+      serviceAccountName: byoi-infra
+      securityContext:
+        fsGroup: 101
+        runAsUser: 101
+        runAsNonRoot: true
+      containers:
+        - name: redpanda
+          image: docker.io/redpandadata/redpanda:v24.3.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - redpanda
+            - start
+            - --overprovisioned
+            - --smp
+            - "1"
+            - --memory
+            - 512M
+            - --reserve-memory
+            - 0M
+            - --node-id
+            - "0"
+            - --check=false
+            - --kafka-addr
+            - INTERNAL://0.0.0.0:9092
+            - --advertise-kafka-addr
+            - INTERNAL://kafka.cost-byoi-infra.svc.cluster.local:9092
+            - --rpc-addr
+            - 0.0.0.0:33145
+            - --advertise-rpc-addr
+            - 127.0.0.1:33145
+          ports:
+            - name: kafka
+              containerPort: 9092
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/redpanda/data
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            tcpSocket:
+              port: kafka
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket:
+              port: kafka
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
