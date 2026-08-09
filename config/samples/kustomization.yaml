@@ -1,4 +1,4 @@
 ## Append samples of your project ##
 resources:
-- cost_v1alpha1_costmanagement.yaml
+- service.costmanagement_v1alpha1_costmanagementserviceconfig.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

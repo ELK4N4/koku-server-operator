@@ -5,9 +5,9 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - cost.redhat.com
+  - service.costmanagement.openshift.io
   resources:
-  - costmanagements
+  - costmanagementserviceconfigs
   verbs:
   - create
   - delete
@@ -17,15 +17,15 @@ rules:
   - update
   - watch
 - apiGroups:
-  - cost.redhat.com
+  - service.costmanagement.openshift.io
   resources:
-  - costmanagements/finalizers
+  - costmanagementserviceconfigs/finalizers
   verbs:
   - update
 - apiGroups:
-  - cost.redhat.com
+  - service.costmanagement.openshift.io
   resources:
-  - costmanagements/status
+  - costmanagementserviceconfigs/status
   verbs:
   - get
   - patch
