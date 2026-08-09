@@ -94,6 +94,8 @@ Full analysis in [docs/design/design-vs-jira.md](docs/design/design-vs-jira.md).
 - [docs/development/crc-testing.md](docs/development/crc-testing.md) — local development and CRC testing guide
 - [docs/tasks.md](docs/tasks.md) — implementation status per JIRA ticket
 - [docs/design/design-vs-jira.md](docs/design/design-vs-jira.md) — design decisions and best-practice analysis
+- [docs/design/security-context-strategy.md](docs/design/security-context-strategy.md) — OpenShift SCC strategy: why no runAsUser, restricted-v2 vs anyuid, comparison with Helm chart and SaaS
+- [docs/design/koku-django-log-handler-problem.md](docs/design/koku-django-log-handler-problem.md) — why readOnlyRootFilesystem is blocked on koku containers; fix required in koku
 - [docs/jira/](docs/jira/) — JIRA ticket source (COST-7678–7700)
 - `../cost-onprem-chart/cost-onprem/` — Helm chart this operator replaces (reference for resource shapes, env vars, volumes)
 - [config/samples/byoi/README.md](config/samples/byoi/README.md) — BYOI dev fixture (PostgreSQL, Valkey, Kafka, MinIO, optional Prometheus + Grafana)
