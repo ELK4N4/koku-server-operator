@@ -29,16 +29,27 @@ func NameRBACMigration(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	return cfg.Name + "-rbac-migrate"
 }
 
+// NameRBACAdminBootstrap returns the RBAC admin-bootstrap Job name.
+func NameRBACAdminBootstrap(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	return cfg.Name + "-rbac-admin-bootstrap"
+}
+
+// rbacSeedRevision bumps when the migrate/seed script changes so completed
+// Jobs are recreated (runMigrationStep keys off the image-tag annotation).
+const rbacSeedRevision = "cmseed1"
+
+// RBACSeedJobTag returns the annotation value used for RBAC migrate/bootstrap
+// Jobs (image tag + seed revision).
+func RBACSeedJobTag(imageTag string) string {
+	return imageTag + "-" + rbacSeedRevision
+}
+
 // -----------------------------------------------------------------------------
 // Koku migration
 // -----------------------------------------------------------------------------
 
 // MigrationJob builds the Koku Django migration Job.
 func MigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag string) *batchv1.Job {
-	backoff := MigrationBackoffLimit
-	deadline := MigrationDeadlineSeconds
-	ttl := int32(3600)
-
 	image := cfg.Spec.CostManagement.API.Image.Repository + ":" + cfg.Spec.CostManagement.API.Image.Tag
 	if image == ":" {
 		image = "quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku:latest"
@@ -56,7 +67,6 @@ func MigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag string
 		"cost-management-migration", migrationScript(), env,
 		KokuVolumeMounts(cfg), KokuVolumes(cfg),
 		[]corev1.Container{CACombineInitContainer(cfg)},
-		backoff, deadline, ttl,
 	)
 }
 
@@ -87,10 +97,6 @@ echo "=== Migrations completed ==="`
 
 // ROSMigrationJob builds the ROS schema migration Job.
 func ROSMigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag string) *batchv1.Job {
-	backoff := MigrationBackoffLimit
-	deadline := MigrationDeadlineSeconds
-	ttl := int32(3600)
-
 	image := cfg.Spec.ROS.Image.Repository + ":" + cfg.Spec.ROS.Image.Tag
 
 	dbSecret := NameDBCredentials(cfg)
@@ -120,7 +126,6 @@ func ROSMigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag str
 
 	return migrationJob(cfg, NameROSMigration(cfg), image, imageTag,
 		"ros-migration", script, env, mounts, vols, nil,
-		backoff, deadline, ttl,
 	)
 }
 
@@ -148,14 +153,10 @@ echo "=== ROS migrations completed ==="`
 // RBAC migration + seeding
 // -----------------------------------------------------------------------------
 
-// RBACMigrationJob builds the RBAC schema migration + built-in seeding Job.
-// This combines `manage.py migrate`, `manage.py seeds`, and public tenant
-// bootstrapping into a single Job — the same pattern as the Helm chart.
+// RBACMigrationJob builds the RBAC schema migration + chart-parity seeding Job.
+// Combines migrate, built-in seeds, cost-management/sources role seed,
+// admin_default groups, bootstrap_tenants, and platform_default cleanup.
 func RBACMigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag string) *batchv1.Job {
-	backoff := MigrationBackoffLimit
-	deadline := MigrationDeadlineSeconds
-	ttl := int32(3600)
-
 	image := cfg.Spec.RBAC.Image.Repository + ":" + cfg.Spec.RBAC.Image.Tag
 
 	env := rbacMigrationEnv(cfg)
@@ -167,20 +168,23 @@ func RBACMigrationJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag st
 	}}
 	mounts := []corev1.VolumeMount{{Name: "tmp", MountPath: "/tmp"}}
 
-	return migrationJob(cfg, NameRBACMigration(cfg), image, imageTag,
+	return migrationJob(cfg, NameRBACMigration(cfg), image, RBACSeedJobTag(imageTag),
 		"rbac-migration", script, env, mounts, vols, nil,
-		backoff, deadline, ttl,
 	)
 }
 
 func rbacMigrationEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVar {
 	// Same on-prem env as API/worker so seeds (V2 UUIDs, BOP bypass) succeed.
-	return rbacEnv(cfg)
+	return append(rbacEnv(cfg),
+		EnvVal("PERMISSION_SEEDING_ENABLED", "True"),
+		EnvVal("ROLE_SEEDING_ENABLED", "True"),
+		EnvVal("GROUP_SEEDING_ENABLED", "True"),
+	)
 }
 
 func rbacMigrationScript(host, port string) string {
 	return `set -e
-echo "=== RBAC Database Migrations ==="
+echo "=== insights-rbac migration job ==="
 DB_HOST="${DATABASE_HOST:-` + host + `}"
 DB_PORT="${DATABASE_PORT:-` + port + `}"
 ELAPSED=0
@@ -194,11 +198,272 @@ done
 echo "DB ready after ${ELAPSED}s"
 cd /opt/rbac/rbac
 python manage.py migrate --noinput
-echo "=== Schema migrations complete ==="
+echo "✓ Migrations complete"
 python manage.py seeds --skip-notifications
-echo "=== Built-in role seeding complete ==="
-python manage.py bootstrap_tenants --all -v 2 || echo "WARNING: bootstrap_tenants non-fatal, continuing"
-echo "=== RBAC migrations and seeding completed ==="`
+echo "✓ Built-in seeding complete"
+
+echo "Seeding cost-management permissions and roles..."
+python manage.py shell <<'SEED_SCRIPT'
+from api.models import Tenant
+from management.models import Permission, Role, Access
+
+public_tenant = Tenant.objects.get(tenant_name='public')
+
+cm_perms = [
+    ("aws.account", "*"), ("aws.account", "read"),
+    ("aws.organizational_unit", "*"), ("aws.organizational_unit", "read"),
+    ("azure.subscription_guid", "*"), ("azure.subscription_guid", "read"),
+    ("gcp.account", "*"), ("gcp.account", "read"),
+    ("gcp.project", "*"), ("gcp.project", "read"),
+    ("openshift.cluster", "*"), ("openshift.cluster", "read"),
+    ("openshift.node", "*"), ("openshift.node", "read"),
+    ("openshift.project", "*"), ("openshift.project", "read"),
+    ("cost_model", "*"), ("cost_model", "read"), ("cost_model", "write"),
+    ("settings", "*"), ("settings", "read"), ("settings", "write"),
+    ("*", "*"),
+]
+
+perm_count = 0
+for res, verb in cm_perms:
+    _, created = Permission.objects.get_or_create(
+        application="cost-management", resource_type=res, verb=verb,
+        defaults={"permission": f"cost-management:{res}:{verb}", "tenant": public_tenant}
+    )
+    if created:
+        perm_count += 1
+
+_, created = Permission.objects.get_or_create(
+    application="sources", resource_type="*", verb="*",
+    defaults={"permission": "sources:*:*", "tenant": public_tenant}
+)
+if created:
+    perm_count += 1
+print(f"Seeded {perm_count} permissions")
+
+roles = [
+    ("Cost Administrator", "Perform any available operation on cost management resources.", True, False, [("cost-management", "*", "*")]),
+    ("Cost Price List Administrator", "Perform read and write operations on cost models.", False, False, [("cost-management", "cost_model", "*"), ("cost-management", "settings", "*")]),
+    ("Cost Price List Viewer", "Perform read operations on cost models.", False, False, [("cost-management", "cost_model", "read"), ("cost-management", "settings", "read")]),
+    ("Cost Cloud Viewer", "Perform read operations on cost reports related to cloud sources.", False, False, [("cost-management", "aws.account", "*"), ("cost-management", "aws.organizational_unit", "*"), ("cost-management", "azure.subscription_guid", "*"), ("cost-management", "gcp.account", "*"), ("cost-management", "gcp.project", "*")]),
+    ("Cost OpenShift Viewer", "Perform read operations on cost reports related to OpenShift sources.", False, False, [("cost-management", "openshift.cluster", "*")]),
+    ("Sources administrator", "Perform any available operation on any source.", True, False, [("sources", "*", "*")]),
+]
+
+role_count = 0
+for name, desc, admin_default, platform_default, access_list in roles:
+    role, created = Role.objects.get_or_create(
+        name=name, tenant=public_tenant,
+        defaults={"description": desc, "system": True, "platform_default": platform_default, "admin_default": admin_default, "version": 2}
+    )
+    if created:
+        role_count += 1
+    for app, res, verb in access_list:
+        perm = Permission.objects.get(application=app, resource_type=res, verb=verb, tenant=public_tenant)
+        Access.objects.get_or_create(role=role, permission=perm, defaults={"tenant": public_tenant})
+
+print(f"Seeded {role_count} roles (total: {Role.objects.count()})")
+print("RBAC seeding complete.")
+SEED_SCRIPT
+echo "✓ Cost-management seeding complete"
+
+echo "Creating admin_default group for org tenants..."
+python manage.py shell <<'ADMIN_DEFAULT_SCRIPT'
+from api.models import Tenant
+from management.models import Group, Policy, Role
+
+public_tenant = Tenant.objects.get(tenant_name='public')
+admin_default_roles = Role.objects.filter(admin_default=True, tenant=public_tenant)
+if not admin_default_roles.exists():
+    print("WARNING: No admin_default roles found, skipping admin_default group")
+else:
+    user_tenants = Tenant.objects.exclude(tenant_name='public').filter(org_id__isnull=False)
+    count = 0
+    for tenant in user_tenants:
+        grp, _ = Group.objects.get_or_create(
+            name='Cost Admin Default', tenant=tenant,
+            defaults={'admin_default': True, 'system': True,
+                      'description': 'Admin default: grants admin_default roles to is_org_admin users'}
+        )
+        grp.admin_default = True
+        grp.save()
+        policy, _ = Policy.objects.get_or_create(
+            name='Cost Admin Default Policy', tenant=tenant, group=grp
+        )
+        for role in admin_default_roles:
+            policy.roles.add(role)
+        count += 1
+    role_names = list(admin_default_roles.values_list('name', flat=True))
+    print(f"Created/updated admin_default group for {count} tenant(s) with roles: {role_names}")
+ADMIN_DEFAULT_SCRIPT
+echo "✓ Admin default group seeding complete"
+
+set +e
+python manage.py bootstrap_tenants --all -v 2
+bootstrap_rc=$?
+set -e
+if [ $bootstrap_rc -ne 0 ]; then
+  echo "WARNING: bootstrap_tenants exited with code $bootstrap_rc (non-fatal, continuing to cleanup)"
+fi
+echo "✓ Tenant bootstrap complete"
+
+echo "Removing cost-management access from platform_default groups..."
+python manage.py shell <<'CLEANUP_DEFAULTS'
+from management.models import Group, Policy, Access
+
+removed = 0
+for group in Group.objects.filter(platform_default=True):
+    for policy in Policy.objects.filter(group=group):
+        for role in policy.roles.all():
+            has_cm_access = Access.objects.filter(
+                role=role,
+                permission__application='cost-management',
+            ).exists()
+            if has_cm_access:
+                policy.roles.remove(role)
+                removed += 1
+print(f"Removed {removed} role(s) with cost-management access from platform_default groups")
+CLEANUP_DEFAULTS
+echo "✓ Platform default cleanup complete"
+echo "=== insights-rbac migration job completed ==="`
+}
+
+// BootstrapAdminIdentity holds the org-admin user used by AdminBootstrapJob.
+type BootstrapAdminIdentity struct {
+	Username      string
+	OrgID         string
+	AccountNumber string
+}
+
+// ResolveBootstrapAdmin returns the first Auth.RealmUsers entry with OrgAdmin
+// set, matching the Helm chart helpers. Empty fields fall back to chart defaults.
+func ResolveBootstrapAdmin(cfg *costv1alpha1.CostManagementServiceConfig) (BootstrapAdminIdentity, bool) {
+	for _, u := range cfg.Spec.Auth.RealmUsers {
+		if !u.OrgAdmin {
+			continue
+		}
+		id := BootstrapAdminIdentity{
+			Username:      u.Username,
+			OrgID:         u.OrgID,
+			AccountNumber: u.AccountNumber,
+		}
+		if id.Username == "" {
+			id.Username = "admin"
+		}
+		if id.OrgID == "" {
+			id.OrgID = "org1234567"
+		}
+		if id.AccountNumber == "" {
+			id.AccountNumber = "7890123"
+		}
+		return id, true
+	}
+	return BootstrapAdminIdentity{}, false
+}
+
+// AdminBootstrapJob builds the post-migrate Job that creates Tenant/Principal
+// and attaches admin_default roles for the configured org-admin user.
+// Returns nil when bootstrapAdmin.enabled is false or no orgAdmin realm user exists.
+func AdminBootstrapJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag string) *batchv1.Job {
+	if !cfg.Spec.RBAC.BootstrapAdmin.Enabled {
+		return nil
+	}
+	id, ok := ResolveBootstrapAdmin(cfg)
+	if !ok {
+		return nil
+	}
+
+	image := cfg.Spec.RBAC.Image.Repository + ":" + cfg.Spec.RBAC.Image.Tag
+
+	env := append(rbacEnv(cfg),
+		EnvVal("SYNC_USERNAME", id.Username),
+		EnvVal("SYNC_ORG_ID", id.OrgID),
+		EnvVal("SYNC_ACCOUNT_NUMBER", id.AccountNumber),
+	)
+	script := rbacAdminBootstrapScript(DatabaseHost(cfg), int32String(cfg.Spec.Database.Port))
+	vols := []corev1.Volume{{
+		Name:         "tmp",
+		VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+	}}
+	mounts := []corev1.VolumeMount{{Name: "tmp", MountPath: "/tmp"}}
+
+	return migrationJob(cfg, NameRBACAdminBootstrap(cfg), image, RBACSeedJobTag(imageTag),
+		"rbac-admin-bootstrap", script, env, mounts, vols, nil,
+	)
+}
+
+func rbacAdminBootstrapScript(host, port string) string {
+	return `set -e
+echo "=== insights-rbac admin bootstrap job ==="
+DB_HOST="${DATABASE_HOST:-` + host + `}"
+DB_PORT="${DATABASE_PORT:-` + port + `}"
+ELAPSED=0
+echo "Username: ${SYNC_USERNAME}"
+echo "Org ID: ${SYNC_ORG_ID}"
+echo "Account Number: ${SYNC_ACCOUNT_NUMBER}"
+echo "Waiting for database at ${DB_HOST}:${DB_PORT}..."
+while true; do
+  if [ $ELAPSED -ge 300 ]; then echo "ERROR: DB not ready after 300s"; exit 1; fi
+  if timeout 5 bash -c "cat < /dev/null > /dev/tcp/${DB_HOST}/${DB_PORT}" 2>/dev/null; then break; fi
+  echo "DB not reachable (${ELAPSED}s elapsed), waiting..."
+  sleep 5; ELAPSED=$((ELAPSED + 5))
+done
+echo "DB ready after ${ELAPSED}s"
+cd /opt/rbac/rbac
+python manage.py shell <<'BOOTSTRAP_SCRIPT'
+import os
+from api.models import Tenant
+from management.models import Group, Policy, Role, Principal
+from django.core.cache import cache
+
+username = os.environ['SYNC_USERNAME']
+org_id = os.environ['SYNC_ORG_ID']
+acct_number = os.environ['SYNC_ACCOUNT_NUMBER']
+
+public_tenant = Tenant.objects.get(tenant_name='public')
+admin_default_roles = Role.objects.filter(admin_default=True, tenant=public_tenant)
+if not admin_default_roles.exists():
+    print("ERROR: No admin_default roles found — migration job may not have completed")
+    raise SystemExit(1)
+
+tenant, created = Tenant.objects.get_or_create(
+    org_id=org_id,
+    defaults={'tenant_name': 'acct' + acct_number, 'ready': True}
+)
+print(f"{'Created' if created else 'Existing'} tenant for org_id={org_id}")
+
+grp, _ = Group.objects.get_or_create(
+    name='Cost Admin Default', tenant=tenant,
+    defaults={'admin_default': True, 'system': True,
+              'description': 'Admin default: grants admin_default roles to bootstrap admin user'}
+)
+grp.admin_default = True
+grp.save()
+
+policy, _ = Policy.objects.get_or_create(
+    name='Cost Admin Default Policy', tenant=tenant, group=grp
+)
+for role in admin_default_roles:
+    policy.roles.add(role)
+
+principal, _ = Principal.objects.get_or_create(
+    username=username, tenant=tenant,
+    defaults={'type': 'user'}
+)
+grp.principals.add(principal)
+
+role_names = list(admin_default_roles.values_list('name', flat=True))
+cache.clear()
+print(f"✓ User '{username}' granted {role_names} for org={org_id}")
+BOOTSTRAP_SCRIPT
+echo "✓ Admin user bootstrap complete"
+set +e
+python manage.py bootstrap_tenants --org-id "${SYNC_ORG_ID}" --force
+bootstrap_rc=$?
+set -e
+if [ $bootstrap_rc -ne 0 ]; then
+  echo "WARNING: bootstrap_tenants exited with code $bootstrap_rc (non-fatal)"
+fi
+echo "=== insights-rbac admin bootstrap job completed ==="`
 }
 
 // -----------------------------------------------------------------------------
@@ -212,8 +477,10 @@ func migrationJob(
 	mounts []corev1.VolumeMount,
 	vols []corev1.Volume,
 	initContainers []corev1.Container,
-	backoff int32, deadline int64, ttlSecs int32,
 ) *batchv1.Job {
+	backoff := MigrationBackoffLimit
+	deadline := MigrationDeadlineSeconds
+	ttlSecs := int32(3600)
 	return &batchv1.Job{
 		TypeMeta: metav1.TypeMeta{APIVersion: "batch/v1", Kind: "Job"},
 		ObjectMeta: metav1.ObjectMeta{
