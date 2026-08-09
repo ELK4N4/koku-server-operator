@@ -1,64 +1,772 @@
-/*
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package controller
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
+	"github.com/project-koku/koku-service-operator/internal/resources"
 )
 
-// CostManagementServiceConfigReconciler reconciles a CostManagementServiceConfig object
+const (
+	fieldOwner    = "koku-service-operator"
+	finalizerName = "costmanagementserviceconfigs.service.costmanagement.openshift.io/cleanup"
+	requeueFast   = 10 * time.Second
+	requeueSlow   = 30 * time.Second
+	requeueDrift  = 5 * time.Minute
+)
+
 type CostManagementServiceConfigReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=service.costmanagement.openshift.io,resources=costmanagementserviceconfigs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=service.costmanagement.openshift.io,resources=costmanagementserviceconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=service.costmanagement.openshift.io,resources=costmanagementserviceconfigs/finalizers,verbs=update
+// +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs;cronjobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=services;configmaps;secrets;serviceaccounts;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors;prometheusrules,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=route.openshift.io,resources=routes/custom-host,verbs=create
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=config.openshift.io,resources=ingresses,verbs=get
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=console.openshift.io,resources=consolelinks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the CostManagementServiceConfig object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-	log.Info("Reconciling CostManagementServiceConfig", "name", req.Name, "namespace", req.Namespace)
+	logger := log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	cfg := &costv1alpha1.CostManagementServiceConfig{}
+	if err := r.Get(ctx, req.NamespacedName, cfg); err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
 
+	// Deletion path: clean up cluster-scoped resources then remove finalizer.
+	if !cfg.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, cfg)
+	}
+
+	// Ensure our finalizer is registered before touching any cluster-scoped resource.
+	if !controllerutil.ContainsFinalizer(cfg, finalizerName) {
+		controllerutil.AddFinalizer(cfg, finalizerName)
+		if err := r.Update(ctx, cfg); err != nil {
+			return ctrl.Result{}, fmt.Errorf("adding finalizer: %w", err)
+		}
+		return ctrl.Result{}, nil // requeue triggered by the Update
+	}
+
+	original := cfg.DeepCopy()
+
+	result, reconcileErr := r.reconcile(ctx, cfg)
+
+	if patchErr := r.patchStatus(ctx, original, cfg); patchErr != nil {
+		logger.Error(patchErr, "failed to patch status")
+		if reconcileErr == nil {
+			return result, patchErr
+		}
+	}
+
+	return result, reconcileErr
+}
+
+// reconcileDelete removes cluster-scoped resources that cannot be cleaned up via
+// ownerReferences, then strips the finalizer so the CR can be fully deleted.
+func (r *CostManagementServiceConfigReconciler) reconcileDelete(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("deleting cluster-scoped resources before CR removal")
+
+	// All cluster-scoped resources the operator creates, keyed by type.
+	// Add entries here whenever a new cluster-scoped resource type is introduced.
+	clusterScoped := []client.Object{
+		resources.ConsoleLink(cfg),
+		resources.KruizeClusterRoleBinding(cfg),
+		resources.KruizeClusterRole(cfg),
+	}
+
+	for _, obj := range clusterScoped {
+		if err := r.Delete(ctx, obj); err != nil && !errors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("deleting %s %s: %w", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), err)
+		}
+	}
+
+	controllerutil.RemoveFinalizer(cfg, finalizerName)
+	if err := r.Update(ctx, cfg); err != nil {
+		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
+	}
 	return ctrl.Result{}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
+// reconcile drives the ordered, staged rollout:
+//  0. Discovery (cluster domain, StorageClass, S3)
+//  1. Shared configuration (ConfigMaps, Secrets, ServiceAccount)
+//  2. Infrastructure (PostgreSQL, Valkey)
+//  3. Validation (TCP/HTTP probes for external deps, Secret key checks)
+//  4. DB migration gate (Koku → ROS → RBAC)
+//  5. Core services (Koku API, Masu, Listener)
+//  6. Workers (Celery, ROS, Kruize)
+//  7. Edge (Envoy gateway, UI, Route)
+func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (ctrl.Result, error) {
+	cfg.Status.ObservedGeneration = cfg.Generation
+	cfg.Status.Phase = costv1alpha1.PhaseProgressing
+	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionTrue, "Reconciling", "Reconciliation in progress")
+
+	result, err := runPhases([]PhaseFn{
+		func() (Result, error) { return r.reconcileDiscovery(ctx, cfg) },
+		func() (Result, error) { return r.reconcileSharedConfig(ctx, cfg) },
+		func() (Result, error) { return r.reconcileInfrastructure(ctx, cfg) },
+		func() (Result, error) { return r.reconcileValidation(ctx, cfg) },
+		func() (Result, error) { return r.reconcileMigration(ctx, cfg) },
+		func() (Result, error) { return r.reconcileCoreServices(ctx, cfg) },
+		func() (Result, error) { return r.reconcileWorkers(ctx, cfg) },
+		func() (Result, error) { return r.reconcileEdge(ctx, cfg) },
+		func() (Result, error) { return r.reconcileMonitoring(ctx, cfg) },
+	})
+
+	if err != nil {
+		applyPhaseError(cfg, err)
+		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "ReconcileError", "%v", err)
+		return ctrl.Result{RequeueAfter: requeueSlow}, err
+	}
+	if !result.IsZero() {
+		return ctrl.Result{RequeueAfter: result.RequeueAfter}, nil
+	}
+
+	// Emit Ready event only on the first transition to Ready (phase was not Ready before).
+	if cfg.Status.Phase != costv1alpha1.PhaseReady {
+		r.Recorder.Event(cfg, corev1.EventTypeNormal, "Ready", "All components are running")
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "AllComponentsReady", "All components are running")
+	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "ReconcileComplete", "")
+	cfg.Status.Phase = costv1alpha1.PhaseReady
+	// Periodic drift correction: re-apply all desired state every 5 minutes so
+	// manual edits to managed resources are reverted without waiting for an event.
+	return ctrl.Result{RequeueAfter: requeueDrift}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Stage 1 — Shared configuration objects
+// -----------------------------------------------------------------------------
+
+func (r *CostManagementServiceConfigReconciler) reconcileSharedConfig(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	// Secrets — create-if-absent only (never overwrite credentials).
+	if err := r.ensureSecret(ctx, cfg, resources.DBCredentialsSecret(cfg)); err != nil {
+		return Result{}, fmt.Errorf("db-credentials secret: %w", err)
+	}
+	if err := r.ensureSecret(ctx, cfg, resources.DjangoSecret(cfg)); err != nil {
+		return Result{}, fmt.Errorf("django secret: %w", err)
+	}
+	if cfg.Spec.ObjectStorage.SecretName == "" {
+		if err := r.ensureSecret(ctx, cfg, resources.StorageCredentialsSecret(cfg)); err != nil {
+			return Result{}, fmt.Errorf("storage credentials secret: %w", err)
+		}
+	}
+
+	// ConfigMaps
+	for _, cm := range []*corev1.ConfigMap{
+		resources.DBInitConfigMap(cfg),
+		resources.AWSConfigMap(cfg),
+		resources.CACombineConfigMap(cfg),
+		resources.ServiceCAConfigMap(cfg),
+	} {
+		if err := r.apply(ctx, cfg, cm); err != nil {
+			return Result{}, fmt.Errorf("configmap %s: %w", cm.Name, err)
+		}
+	}
+
+	// ServiceAccount
+	if err := r.apply(ctx, cfg, resources.KokuServiceAccount(cfg)); err != nil {
+		return Result{}, fmt.Errorf("koku serviceaccount: %w", err)
+	}
+
+	return Result{}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Stage 2 — Infrastructure
+// -----------------------------------------------------------------------------
+
+func (r *CostManagementServiceConfigReconciler) reconcileInfrastructure(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	if costv1alpha1.BoolVal(cfg.Spec.Database.Deploy, true) {
+		if err := r.apply(ctx, cfg, resources.DatabaseService(cfg)); err != nil {
+			return Result{}, fmt.Errorf("database service: %w", err)
+		}
+		if err := r.applyStatefulSet(ctx, cfg, resources.DatabaseStatefulSet(cfg)); err != nil {
+			return Result{}, fmt.Errorf("database statefulset: %w", err)
+		}
+		// Gate: wait for the DB pod to be ready.
+		ready, err := r.isStatefulSetReady(ctx, cfg.Namespace, resources.NameDatabase(cfg))
+		if err != nil {
+			return Result{}, err
+		}
+		if !ready {
+			r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionFalse, "WaitingForDatabase", "waiting for PostgreSQL pod")
+			return Result{RequeueAfter: requeueFast}, nil
+		}
+		r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionTrue, "DatabaseAvailable", "")
+	} else {
+		r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionTrue, "ExternalDatabase", "")
+	}
+
+	if costv1alpha1.BoolVal(cfg.Spec.Cache.Deploy, true) {
+		if err := r.apply(ctx, cfg, resources.CachePVC(cfg)); err != nil {
+			return Result{}, fmt.Errorf("valkey pvc: %w", err)
+		}
+		if err := r.apply(ctx, cfg, resources.CacheDeployment(cfg)); err != nil {
+			return Result{}, fmt.Errorf("valkey deployment: %w", err)
+		}
+		if err := r.apply(ctx, cfg, resources.CacheService(cfg)); err != nil {
+			return Result{}, fmt.Errorf("valkey service: %w", err)
+		}
+		ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameValkey(cfg))
+		if err != nil {
+			return Result{}, err
+		}
+		if !ready {
+			r.setCondition(cfg, costv1alpha1.ConditionCacheReady, metav1.ConditionFalse, "WaitingForCache", "waiting for Valkey pod")
+			return Result{RequeueAfter: requeueFast}, nil
+		}
+		r.setCondition(cfg, costv1alpha1.ConditionCacheReady, metav1.ConditionTrue, "CacheAvailable", "")
+	} else {
+		r.setCondition(cfg, costv1alpha1.ConditionCacheReady, metav1.ConditionTrue, "ExternalCache", "")
+	}
+
+	return Result{}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Stage 3 — DB migration gate
+// -----------------------------------------------------------------------------
+
+// reconcileMigration runs migration Jobs sequentially:
+// Koku → ROS → RBAC migrate+seed → (optional) RBAC admin-bootstrap.
+// Each Job must complete before the next is created. Previously-succeeded
+// Jobs are not re-created unless the image-tag annotation changed.
+func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	type migStep struct {
+		name     string
+		imageTag string
+		build    func() *batchv1.Job
+	}
+
+	steps := []migStep{
+		{
+			name:     resources.NameKokuMigration(cfg),
+			imageTag: cfg.Spec.CostManagement.API.Image.Tag,
+			build:    func() *batchv1.Job { return resources.MigrationJob(cfg, cfg.Spec.CostManagement.API.Image.Tag) },
+		},
+		{
+			name:     resources.NameROSMigration(cfg),
+			imageTag: cfg.Spec.ROS.Image.Tag,
+			build:    func() *batchv1.Job { return resources.ROSMigrationJob(cfg, cfg.Spec.ROS.Image.Tag) },
+		},
+		{
+			name:     resources.NameRBACMigration(cfg),
+			imageTag: resources.RBACSeedJobTag(cfg.Spec.RBAC.Image.Tag),
+			build:    func() *batchv1.Job { return resources.RBACMigrationJob(cfg, cfg.Spec.RBAC.Image.Tag) },
+		},
+	}
+	if resources.AdminBootstrapJob(cfg, cfg.Spec.RBAC.Image.Tag) != nil {
+		steps = append(steps, migStep{
+			name:     resources.NameRBACAdminBootstrap(cfg),
+			imageTag: resources.RBACSeedJobTag(cfg.Spec.RBAC.Image.Tag),
+			build:    func() *batchv1.Job { return resources.AdminBootstrapJob(cfg, cfg.Spec.RBAC.Image.Tag) },
+		})
+	}
+
+	for i, step := range steps {
+		result, err := r.runMigrationStep(ctx, cfg, step.name, step.imageTag, step.build, i+1, len(steps))
+		if err != nil || !result.IsZero() {
+			return result, err
+		}
+	}
+
+	// All steps completed.
+	r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionTrue, "MigrationComplete", "all schema migrations succeeded")
+	r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionFalse, "MigrationSucceeded", "")
+	r.Recorder.Event(cfg, corev1.EventTypeNormal, "MigrationComplete", "All schema migrations succeeded (Koku → ROS → RBAC)")
+	return Result{}, nil
+}
+
+// runMigrationStep manages a single migration Job: create if absent, detect
+// upgrades, poll completion, surface failures. Returns a non-zero Result when
+// the pipeline should pause (job still running or just failed).
+func (r *CostManagementServiceConfigReconciler) runMigrationStep(
+	ctx context.Context,
+	cfg *costv1alpha1.CostManagementServiceConfig,
+	jobName, imageTag string,
+	build func() *batchv1.Job,
+	stepNum, totalSteps int,
+) (Result, error) {
+	progress := func(msg string) {
+		r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse,
+			"MigrationRunning",
+			fmt.Sprintf("step %d/%d — %s: %s", stepNum, totalSteps, jobName, msg))
+	}
+
+	existing := &batchv1.Job{}
+	err := r.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: jobName}, existing)
+
+	if errors.IsNotFound(err) {
+		job := build()
+		setOwnerRef(cfg, job)
+		if createErr := r.Create(ctx, job); createErr != nil {
+			return Result{}, fmt.Errorf("create %s: %w", jobName, createErr)
+		}
+		progress("job created")
+		r.Recorder.Eventf(cfg, corev1.EventTypeNormal, "MigrationStarted",
+			"Migration step %d/%d started: %s", stepNum, totalSteps, jobName)
+		return Result{RequeueAfter: requeueFast}, nil
+	}
+	if err != nil {
+		return Result{}, err
+	}
+
+	// Upgrade: image tag changed → delete and let next reconcile recreate.
+	if existing.Annotations["koku.costmanagement.io/image-tag"] != imageTag {
+		if delErr := r.Delete(ctx, existing, client.PropagationPolicy(metav1.DeletePropagationBackground)); delErr != nil && !errors.IsNotFound(delErr) {
+			return Result{}, fmt.Errorf("delete stale %s: %w", jobName, delErr)
+		}
+		progress("restarting for new image")
+		return Result{RequeueAfter: requeueFast}, nil
+	}
+
+	if isJobComplete(existing) {
+		return Result{}, nil // proceed to next step
+	}
+	if isJobFailed(existing) {
+		msg := fmt.Sprintf("%s exhausted retries — check pod logs", jobName)
+		r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse, "MigrationFailed", msg)
+		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, "MigrationFailed", msg)
+		cfg.Status.Phase = costv1alpha1.PhaseDegraded
+		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "MigrationFailed",
+			"Migration job %s exhausted retries — manual intervention required", jobName)
+		return Result{Stop: true}, nil
+	}
+
+	progress("running")
+	return Result{RequeueAfter: requeueFast}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Stage 4 — Core services
+// -----------------------------------------------------------------------------
+
+func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	// Kruize (needed by ROS Processor and Poller — deploy before ROS).
+	kruizeObjs := []client.Object{
+		resources.KruizeServiceAccount(cfg),
+		resources.KruizeConfigMap(cfg),
+		resources.KruizeDeployment(cfg),
+		resources.KruizeService(cfg),
+	}
+	for _, obj := range kruizeObjs {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return Result{}, fmt.Errorf("kruize %s: %w", obj.GetName(), err)
+		}
+	}
+	// Kruize ClusterRole/ClusterRoleBinding are cluster-scoped — no ownerRef possible.
+	// Cleaned up by the CR finalizer in reconcileDelete().
+	for _, obj := range []client.Object{resources.KruizeClusterRole(cfg), resources.KruizeClusterRoleBinding(cfg)} {
+		if err := r.applyClusterScoped(ctx, obj); err != nil {
+			return Result{}, fmt.Errorf("kruize rbac %s: %w", obj.GetName(), err)
+		}
+	}
+
+	// RBAC API + worker (must be up before Koku API starts serving requests).
+	rbacObjs := []client.Object{
+		resources.RBACAPIDeployment(cfg),
+		resources.RBACAPIService(cfg),
+		resources.RBACWorkerDeployment(cfg),
+	}
+	for _, obj := range rbacObjs {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return Result{}, fmt.Errorf("rbac %s: %w", obj.GetName(), err)
+		}
+	}
+
+	// Koku core + ROS shared config.
+	objs := []client.Object{
+		resources.CdappConfigMap(cfg),
+		resources.ROSServiceAccount(cfg),
+		resources.KokuAPIDeployment(cfg),
+		resources.KokuAPIService(cfg),
+		resources.MasuDeployment(cfg),
+		resources.MasuService(cfg),
+		resources.ListenerDeployment(cfg),
+	}
+	for _, obj := range objs {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return Result{}, fmt.Errorf("core service %s: %w", obj.GetName(), err)
+		}
+	}
+
+	// Gate on the API being available.
+	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameKokuAPI(cfg))
+	if err != nil {
+		return Result{}, err
+	}
+	if !ready {
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "WaitingForAPI", "waiting for Koku API")
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "KokuAvailable", "")
+	return Result{}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Stage 5 — Workers and supporting services
+// -----------------------------------------------------------------------------
+
+func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	workers := resources.CeleryWorkerDeployments(cfg)
+	objs := make([]client.Object, 0, 1+len(workers))
+
+	// Celery beat + workers
+	objs = append(objs, resources.CeleryBeatDeployment(cfg))
+	for _, d := range workers {
+		objs = append(objs, d)
+	}
+
+	// ROS components
+	rosObjs := []client.Object{
+		resources.ROSAPIDeployment(cfg),
+		resources.ROSAPIService(cfg),
+		resources.ROSProcessorDeployment(cfg),
+		resources.ROSPollerDeployment(cfg),
+		resources.ROSHousekeeperDeployment(cfg),
+	}
+	objs = append(objs, rosObjs...)
+
+	// Kruize delete-partitions CronJob (if enabled)
+	if costv1alpha1.BoolVal(cfg.Spec.Kruize.Partitions.DeleteEnabled, true) {
+		objs = append(objs, resources.KruizeDeletePartitionsCronJob(cfg))
+	}
+
+	// ROS partition-cleaner CronJob (if enabled)
+	if costv1alpha1.BoolVal(cfg.Spec.ROS.Housekeeper.PartitionCleaner.Enabled, true) {
+		objs = append(objs, resources.ROSPartitionCleanerCronJob(cfg))
+	}
+
+	// Ingress upload handler — must be deployed before reconcileEdge so the
+	// Envoy gateway has a live backend for /api/ingress/ routes.
+	objs = append(objs,
+		resources.IngressDeployment(cfg),
+		resources.IngressService(cfg),
+	)
+
+	for _, obj := range objs {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return Result{}, fmt.Errorf("worker %s: %w", obj.GetName(), err)
+		}
+	}
+
+	return Result{}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Stage 6 — Edge: gateway, UI, routes
+// -----------------------------------------------------------------------------
+
+func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	logger := log.FromContext(ctx)
+
+	objs := []client.Object{
+		resources.EnvoyConfigMap(cfg),
+		resources.EnvoyService(cfg),
+		resources.EnvoyDeployment(cfg),
+	}
+	for _, obj := range objs {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return Result{}, fmt.Errorf("edge %s: %w", obj.GetName(), err)
+		}
+	}
+
+	route := resources.GatewayAPIRoute(cfg)
+	if route != nil {
+		if err := r.apply(ctx, cfg, route); err != nil {
+			return Result{}, fmt.Errorf("edge route %s: %w", route.GetName(), err)
+		}
+	} else {
+		logger.Info("skipping API Route: cluster domain not resolved; gateway still deployed for in-cluster access")
+	}
+
+	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameEnvoy(cfg))
+	if err != nil {
+		return Result{}, err
+	}
+	if !ready {
+		r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionFalse,
+			"WaitingForGateway", "waiting for Envoy gateway Deployment")
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+
+	if route == nil {
+		r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionFalse,
+			"ClusterDomainPending", "Envoy gateway ready; API Route deferred until cluster domain is available")
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+
+	r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionTrue,
+		"GatewayReady", "Envoy JWT gateway and API Route are ready")
+
+	// UI — cookie secret (operator-generated), nginx config, deployment, service.
+	if err := r.ensureSecret(ctx, cfg, resources.UICookieSecret(cfg)); err != nil {
+		return Result{}, fmt.Errorf("ui cookie secret: %w", err)
+	}
+	for _, obj := range []client.Object{
+		resources.UINginxConfigMap(cfg),
+		resources.UIDeployment(cfg),
+		resources.UIService(cfg),
+	} {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return Result{}, fmt.Errorf("ui %s: %w", obj.GetName(), err)
+		}
+	}
+
+	// UI Route (deferred until cluster domain is resolved).
+	if uiRoute := resources.UIRoute(cfg); uiRoute != nil {
+		if err := r.apply(ctx, cfg, uiRoute); err != nil {
+			return Result{}, fmt.Errorf("ui route: %w", err)
+		}
+	}
+
+	// ConsoleLink is cluster-scoped — apply without ownerRef, cleaned up by finalizer.
+	if err := r.applyClusterScoped(ctx, resources.ConsoleLink(cfg)); err != nil {
+		return Result{}, fmt.Errorf("consolelink: %w", err)
+	}
+
+	// NetworkPolicies — restrict traffic to expected flows per component.
+	for _, np := range []client.Object{
+		resources.GatewayNetworkPolicy(cfg),
+		resources.IngressNetworkPolicy(cfg),
+		resources.KruizeNetworkPolicy(cfg),
+		resources.RBACAPINetworkPolicy(cfg),
+		resources.KokuAPINetworkPolicy(cfg),
+	} {
+		if err := r.apply(ctx, cfg, np); err != nil {
+			return Result{}, fmt.Errorf("networkpolicy %s: %w", np.GetName(), err)
+		}
+	}
+
+	return Result{}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Stage 8 — Monitoring (ServiceMonitors + PrometheusRules)
+// -----------------------------------------------------------------------------
+
+// reconcileMonitoring applies ServiceMonitor and PrometheusRule objects when
+// spec.monitoring.enabled is true (the default). Both types are Prometheus
+// Operator CRDs; the stage is silently skipped when those CRDs are absent so
+// the operator works on clusters without the monitoring stack.
+func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	if !costv1alpha1.BoolVal(cfg.Spec.Monitoring.Enabled, true) {
+		return Result{}, nil
+	}
+	for _, obj := range []client.Object{
+		resources.AppServiceMonitor(cfg),
+		resources.KruizeServiceMonitor(cfg),
+		resources.PrometheusRules(cfg),
+	} {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			// Monitoring CRDs may not be installed — log and continue rather than
+			// blocking the pipeline.
+			log.FromContext(ctx).Info("monitoring resource skipped (CRD absent?)",
+				"kind", obj.GetObjectKind().GroupVersionKind().Kind,
+				"name", obj.GetName(),
+				"error", err.Error())
+		}
+	}
+	return Result{}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Apply / create helpers
+// -----------------------------------------------------------------------------
+
+// applyClusterScoped applies a cluster-scoped resource (no namespace, no ownerRef).
+// These resources require finalizer-based cleanup — see COST-7681.
+func (r *CostManagementServiceConfigReconciler) applyClusterScoped(ctx context.Context, obj client.Object) error {
+	return r.Patch(ctx, obj, client.Apply, client.ForceOwnership, client.FieldOwner(fieldOwner))
+}
+
+// apply creates or updates obj using Server-Side Apply.
+func (r *CostManagementServiceConfigReconciler) apply(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig, obj client.Object) error {
+	obj.SetNamespace(cfg.Namespace)
+	setOwnerRef(cfg, obj)
+	return r.Patch(ctx, obj, client.Apply, client.ForceOwnership, client.FieldOwner(fieldOwner))
+}
+
+// applyStatefulSet applies a StatefulSet, handling the VolumeClaimTemplate
+// immutability constraint by creating on first call and only patching spec
+// (not VCT) on subsequent calls.
+func (r *CostManagementServiceConfigReconciler) applyStatefulSet(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig, desired *appsv1.StatefulSet) error {
+	existing := &appsv1.StatefulSet{}
+	err := r.Get(ctx, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, existing)
+	if errors.IsNotFound(err) {
+		setOwnerRef(cfg, desired)
+		return r.Create(ctx, desired)
+	}
+	if err != nil {
+		return err
+	}
+	// Only update mutable fields (replicas, container image, resources).
+	patch := existing.DeepCopy()
+	patch.Spec.Replicas = desired.Spec.Replicas
+	if len(patch.Spec.Template.Spec.Containers) > 0 && len(desired.Spec.Template.Spec.Containers) > 0 {
+		patch.Spec.Template.Spec.Containers[0].Image = desired.Spec.Template.Spec.Containers[0].Image
+		patch.Spec.Template.Spec.Containers[0].Resources = desired.Spec.Template.Spec.Containers[0].Resources
+		patch.Spec.Template.Spec.Containers[0].Env = desired.Spec.Template.Spec.Containers[0].Env
+	}
+	return r.Update(ctx, patch)
+}
+
+// ensureSecret creates the secret only if it does not already exist.
+// Existing secrets are never overwritten to preserve generated credentials.
+func (r *CostManagementServiceConfigReconciler) ensureSecret(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig, secret *corev1.Secret) error {
+	existing := &corev1.Secret{}
+	err := r.Get(ctx, types.NamespacedName{Namespace: secret.Namespace, Name: secret.Name}, existing)
+	if errors.IsNotFound(err) {
+		setOwnerRef(cfg, secret)
+		return r.Create(ctx, secret)
+	}
+	return err
+}
+
+func setOwnerRef(owner *costv1alpha1.CostManagementServiceConfig, obj client.Object) {
+	if obj.GetNamespace() == "" {
+		return // cluster-scoped: owner refs don't apply, use finalizer instead
+	}
+	isController := true
+	blockDeletion := true
+	ref := metav1.OwnerReference{
+		APIVersion:         costv1alpha1.GroupVersion.String(),
+		Kind:               "CostManagementServiceConfig",
+		Name:               owner.Name,
+		UID:                owner.UID,
+		Controller:         &isController,
+		BlockOwnerDeletion: &blockDeletion,
+	}
+	refs := obj.GetOwnerReferences()
+	for i, r := range refs {
+		if r.Kind == ref.Kind && r.Name == ref.Name {
+			refs[i] = ref
+			obj.SetOwnerReferences(refs)
+			return
+		}
+	}
+	obj.SetOwnerReferences(append(refs, ref))
+}
+
+// -----------------------------------------------------------------------------
+// Readiness helpers
+// -----------------------------------------------------------------------------
+
+func (r *CostManagementServiceConfigReconciler) isDeploymentReady(ctx context.Context, ns, name string) (bool, error) {
+	d := &appsv1.Deployment{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, d); err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if d.Spec.Replicas == nil || *d.Spec.Replicas == 0 {
+		return true, nil // 0 replicas = intentionally off
+	}
+	return d.Status.AvailableReplicas >= *d.Spec.Replicas, nil
+}
+
+func (r *CostManagementServiceConfigReconciler) isStatefulSetReady(ctx context.Context, ns, name string) (bool, error) {
+	ss := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, ss); err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if ss.Spec.Replicas == nil || *ss.Spec.Replicas == 0 {
+		return true, nil
+	}
+	return ss.Status.ReadyReplicas >= *ss.Spec.Replicas, nil
+}
+
+func isJobComplete(j *batchv1.Job) bool {
+	for _, c := range j.Status.Conditions {
+		if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func isJobFailed(j *batchv1.Job) bool {
+	for _, c := range j.Status.Conditions {
+		if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+// -----------------------------------------------------------------------------
+// Status helpers
+// -----------------------------------------------------------------------------
+
+func (r *CostManagementServiceConfigReconciler) patchStatus(ctx context.Context, original, updated *costv1alpha1.CostManagementServiceConfig) error {
+	return r.Status().Patch(ctx, updated, client.MergeFrom(original))
+}
+
+func (r *CostManagementServiceConfigReconciler) setCondition(cfg *costv1alpha1.CostManagementServiceConfig, condType string, status metav1.ConditionStatus, reason, message string) {
+	apimeta.SetStatusCondition(&cfg.Status.Conditions, metav1.Condition{
+		Type:               condType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: cfg.Generation,
+	})
+}
+
+// -----------------------------------------------------------------------------
+// Controller registration
+// -----------------------------------------------------------------------------
+
 func (r *CostManagementServiceConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&costv1alpha1.CostManagementServiceConfig{}).
-		Named("costmanagementserviceconfig").
+		Owns(&appsv1.Deployment{}).
+		Owns(&appsv1.StatefulSet{}).
+		Owns(&batchv1.Job{}).
+		Owns(&batchv1.CronJob{}).
+		Owns(&corev1.Service{}).
+		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.Secret{}).
+		Owns(&corev1.PersistentVolumeClaim{}).
+		Owns(&corev1.ServiceAccount{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Complete(r)
 }

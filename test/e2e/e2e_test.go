@@ -31,16 +31,16 @@ import (
 )
 
 // namespace where the project is deployed in
-const namespace = "koku-service-operator-system"
+const namespace = "op-sdk-scaffold-system"
 
 // serviceAccountName created for the project
-const serviceAccountName = "koku-service-operator-controller-manager"
+const serviceAccountName = "op-sdk-scaffold-controller-manager"
 
 // metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "koku-service-operator-controller-manager-metrics-service"
+const metricsServiceName = "op-sdk-scaffold-controller-manager-metrics-service"
 
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
-const metricsRoleBindingName = "koku-service-operator-metrics-binding"
+const metricsRoleBindingName = "op-sdk-scaffold-metrics-binding"
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
@@ -173,7 +173,7 @@ var _ = Describe("Manager", Ordered, func() {
 		It("should ensure the metrics endpoint is serving metrics", func() {
 			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
 			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
-				"--clusterrole=koku-service-operator-metrics-reader",
+				"--clusterrole=op-sdk-scaffold-metrics-reader",
 				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
 			)
 			_, err := utils.Run(cmd)

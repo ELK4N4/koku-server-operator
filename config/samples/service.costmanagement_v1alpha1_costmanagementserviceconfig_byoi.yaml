@@ -1,0 +1,152 @@
+# BYOI (Bring Your Own Infrastructure) sample CR
+# All dependencies (DB, Cache, Kafka, S3, OIDC) are pre-existing external services.
+# The operator connects to them via connection details and credentialsSecretRef fields.
+#
+# For a ready-to-apply local fixture (PG + Valkey + Kafka + MinIO in another
+# namespace), see config/samples/byoi/README.md.
+#
+# Pre-create these Secrets before applying this CR:
+#
+#   kubectl create secret generic my-db-credentials \
+#     --from-literal=koku-user=koku \
+#     --from-literal=koku-password=<password> \
+#     --from-literal=ros-user=ros_user \
+#     --from-literal=ros-password=<password> \
+#     --from-literal=kruize-user=kruize_user \
+#     --from-literal=kruize-password=<password> \
+#     --from-literal=rbac-user=rbac_user \
+#     --from-literal=rbac-password=<password>
+#
+#   kubectl create secret generic my-s3-credentials \
+#     --from-literal=access-key=<key> \
+#     --from-literal=secret-key=<secret>
+#
+#   kubectl create secret generic my-django-secret \
+#     --from-literal=secret-key=<50-char-random-string>
+apiVersion: service.costmanagement.openshift.io/v1alpha1
+kind: CostManagementServiceConfig
+metadata:
+  name: cost-management
+  namespace: cost-onprem
+spec:
+  global:
+    clusterDomain: "apps.cluster.example.com"
+
+  # External PostgreSQL — operator connects, does not provision
+  database:
+    deploy: false
+    host: "postgresql.databases.svc.cluster.local"
+    port: 5432
+    sslMode: "require"
+    secretName: "my-db-credentials"
+
+  # External Redis/Valkey — operator connects, does not provision
+  cache:
+    deploy: false
+    host: "redis.cache.svc.cluster.local"
+    port: 6379
+    auth:
+      enabled: true
+      secretName: "my-cache-credentials"
+    tls:
+      enabled: false
+
+  # External Kafka (AMQ Streams managed separately)
+  kafka:
+    bootstrapServers: "kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+    securityProtocol: "PLAINTEXT"
+    # For TLS-secured Kafka:
+    # securityProtocol: "SSL"
+    # tls:
+    #   enabled: true
+    #   caCertSecret: "kafka-cluster-ca-cert"
+    # For SASL+TLS:
+    # securityProtocol: "SASL_SSL"
+    # sasl:
+    #   mechanism: "SCRAM-SHA-512"
+    #   existingSecret: "my-kafka-sasl-credentials"
+
+  # External S3-compatible storage (ODF, AWS S3, etc.)
+  objectStorage:
+    endpoint: "s3.openshift-storage.svc.cluster.local"
+    port: 443
+    useSSL: true
+    secretName: "my-s3-credentials"
+    s3:
+      region: "us-east-1"
+      addressingStyle: "path"
+
+  # Envoy JWT gateway requires a reachable Keycloak/RHBK JWKS endpoint.
+  auth:
+    keycloak:
+      # JWKS fetch URL (prefer in-cluster Service). When RHBK sets a public
+      # hostname, tokens use that URL as iss — set issuerURL to match.
+      url: "https://keycloak.auth.svc.cluster.local"
+      # issuerURL: "https://keycloak-keycloak.apps.example.com"
+      realm: "kubernetes"
+      audiences:
+        - "cost-management-operator"
+        - "cost-management-ui"
+    envoy:
+      image:
+        repository: registry.redhat.io/openshift-service-mesh/proxyv2-rhel9
+        tag: "2.6"
+      replicas: 2
+
+  costManagement:
+    api:
+      image:
+        repository: quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku
+        tag: "d8055ac"
+      replicas: 1
+    masu:
+      image:
+        repository: quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku
+        tag: "d8055ac"
+      replicas: 1
+    listener:
+      replicas: 2
+    celery:
+      workers:
+        default:
+          replicas: 1
+        priority:
+          replicas: 1
+        summary:
+          replicas: 2
+        ocp:
+          replicas: 2
+        costModel:
+          replicas: 1
+
+  ros:
+    image:
+      repository: quay.io/redhat-services-prod/insights-management-tenant/insights-ocp-resource-optimization/ros-ocp-backend
+      tag: "ae8c990"
+    processor:
+      replicas: 1
+
+  rbac:
+    image:
+      repository: quay.io/redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac
+      tag: "73870d8"
+    api:
+      replicas: 1
+    worker:
+      replicas: 1
+
+  kruize:
+    replicas: 1
+    image:
+      repository: quay.io/redhat-services-prod/kruize-autotune-tenant/autotune
+      tag: "d1f0140"
+
+  ui:
+    replicaCount: 1
+    app:
+      image:
+        repository: quay.io/insights-onprem/koku-ui-onprem
+        tag: "2f23c646581028bd385856b6713e6bf367baf953"
+
+  monitoring:
+    enabled: true

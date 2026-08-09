@@ -1,0 +1,184 @@
+---
+# Grafana datasource — points to the Prometheus in the same namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus.cost-byoi-infra.svc:9090
+        access: proxy
+        isDefault: true
+---
+# Grafana dashboard — basic cost management overview.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+data:
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: default
+        type: file
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-cost
+data:
+  cost-management.json: |
+    {
+      "title": "Cost Management On-Prem",
+      "uid": "cost-mgmt-onprem",
+      "schemaVersion": 38,
+      "refresh": "30s",
+      "panels": [
+        {
+          "id": 1,
+          "title": "HTTP Request Rate (koku-api)",
+          "type": "timeseries",
+          "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+          "targets": [{
+            "expr": "rate(django_http_requests_total_by_method_total{job=\"koku-api\"}[5m])",
+            "legendFormat": "{{method}}"
+          }]
+        },
+        {
+          "id": 2,
+          "title": "HTTP Request Rate (masu)",
+          "type": "timeseries",
+          "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+          "targets": [{
+            "expr": "rate(django_http_requests_total_by_method_total{job=\"masu\"}[5m])",
+            "legendFormat": "{{method}}"
+          }]
+        },
+        {
+          "id": 3,
+          "title": "HTTP Response Latency p99 (koku-api)",
+          "type": "timeseries",
+          "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+          "targets": [{
+            "expr": "histogram_quantile(0.99, rate(django_http_requests_latency_seconds_by_view_method_bucket{job=\"koku-api\"}[5m]))",
+            "legendFormat": "p99"
+          }]
+        },
+        {
+          "id": 4,
+          "title": "ROS API Request Rate",
+          "type": "timeseries",
+          "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+          "targets": [{
+            "expr": "rate(http_requests_total{job=\"ros-api\"}[5m])",
+            "legendFormat": "{{method}} {{status}}"
+          }]
+        },
+        {
+          "id": 5,
+          "title": "Ingress Upload Rate",
+          "type": "timeseries",
+          "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+          "targets": [{
+            "expr": "rate(ingress_uploads_total[5m])",
+            "legendFormat": "uploads/s"
+          }]
+        },
+        {
+          "id": 6,
+          "title": "Scrape Health",
+          "type": "table",
+          "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+          "targets": [{
+            "expr": "up",
+            "legendFormat": "{{job}}",
+            "instant": true
+          }]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472  # grafana
+      containers:
+        - name: grafana
+          image: docker.io/grafana/grafana:11.2.0
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: Admin
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: admin
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - name: datasource
+              mountPath: /etc/grafana/provisioning/datasources
+              readOnly: true
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+              readOnly: true
+            - name: dashboard-cost
+              mountPath: /var/lib/grafana/dashboards
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/grafana
+      volumes:
+        - name: datasource
+          configMap:
+            name: grafana-datasource
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboard-cost
+          configMap:
+            name: grafana-dashboard-cost
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+spec:
+  selector:
+    app: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

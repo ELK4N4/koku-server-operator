@@ -25,3 +25,8 @@ go.work
 *.swp
 *.swo
 *~
+
+# Git worktrees and Claude session data
+.worktrees/
+.claude/
+docs/.markdown-viewer-temp.html
