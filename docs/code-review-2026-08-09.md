@@ -45,7 +45,7 @@ appending.
 `internal/controller/phases.go:71-80` does a direct `err.(*PhaseError)`
 assertion. Wrapped errors will not be extracted. Use `errors.As` instead.
 
-### I2. `httpProbe` leaks idle connections — OPEN
+### I2. `httpProbe` leaks idle connections — FIXED
 
 `internal/controller/validation.go:169-174` creates a new `http.Transport` +
 `http.Client` on every reconcile loop. The transport is never closed.

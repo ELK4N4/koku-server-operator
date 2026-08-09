@@ -183,11 +183,14 @@ func httpProbe(rawURL string, insecureSkipVerify bool, timeout time.Duration) er
 	if err != nil {
 		return err
 	}
-	resp, err := (&http.Client{Transport: transport}).Do(req)
+	client := &http.Client{Transport: transport}
+	resp, err := client.Do(req)
 	if err != nil {
+		transport.CloseIdleConnections()
 		return err
 	}
 	_ = resp.Body.Close()
+	transport.CloseIdleConnections()
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("server returned HTTP %d", resp.StatusCode)
 	}
