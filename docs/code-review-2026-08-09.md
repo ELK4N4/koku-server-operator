@@ -40,7 +40,7 @@ appending.
 
 ## Important (Should Fix)
 
-### I1. `asPhaseError` uses type assertion instead of `errors.As` — OPEN
+### I1. `asPhaseError` uses type assertion instead of `errors.As` — FIXED
 
 `internal/controller/phases.go:71-80` does a direct `err.(*PhaseError)`
 assertion. Wrapped errors will not be extracted. Use `errors.As` instead.
@@ -70,7 +70,7 @@ ignored.
 **Fix:** Only skip on `meta.IsNoMatchError(err)` (CRD absent); return all
 other errors.
 
-### I5. `AppServiceMonitor` label selectors don't match actual pods — OPEN
+### I5. `AppServiceMonitor` label selectors don't match actual pods — FIXED
 
 `internal/resources/monitoring.go:56-59` selects components
 `["koku-api", "masu", "listener", "ros-api", "ingress"]` but actual pod
@@ -79,7 +79,7 @@ labels are `"cost-management-api"`, `"cost-processor"`, `"listener"`,
 
 **Fix:** Use actual component label values.
 
-### I6. `KruizeServiceMonitor` selects wrong component label — OPEN
+### I6. `KruizeServiceMonitor` selects wrong component label — FIXED
 
 `internal/resources/monitoring.go:64` selects `"kruize"` but actual label is
 `"ros-optimization"`. Matches nothing.
