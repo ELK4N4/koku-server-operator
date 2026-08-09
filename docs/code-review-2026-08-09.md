@@ -53,22 +53,25 @@ assertion. Wrapped errors will not be extracted. Use `errors.As` instead.
 **Fix:** Reuse a single client on the reconciler struct, or call
 `transport.CloseIdleConnections()` after use.
 
-### I3. `PhaseError` is dead code — OPEN
+### I3. `PhaseError` is dead code — DEFERRED
 
 No phase function returns a `PhaseError`. The `applyPhaseError` call in the
 reconcile loop (line 151) never fires. `NewPhaseError` is exported but unused.
 
-**Fix:** Either wrap phase errors at call sites (validation, migration at
-minimum) or remove the `PhaseError` infrastructure.
+**Decision:** Wire it up, not remove it. Refactor all 9 phases to return
+`NewPhaseError` instead of inline `SetStatusCondition` + `fmt.Errorf`. This
+centralizes condition-setting in `applyPhaseError` and eliminates boilerplate.
+Separate ticket — touches all phase functions.
 
-### I4. Monitoring stage swallows all apply errors — OPEN
+### I4. Monitoring stage swallows all apply errors — FIXED
 
-`internal/controller/costmanagementserviceconfig_controller.go:596-604` catches
-all `apply` errors and logs them. RBAC, quota, or real API errors are silently
-ignored.
+`internal/controller/costmanagementserviceconfig_controller.go:596-604` caught
+all `apply` errors and logged at Info level. Real failures were invisible.
 
-**Fix:** Only skip on `meta.IsNoMatchError(err)` (CRD absent); return all
-other errors.
+**Fix:** Still non-blocking (monitoring must not prevent Ready), but now
+distinguishes CRD-absent (`IsNoMatchError` → Info) from real failures
+(RBAC, quota, API errors → Error level). The operator stays functional
+either way, but real problems are now visible in logs.
 
 ### I5. `AppServiceMonitor` label selectors don't match actual pods — FIXED
 

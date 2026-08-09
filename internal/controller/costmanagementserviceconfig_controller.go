@@ -594,12 +594,15 @@ func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.
 		resources.PrometheusRules(cfg),
 	} {
 		if err := r.apply(ctx, cfg, obj); err != nil {
-			// Monitoring CRDs may not be installed — log and continue rather than
-			// blocking the pipeline.
-			log.FromContext(ctx).Info("monitoring resource skipped (CRD absent?)",
-				"kind", obj.GetObjectKind().GroupVersionKind().Kind,
-				"name", obj.GetName(),
-				"error", err.Error())
+			gvk := obj.GetObjectKind().GroupVersionKind()
+			if apimeta.IsNoMatchError(err) {
+				log.FromContext(ctx).Info("monitoring resource skipped (CRD absent)",
+					"kind", gvk.Kind, "name", obj.GetName())
+			} else {
+				log.FromContext(ctx).Error(err, "monitoring resource apply failed",
+					"kind", gvk.Kind, "name", obj.GetName())
+			}
+			continue
 		}
 	}
 	return Result{}, nil
