@@ -27,28 +27,28 @@ import (
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
-// CostManagementReconciler reconciles a CostManagement object
-type CostManagementReconciler struct {
+// CostManagementServiceConfigReconciler reconciles a CostManagementServiceConfig object
+type CostManagementServiceConfigReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=cost.redhat.com,resources=costmanagements,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=cost.redhat.com,resources=costmanagements/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=cost.redhat.com,resources=costmanagements/finalizers,verbs=update
+// +kubebuilder:rbac:groups=service.costmanagement.openshift.io,resources=costmanagementserviceconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=service.costmanagement.openshift.io,resources=costmanagementserviceconfigs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=service.costmanagement.openshift.io,resources=costmanagementserviceconfigs/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
-// the CostManagement object against the actual cluster state, and then
+// the CostManagementServiceConfig object against the actual cluster state, and then
 // perform operations to make the cluster state reflect the state specified by
 // the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
-func (r *CostManagementReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-	log.Info("Reconciling CostManagement", "name", req.Name, "namespace", req.Namespace)
+	log.Info("Reconciling CostManagementServiceConfig", "name", req.Name, "namespace", req.Namespace)
 
 	// TODO(user): your logic here
 
@@ -56,9 +56,9 @@ func (r *CostManagementReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *CostManagementReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *CostManagementServiceConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&costv1alpha1.CostManagement{}).
-		Named("costmanagement").
+		For(&costv1alpha1.CostManagementServiceConfig{}).
+		Named("costmanagementserviceconfig").
 		Complete(r)
 }

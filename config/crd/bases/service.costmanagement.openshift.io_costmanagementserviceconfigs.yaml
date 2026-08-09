@@ -4,20 +4,21 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: costmanagements.cost.redhat.com
+  name: costmanagementserviceconfigs.service.costmanagement.openshift.io
 spec:
-  group: cost.redhat.com
+  group: service.costmanagement.openshift.io
   names:
-    kind: CostManagement
-    listKind: CostManagementList
-    plural: costmanagements
-    singular: costmanagement
+    kind: CostManagementServiceConfig
+    listKind: CostManagementServiceConfigList
+    plural: costmanagementserviceconfigs
+    singular: costmanagementserviceconfig
   scope: Namespaced
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: CostManagement is the Schema for the costmanagements API.
+        description: CostManagementServiceConfig is the Schema for the costmanagementserviceconfigs
+          API.
         properties:
           apiVersion:
             description: |-
@@ -37,15 +38,17 @@ spec:
           metadata:
             type: object
           spec:
-            description: CostManagementSpec defines the desired state of CostManagement.
+            description: CostManagementServiceConfigSpec defines the desired state
+              of CostManagementServiceConfig.
             properties:
               foo:
-                description: Foo is an example field of CostManagement. Edit costmanagement_types.go
-                  to remove/update
+                description: Foo is an example field of CostManagementServiceConfig.
+                  Edit costmanagementserviceconfig_types.go to remove/update
                 type: string
             type: object
           status:
-            description: CostManagementStatus defines the observed state of CostManagement.
+            description: CostManagementServiceConfigStatus defines the observed state
+              of CostManagementServiceConfig.
             type: object
         type: object
     served: true

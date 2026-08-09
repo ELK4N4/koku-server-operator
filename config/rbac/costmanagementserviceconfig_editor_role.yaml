@@ -1,7 +1,7 @@
 # This rule is not used by the project koku-service-operator itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants permissions to create, update, and delete resources within the cost.redhat.com.
+# Grants permissions to create, update, and delete resources within the service.costmanagement.openshift.io.
 # This role is intended for users who need to manage these resources
 # but should not control RBAC or manage permissions for others.
 
@@ -11,12 +11,12 @@ metadata:
   labels:
     app.kubernetes.io/name: koku-service-operator
     app.kubernetes.io/managed-by: kustomize
-  name: costmanagement-editor-role
+  name: costmanagementserviceconfig-editor-role
 rules:
 - apiGroups:
-  - cost.redhat.com
+  - service.costmanagement.openshift.io
   resources:
-  - costmanagements
+  - costmanagementserviceconfigs
   verbs:
   - create
   - delete
@@ -26,8 +26,8 @@ rules:
   - update
   - watch
 - apiGroups:
-  - cost.redhat.com
+  - service.costmanagement.openshift.io
   resources:
-  - costmanagements/status
+  - costmanagementserviceconfigs/status
   verbs:
   - get

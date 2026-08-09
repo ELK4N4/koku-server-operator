@@ -1,7 +1,7 @@
 # This rule is not used by the project koku-service-operator itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants read-only access to cost.redhat.com resources.
+# Grants read-only access to service.costmanagement.openshift.io resources.
 # This role is intended for users who need visibility into these resources
 # without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
 
@@ -11,19 +11,19 @@ metadata:
   labels:
     app.kubernetes.io/name: koku-service-operator
     app.kubernetes.io/managed-by: kustomize
-  name: costmanagement-viewer-role
+  name: costmanagementserviceconfig-viewer-role
 rules:
 - apiGroups:
-  - cost.redhat.com
+  - service.costmanagement.openshift.io
   resources:
-  - costmanagements
+  - costmanagementserviceconfigs
   verbs:
   - get
   - list
   - watch
 - apiGroups:
-  - cost.redhat.com
+  - service.costmanagement.openshift.io
   resources:
-  - costmanagements/status
+  - costmanagementserviceconfigs/status
   verbs:
   - get

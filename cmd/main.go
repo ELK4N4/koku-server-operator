@@ -202,11 +202,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.CostManagementReconciler{
+	if err := (&controller.CostManagementServiceConfigReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "CostManagement")
+		setupLog.Error(err, "unable to create controller", "controller", "CostManagementServiceConfig")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

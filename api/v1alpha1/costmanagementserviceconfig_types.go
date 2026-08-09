@@ -23,42 +23,43 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// CostManagementSpec defines the desired state of CostManagement.
-type CostManagementSpec struct {
+// CostManagementServiceConfigSpec defines the desired state of CostManagementServiceConfig.
+type CostManagementServiceConfigSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of CostManagement. Edit costmanagement_types.go to remove/update
+	// Foo is an example field of CostManagementServiceConfig. Edit costmanagementserviceconfig_types.go to remove/update
 	Foo string `json:"foo,omitempty"`
 }
 
-// CostManagementStatus defines the observed state of CostManagement.
-type CostManagementStatus struct {
+// CostManagementServiceConfigStatus defines the observed state of CostManagementServiceConfig.
+type CostManagementServiceConfigStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:path=costmanagementserviceconfigs,scope=Namespaced,singular=costmanagementserviceconfig
 
-// CostManagement is the Schema for the costmanagements API.
-type CostManagement struct {
+// CostManagementServiceConfig is the Schema for the costmanagementserviceconfigs API.
+type CostManagementServiceConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   CostManagementSpec   `json:"spec,omitempty"`
-	Status CostManagementStatus `json:"status,omitempty"`
+	Spec   CostManagementServiceConfigSpec   `json:"spec,omitempty"`
+	Status CostManagementServiceConfigStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// CostManagementList contains a list of CostManagement.
-type CostManagementList struct {
+// CostManagementServiceConfigList contains a list of CostManagementServiceConfig.
+type CostManagementServiceConfigList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []CostManagement `json:"items"`
+	Items           []CostManagementServiceConfig `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&CostManagement{}, &CostManagementList{})
+	SchemeBuilder.Register(&CostManagementServiceConfig{}, &CostManagementServiceConfigList{})
 }
