@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	rbacDBName = "costonprem_rbac"
+	rbacDBName = RbacDBName
 
 	// MigrationBackoffLimit is the number of Kubernetes retries per Job,
 	// matching the COST-7685 specification.

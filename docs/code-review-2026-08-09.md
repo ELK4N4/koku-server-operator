@@ -117,24 +117,26 @@ functional benefit.
 
 ## Minor (Nice to Have)
 
-### M1. `ubi9/ubi-minimal:9.7` hardcoded in 7+ places — OPEN
+### M1. `ubi9/ubi-minimal:9.7` hardcoded in 7+ places — FIXED
 
-`internal/resources/volumes.go:128,149` and `internal/resources/ros.go:155,168,183,199`.
-Should be a constant, and ideally a CR field for air-gapped environments.
+Extracted `UBIMinimalImage` constant in `names.go`. All 7 call sites in
+`volumes.go`, `ros.go`, and `rbac.go` now reference the constant.
 
 ### M3. `dbPodSC()` doc comment says "dbContainerSC" — FIXED
 
 `internal/resources/database.go` — moved misplaced comment to `dbContainerSC`.
 
-### M4. DB name constants scattered — OPEN
+### M4. DB name constants scattered — FIXED
 
-`kruizeDBName` in `kruize.go`, `rosDBName` in `ros.go`, `rbacDBName` in
-`migration.go`. Centralize in `names.go`.
+Centralized `KokuDBName`, `RosDBName`, `RbacDBName`, `KruizeDBName` in
+`names.go`. Per-file constants now reference the central definitions.
 
-### M6. Some containers don't drop ALL capabilities — OPEN
+### M6. Some containers don't drop ALL capabilities — FIXED
 
-Inconsistent with `restricted-v2` SCC compliance — some containers omit
-`Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}`.
+Added `Capabilities: Drop: ["ALL"]` to `kokuAppContainerSC` (covers Koku API,
+Masu, Listener, workers, migration), `restrictedContainerSC` (covers cache,
+ingress, envoy, kruize), `rbacAppContainerSC`, and `dbContainerSC`.
+All container security contexts now consistently comply with `restricted-v2`.
 
 ---
 
@@ -143,15 +145,3 @@ Inconsistent with `restricted-v2` SCC compliance — some containers omit
 1. Add integration tests for the full `Reconcile()` loop (envtest)
 2. Add a validation webhook to catch contradictions (e.g. `deploy: true` + external host)
 3. Add `PodDisruptionBudgets` for critical-path workloads (Koku API, Envoy, RBAC)
-4. Centralize init container image and DB name constants
-
----
-
-## Verdict
-
-**Not ready to merge — fix C1 and C2 first.**
-
-C1 (NetworkPolicy port mismatch) will block all API traffic through the
-gateway. C2 (MergeEnv) will silently ignore user env var overrides. The
-ServiceMonitor label mismatches (I5, I6) will prevent metrics scraping from
-all major services. After those four fixes, this is solid for an alpha release.

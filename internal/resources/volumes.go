@@ -126,7 +126,7 @@ func ubiMinimalInitSC() *corev1.SecurityContext {
 func CACombineInitContainer(_ *costv1alpha1.CostManagementServiceConfig) corev1.Container {
 	return corev1.Container{
 		Name:    "prepare-ca-bundle",
-		Image:   "registry.access.redhat.com/ubi9/ubi-minimal:9.7",
+		Image:   UBIMinimalImage,
 		Command: []string{"bash", "/scripts/combine-ca.sh"},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "ca-scripts", MountPath: "/scripts", ReadOnly: true},
@@ -147,7 +147,7 @@ func WaitForValkeyInitContainer(cfg *costv1alpha1.CostManagementServiceConfig) c
 	}
 	return corev1.Container{
 		Name:  "wait-for-valkey",
-		Image: "registry.access.redhat.com/ubi9/ubi-minimal:9.7",
+		Image: UBIMinimalImage,
 		// Use bash /dev/tcp — available in ubi-minimal without nc/ncat.
 		Command: []string{
 			"bash", "-c",
@@ -173,6 +173,7 @@ func kokuAppContainerSC() *corev1.SecurityContext {
 		AllowPrivilegeEscalation: &f,
 		Privileged:               &f,
 		RunAsNonRoot:             &t,
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}
 }
 
@@ -192,6 +193,7 @@ func restrictedContainerSC() *corev1.SecurityContext {
 		Privileged:               &f,
 		ReadOnlyRootFilesystem:   &t,
 		RunAsNonRoot:             &t,
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}
 }
 

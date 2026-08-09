@@ -183,6 +183,7 @@ func dbContainerSC() *corev1.SecurityContext {
 	return &corev1.SecurityContext{
 		AllowPrivilegeEscalation: &f,
 		Privileged:               &f,
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}
 }
 
