@@ -165,9 +165,6 @@ func DatabaseService(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.Serv
 }
 
 // dbContainerSC returns a security context suitable for the PostgreSQL
-// container: no privilege escalation, no special capabilities, but
-// readOnlyRootFilesystem is left false because PostgreSQL writes to
-// /var/run and /tmp inside the container filesystem.
 // dbPodSC returns the pod-level security context for PostgreSQL.
 // fsGroup:26 causes Kubernetes to chown mounted volumes to the postgres GID
 // so the image (which runs as UID/GID 26) can write to the PVC.
@@ -178,6 +175,9 @@ func dbPodSC() *corev1.PodSecurityContext {
 	}
 }
 
+// dbContainerSC returns the container-level security context for PostgreSQL:
+// no privilege escalation, readOnlyRootFilesystem left false because
+// PostgreSQL writes to /var/run and /tmp inside the container filesystem.
 func dbContainerSC() *corev1.SecurityContext {
 	f := false
 	return &corev1.SecurityContext{

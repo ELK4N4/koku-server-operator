@@ -95,12 +95,13 @@ registers `Owns()` watches for core resources but not for unstructured types
 (ClusterRole, ClusterRoleBinding). A deleted Route means up to 5 minutes of
 downtime before drift correction fires.
 
-### I9. `CacheConfig.Auth.Enabled` is plain `bool`, not `*bool` — OPEN
+### I9. `CacheConfig.Auth.Enabled` is plain `bool`, not `*bool` — WONTFIX
 
-Inconsistent with the documented `*bool` pattern for opt-out fields. Functionally
-harmless since default is false, but may confuse future maintainers. Same for
-`KafkaTLSSpec.Enabled`, `BootstrapAdminSpec.Enabled`, `KeycloakSyncSpec.Enabled`,
-`CacheTLSSpec.Enabled`.
+These are opt-in fields (default false). The `*bool` pattern is only needed
+for opt-out fields (default true) where `omitempty` drops an explicit `false`.
+For opt-in, `bool` + `omitempty` is correct — `false` and unset both mean
+disabled. Changing to `*bool` would require updating 13 call sites for zero
+functional benefit.
 
 ---
 
@@ -111,9 +112,9 @@ harmless since default is false, but may confuse future maintainers. Same for
 `internal/resources/volumes.go:128,149` and `internal/resources/ros.go:155,168,183,199`.
 Should be a constant, and ideally a CR field for air-gapped environments.
 
-### M3. `dbPodSC()` doc comment says "dbContainerSC" — OPEN
+### M3. `dbPodSC()` doc comment says "dbContainerSC" — FIXED
 
-`internal/resources/database.go:172-174`.
+`internal/resources/database.go` — moved misplaced comment to `dbContainerSC`.
 
 ### M4. DB name constants scattered — OPEN
 
