@@ -350,16 +350,28 @@ const envoyYAMLTemplate = `static_resources:
                 route:
                   cluster: ros-api-backend
                   timeout: 30s
+                  retry_policy:
+                    retry_on: 5xx,reset,connect-failure,refused-stream
+                    num_retries: 2
+                    per_try_timeout: 15s
               - match:
                   prefix: "/api/rbac/"
                 route:
                   cluster: rbac-api-backend
                   timeout: 30s
+                  retry_policy:
+                    retry_on: 5xx,reset,connect-failure,refused-stream
+                    num_retries: 2
+                    per_try_timeout: 15s
               - match:
                   prefix: "/api/cost-management/"
                 route:
                   cluster: koku-api-backend
                   timeout: 60s
+                  retry_policy:
+                    retry_on: 5xx,reset,connect-failure,refused-stream
+                    num_retries: 2
+                    per_try_timeout: 30s
               - match:
                   path: "/api/ingress/ready"
                 route:
@@ -371,6 +383,10 @@ const envoyYAMLTemplate = `static_resources:
                 route:
                   cluster: ingress-backend
                   timeout: 30s
+                  retry_policy:
+                    retry_on: 5xx,reset,connect-failure,refused-stream
+                    num_retries: 2
+                    per_try_timeout: 15s
           http_filters:
           - name: envoy.filters.http.jwt_authn
             typed_config:

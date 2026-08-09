@@ -259,7 +259,14 @@ type KeycloakSpec struct {
 }
 
 type KeycloakTLSSpec struct {
+	// InsecureSkipVerify disables TLS verification for Keycloak OIDC/JWKS.
+	// Prefer CACertSecretName for production.
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+	// CACertSecretName is an existing Secret with key ca.crt used to verify
+	// Keycloak TLS (typically the OpenShift router CA when issuerURL is a
+	// public Route). When empty, oauth-proxy falls back to the cluster
+	// service CA ConfigMap — which does not trust Route certificates.
+	CACertSecretName string `json:"caCertSecretName,omitempty"`
 }
 
 // RealmUser defines an initial Keycloak user created by the operator.

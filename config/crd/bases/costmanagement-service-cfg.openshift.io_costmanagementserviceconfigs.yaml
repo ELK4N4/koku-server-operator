@@ -158,7 +158,17 @@ spec:
                         type: string
                       tls:
                         properties:
+                          caCertSecretName:
+                            description: |-
+                              CACertSecretName is an existing Secret with key ca.crt used to verify
+                              Keycloak TLS (typically the OpenShift router CA when issuerURL is a
+                              public Route). When empty, oauth-proxy falls back to the cluster
+                              service CA ConfigMap — which does not trust Route certificates.
+                            type: string
                           insecureSkipVerify:
+                            description: |-
+                              InsecureSkipVerify disables TLS verification for Keycloak OIDC/JWKS.
+                              Prefer CACertSecretName for production.
                             type: boolean
                         type: object
                       url:
