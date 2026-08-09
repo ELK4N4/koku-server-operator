@@ -1,8 +1,9 @@
 package resources
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -128,7 +129,7 @@ func MergeEnv(base []corev1.EnvVar, overrides map[string]string) []corev1.EnvVar
 	for k := range overrides {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.SortFunc(keys, cmp.Compare)
 	for _, k := range keys {
 		base = append(base, EnvVal(k, overrides[k]))
 	}

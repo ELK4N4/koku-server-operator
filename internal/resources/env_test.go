@@ -11,7 +11,7 @@ func TestMergeEnvStableOrder(t *testing.T) {
 		"M_MID":   "m",
 	}
 	var first []string
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		merged := MergeEnv(nil, overrides)
 		names := make([]string, len(merged))
 		for j, e := range merged {
