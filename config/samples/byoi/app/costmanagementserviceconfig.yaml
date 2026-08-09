@@ -1,6 +1,6 @@
 # Separate BYOI CostManagementServiceConfig — deploy:false for DB/cache.
 # Point clusterDomain at your cluster's apps domain before relying on Routes.
-apiVersion: costmanagement-service-cfg.openshift.io/v1alpha1
+apiVersion: service.costmanagement.openshift.io/v1alpha1
 kind: CostManagementServiceConfig
 metadata:
   name: cost-management

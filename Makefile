@@ -28,8 +28,8 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 # This variable is used to construct full image tags for bundle and catalog images.
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
-# openshift.io/koku-server-operator-bundle:$VERSION and openshift.io/koku-server-operator-catalog:$VERSION.
-IMAGE_TAG_BASE ?= quay.io/project-koku/koku-server-operator
+# openshift.io/koku-service-operator-bundle:$VERSION and openshift.io/koku-service-operator-catalog:$VERSION.
+IMAGE_TAG_BASE ?= quay.io/project-koku/koku-service-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
@@ -94,11 +94,14 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook \
+	  "paths=./api/...;./internal/...;./cmd/...;./test/..." \
+	  output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" \
+	  "paths=./api/...;./internal/...;./cmd/...;./test/..."
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -116,7 +119,7 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # CertManager is installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
-KIND_CLUSTER ?= koku-server-operator-test-e2e
+KIND_CLUSTER ?= koku-service-operator-test-e2e
 
 .PHONY: setup-test-e2e
 setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
@@ -185,10 +188,10 @@ PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- $(CONTAINER_TOOL) buildx create --name koku-server-operator-builder
-	$(CONTAINER_TOOL) buildx use koku-server-operator-builder
+	- $(CONTAINER_TOOL) buildx create --name koku-service-operator-builder
+	$(CONTAINER_TOOL) buildx use koku-service-operator-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
-	- $(CONTAINER_TOOL) buildx rm koku-server-operator-builder
+	- $(CONTAINER_TOOL) buildx rm koku-service-operator-builder
 	rm Dockerfile.cross
 
 .PHONY: build-installer

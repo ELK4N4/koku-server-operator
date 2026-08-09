@@ -4,7 +4,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
 var (
@@ -34,7 +34,7 @@ func serviceMonitor(cfg *costv1alpha1.CostManagementServiceConfig, name, portNam
 	}, "spec", "endpoints")
 	_ = unstructured.SetNestedField(sm.Object, map[string]any{
 		"matchLabels": map[string]any{
-			"app.kubernetes.io/managed-by": "koku-server-operator",
+			"app.kubernetes.io/managed-by": "koku-service-operator",
 			"app.kubernetes.io/instance":   cfg.Name,
 		},
 		"matchExpressions": []any{

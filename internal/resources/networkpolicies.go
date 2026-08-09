@@ -6,7 +6,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
 // netpol builds a Ingress-only NetworkPolicy with the given pod selector and rules.

@@ -7,7 +7,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
 // KokuCommonEnv builds the environment variables shared by all Koku

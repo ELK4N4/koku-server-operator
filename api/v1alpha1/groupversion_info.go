@@ -1,6 +1,6 @@
-// Package v1alpha1 contains API Schema definitions for the costmanagement-service-cfg.openshift.io group.
+// Package v1alpha1 contains API Schema definitions for the service.costmanagement.openshift.io group.
 // +kubebuilder:object:generate=true
-// +groupName=costmanagement-service-cfg.openshift.io
+// +groupName=service.costmanagement.openshift.io
 package v1alpha1
 
 import (
@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	GroupVersion  = schema.GroupVersion{Group: "costmanagement-service-cfg.openshift.io", Version: "v1alpha1"}
+	GroupVersion  = schema.GroupVersion{Group: "service.costmanagement.openshift.io", Version: "v1alpha1"}
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
 	AddToScheme   = SchemeBuilder.AddToScheme
 )

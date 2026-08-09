@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
 // ownershipScheme registers all types needed for ownership tests.

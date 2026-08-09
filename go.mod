@@ -1,4 +1,4 @@
-module github.com/project-koku/koku-server-operator
+module github.com/project-koku/koku-service-operator
 
 go 1.25.0
 

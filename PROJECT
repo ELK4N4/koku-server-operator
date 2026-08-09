@@ -8,16 +8,16 @@ layout:
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
-projectName: koku-server-operator
-repo: github.com/project-koku/koku-server-operator
+projectName: koku-service-operator
+repo: github.com/project-koku/koku-service-operator
 resources:
 - api:
     crdVersion: v1
     namespaced: true
   controller: true
   domain: openshift.io
-  group: costmanagement-service-cfg
+  group: service.costmanagement
   kind: CostManagementServiceConfig
-  path: github.com/project-koku/koku-server-operator/api/v1alpha1
+  path: github.com/project-koku/koku-service-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

@@ -12,7 +12,7 @@ metadata:
   name: kafka
   namespace: cost-byoi-infra
   labels:
-    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/part-of: koku-service-operator-byoi
     app.kubernetes.io/component: kafka
 spec:
   ports:
@@ -28,7 +28,7 @@ metadata:
   name: kafka
   namespace: cost-byoi-infra
   labels:
-    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/part-of: koku-service-operator-byoi
     app.kubernetes.io/component: kafka
     app.kubernetes.io/name: kafka
 spec:
@@ -41,7 +41,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/part-of: koku-server-operator-byoi
+        app.kubernetes.io/part-of: koku-service-operator-byoi
         app.kubernetes.io/component: kafka
         app.kubernetes.io/name: kafka
     spec:

@@ -1,4 +1,4 @@
-# CRD Naming Audit: koku-server-operator
+# CRD Naming Audit: koku-service-operator
 
 **Date:** 2026-06-17
 **Author:** Pablo (with AI-assisted research)
@@ -15,7 +15,7 @@ The current CRD configuration (`cost.redhat.com / CostManagement`) places downst
 
 ## Current Configuration
 
-From the [`PROJECT`](https://github.com/project-koku/koku-server-operator/blob/main/PROJECT) file:
+From the [`PROJECT`](https://github.com/project-koku/koku-service-operator/blob/main/PROJECT) file:
 
 | Field | Current Value |
 |-------|--------------|
@@ -48,7 +48,7 @@ The Kubernetes [API conventions](https://github.com/kubernetes/community/blob/ma
 
 > "When choosing a group name, we recommend selecting a subdomain your group or organization owns, such as `widget.mycompany.com`."
 
-The upstream repo lives at `project-koku/koku-server-operator`. Using `redhat.com` signals corporate ownership of the API surface, which:
+The upstream repo lives at `project-koku/koku-service-operator`. Using `redhat.com` signals corporate ownership of the API surface, which:
 
 - Discourages external contributors (they'd be authoring CRDs under Red Hat's domain)
 - Has no precedent among successful Red Hat upstream projects (see industry survey below)
@@ -137,7 +137,7 @@ version: v1alpha1
 
 **Scaffold command:**
 ```bash
-operator-sdk init --domain openshift.io --repo github.com/project-koku/koku-server-operator
+operator-sdk init --domain openshift.io --repo github.com/project-koku/koku-service-operator
 operator-sdk create api --group koku-server --version v1alpha1 --kind KokuServer --resource --controller
 ```
 
@@ -176,7 +176,7 @@ Following the Strimzi/AMQ Streams pattern, the downstream operator (`cost-manage
 
 | Aspect | Upstream | Downstream |
 |--------|----------|------------|
-| Operator name | `koku-server-operator` | `cost-management-server-operator` |
+| Operator name | `koku-service-operator` | `cost-management-server-operator` |
 | CSV displayName | "Koku Server Operator" | "Cost Management Server Operator" |
 | Container images | `quay.io/project-koku/...` | `registry.redhat.io/cost-management/...` |
 | OLM catalog | `community-operators` | `redhat-operators` |

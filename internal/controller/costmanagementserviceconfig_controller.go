@@ -20,13 +20,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
-	"github.com/project-koku/koku-server-operator/internal/resources"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
+	"github.com/project-koku/koku-service-operator/internal/resources"
 )
 
 const (
-	fieldOwner    = "koku-server-operator"
-	finalizerName = "cost.redhat.com/cleanup"
+	fieldOwner    = "koku-service-operator"
+	finalizerName = "costmanagementserviceconfigs.service.costmanagement.openshift.io/cleanup"
 	requeueFast   = 10 * time.Second
 	requeueSlow   = 30 * time.Second
 	requeueDrift  = 5 * time.Minute
@@ -38,9 +38,9 @@ type CostManagementServiceConfigReconciler struct {
 	Recorder record.EventRecorder
 }
 
-// +kubebuilder:rbac:groups=costmanagement-service-cfg.openshift.io,resources=costmanagementserviceconfigs,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=costmanagement-service-cfg.openshift.io,resources=costmanagementserviceconfigs/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=costmanagement-service-cfg.openshift.io,resources=costmanagementserviceconfigs/finalizers,verbs=update
+// +kubebuilder:rbac:groups=service.costmanagement.openshift.io,resources=costmanagementserviceconfigs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=service.costmanagement.openshift.io,resources=costmanagementserviceconfigs/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=service.costmanagement.openshift.io,resources=costmanagementserviceconfigs/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=jobs;cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services;configmaps;secrets;serviceaccounts;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
