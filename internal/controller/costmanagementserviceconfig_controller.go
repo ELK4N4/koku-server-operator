@@ -8,6 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,6 +52,7 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=console.openshift.io,resources=consolelinks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -558,6 +560,19 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		return Result{}, fmt.Errorf("consolelink: %w", err)
 	}
 
+	// NetworkPolicies — restrict traffic to expected flows per component.
+	for _, np := range []client.Object{
+		resources.GatewayNetworkPolicy(cfg),
+		resources.IngressNetworkPolicy(cfg),
+		resources.KruizeNetworkPolicy(cfg),
+		resources.RBACAPINetworkPolicy(cfg),
+		resources.KokuAPINetworkPolicy(cfg),
+	} {
+		if err := r.apply(ctx, cfg, np); err != nil {
+			return Result{}, fmt.Errorf("networkpolicy %s: %w", np.GetName(), err)
+		}
+	}
+
 	return Result{}, nil
 }
 
@@ -752,5 +767,6 @@ func (r *CostManagementServiceConfigReconciler) SetupWithManager(mgr ctrl.Manage
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&corev1.ServiceAccount{}).
+		Owns(&networkingv1.NetworkPolicy{}).
 		Complete(r)
 }
