@@ -87,13 +87,23 @@ labels are `"cost-management-api"`, `"cost-processor"`, `"listener"`,
 `internal/resources/monitoring.go:64` selects `"kruize"` but actual label is
 `"ros-optimization"`. Matches nothing.
 
-### I7. No watches on Routes, ServiceMonitors, PrometheusRules, ClusterRoles — OPEN
+### I7. No watches on Routes, ServiceMonitors, PrometheusRules, ClusterRoles — DEFERRED
 
 `internal/controller/costmanagementserviceconfig_controller.go:758-771`
 registers `Owns()` watches for core resources but not for unstructured types
 (Routes, ServiceMonitors, PrometheusRules) or cluster-scoped resources
 (ClusterRole, ClusterRoleBinding). A deleted Route means up to 5 minutes of
 downtime before drift correction fires.
+
+**Impact:** If one of these resources is deleted externally, the operator
+won't notice until the 5-minute drift correction requeue (`requeueDrift`)
+recreates it. No crash, no data loss — just delayed recovery.
+
+**Decision:** Separate ticket. Unstructured CRDs (Routes, ServiceMonitors)
+need discovery-gated dynamic watches — registering a watch for a missing GVK
+crashes the controller at startup. Cluster-scoped resources (ClusterRole/
+ClusterRoleBinding) can't use `Owns()` (ownerReferences don't cross scope);
+need `Watches()` with a custom event handler mapping back to the CR.
 
 ### I9. `CacheConfig.Auth.Enabled` is plain `bool`, not `*bool` — WONTFIX
 
