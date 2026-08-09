@@ -170,7 +170,9 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyControllerUp).Should(Succeed())
 		})
 
-		It("should ensure the metrics endpoint is serving metrics", func() {
+		// TODO(COST-7697): adapt this test for the operator's HTTP metrics on :8080.
+		// The scaffold test assumes cert-manager TLS on :8443; our operator uses plain HTTP.
+		PIt("should ensure the metrics endpoint is serving metrics", func() {
 			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
 			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
 				"--clusterrole=koku-service-operator-metrics-reader",
