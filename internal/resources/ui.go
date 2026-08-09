@@ -200,19 +200,7 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 				},
 			},
 		},
-		{
-			// Service CA for Keycloak TLS verification (ConfigMap injected by OpenShift).
-			Name: "keycloak-ca",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{Name: NameServiceCAConfigMap(cfg)},
-					Items: []corev1.KeyToPath{
-						// inject-cabundle writes service-ca.crt; oauth2-proxy expects ca.crt.
-						{Key: "service-ca.crt", Path: "ca.crt"},
-					},
-				},
-			},
-		},
+		keycloakCAVolume(cfg),
 		// Writable paths for nginx under readOnlyRootFilesystem.
 		{Name: "nginx-tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 		{Name: "nginx-log", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
@@ -385,4 +373,33 @@ func discoveredClusterDomain(cfg *costv1alpha1.CostManagementServiceConfig) stri
 		return ""
 	}
 	return cfg.Status.DiscoveredConfig.ClusterDomain
+}
+
+// keycloakCAVolume returns the CA volume for oauth2-proxy --provider-ca-file.
+// Prefer auth.keycloak.tls.caCertSecretName (router/ingress CA, chart parity);
+// otherwise fall back to the OpenShift service-CA ConfigMap (in-cluster only).
+func keycloakCAVolume(cfg *costv1alpha1.CostManagementServiceConfig) corev1.Volume {
+	if secret := cfg.Spec.Auth.Keycloak.TLS.CACertSecretName; secret != "" {
+		return corev1.Volume{
+			Name: "keycloak-ca",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: secret,
+					Items:      []corev1.KeyToPath{{Key: "ca.crt", Path: "ca.crt"}},
+				},
+			},
+		}
+	}
+	return corev1.Volume{
+		Name: "keycloak-ca",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: NameServiceCAConfigMap(cfg)},
+				Items: []corev1.KeyToPath{
+					// inject-cabundle writes service-ca.crt; oauth2-proxy expects ca.crt.
+					{Key: "service-ca.crt", Path: "ca.crt"},
+				},
+			},
+		},
+	}
 }

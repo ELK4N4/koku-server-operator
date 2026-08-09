@@ -187,7 +187,9 @@ func waitForKruize(cfg *costv1alpha1.CostManagementServiceConfig) corev1.Contain
 	}
 }
 
-// waitForKoku returns an init container that polls the Koku API health endpoint.
+// waitForKoku returns an init container that waits for the Koku API Service.
+// Matches the chart: TCP connect to the Service port (8000). Probes/metrics
+// listen on 9000 inside the pod, but that port is not exposed on the Service.
 func waitForKoku(cfg *costv1alpha1.CostManagementServiceConfig) corev1.Container {
 	host := NameKokuAPI(cfg)
 	return corev1.Container{
@@ -195,7 +197,7 @@ func waitForKoku(cfg *costv1alpha1.CostManagementServiceConfig) corev1.Container
 		Image: "registry.access.redhat.com/ubi9/ubi-minimal:9.7",
 		Command: []string{
 			"bash", "-c",
-			`until curl -sf http://` + host + `:9000/readyz >/dev/null 2>&1; do echo 'waiting for koku'; sleep 5; done`,
+			`until timeout 3 bash -c "echo > /dev/tcp/` + host + `/8000" 2>/dev/null; do echo 'waiting for koku'; sleep 5; done`,
 		},
 		SecurityContext: ubiMinimalInitSC(),
 	}

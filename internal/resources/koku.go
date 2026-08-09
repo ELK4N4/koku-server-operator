@@ -28,6 +28,13 @@ func KokuAPIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.De
 	env = append(env,
 		EnvVal("API_PATH_PREFIX", "/api/cost-management"),
 		EnvVal("MASU", "false"),
+		// Chart defaults: without an explicit GUNICORN_WORKERS, gunicorn uses
+		// POD_CPU_LIMIT*2+1. With no container CPU limit, OpenShift exposes the
+		// node allocatable as POD_CPU_LIMIT (often 4+), spawning too many workers
+		// and starving the API under concurrent load (gateway 503s).
+		EnvVal("GUNICORN_WORKERS", "2"),
+		EnvVal("GUNICORN_THREADS", "4"),
+		EnvVal("PROMETHEUS_MULTIPROC_DIR", "/tmp"),
 		EnvFromFieldRef("POD_CPU_LIMIT", containerName, "limits.cpu"),
 	)
 	env = MergeEnv(env, spec.Env)
@@ -67,6 +74,8 @@ func MasuDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deplo
 		EnvVal("MASU", "true"),
 		EnvVal("API_PATH_PREFIX", "/api/cost-management"),
 		EnvVal("KAFKA_CONNECT", "true"),
+		EnvVal("GUNICORN_WORKERS", "2"),
+		EnvVal("PROMETHEUS_MULTIPROC_DIR", "/tmp"),
 		EnvFromFieldRef("POD_CPU_LIMIT", containerName, "limits.cpu"),
 	)
 	env = MergeEnv(env, spec.Env)
