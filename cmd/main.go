@@ -37,8 +37,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
-	"github.com/project-koku/koku-server-operator/internal/controller"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
+	"github.com/project-koku/koku-service-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 

@@ -2,7 +2,7 @@ apiVersion: cost.redhat.com/v1alpha1
 kind: CostManagement
 metadata:
   labels:
-    app.kubernetes.io/name: koku-server-operator
+    app.kubernetes.io/name: koku-service-operator
     app.kubernetes.io/managed-by: kustomize
   name: costmanagement-sample
 spec:
