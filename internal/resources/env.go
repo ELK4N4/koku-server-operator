@@ -2,6 +2,7 @@ package resources
 
 import (
 	"fmt"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -117,9 +118,19 @@ func boolStr(b bool) string {
 
 // MergeEnv appends user-provided env overrides after the base set,
 // letting user-specified values take precedence for duplicate keys.
+// Keys are sorted so SSA applies produce a stable pod template (map
+// iteration order would otherwise thrash Deployment rollouts).
 func MergeEnv(base []corev1.EnvVar, overrides map[string]string) []corev1.EnvVar {
-	for k, v := range overrides {
-		base = append(base, EnvVal(k, v))
+	if len(overrides) == 0 {
+		return base
+	}
+	keys := make([]string, 0, len(overrides))
+	for k := range overrides {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		base = append(base, EnvVal(k, overrides[k]))
 	}
 	return base
 }
