@@ -190,7 +190,12 @@ func dbContainerSC() *corev1.SecurityContext {
 
 func nonRootPodSC() *corev1.PodSecurityContext {
 	nonRoot := true
-	return &corev1.PodSecurityContext{RunAsNonRoot: &nonRoot}
+	return &corev1.PodSecurityContext{
+		RunAsNonRoot: &nonRoot,
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
 }
 
 func pullPolicy(cfg *costv1alpha1.CostManagementServiceConfig) corev1.PullPolicy {

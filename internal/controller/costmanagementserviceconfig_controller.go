@@ -378,7 +378,6 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 	// Kruize (needed by ROS Processor and Poller — deploy before ROS).
 	kruizeObjs := []client.Object{
 		resources.KruizeServiceAccount(cfg),
-		resources.OpenShiftAnyUIDRoleBinding(cfg, resources.NameKruizeServiceAccount(cfg), "ros-optimization"),
 		resources.KruizeConfigMap(cfg),
 		resources.KruizeDeployment(cfg),
 		resources.KruizeService(cfg),
@@ -412,7 +411,6 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 	objs := []client.Object{
 		resources.CdappConfigMap(cfg),
 		resources.ROSServiceAccount(cfg),
-		resources.OpenShiftAnyUIDRoleBinding(cfg, resources.NameROSServiceAccount(cfg), "ros"),
 		resources.KokuAPIDeployment(cfg),
 		resources.KokuAPIService(cfg),
 		resources.MasuDeployment(cfg),

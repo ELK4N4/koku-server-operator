@@ -38,9 +38,9 @@ func TestUIDeploymentOAuthProxySecurityContext(t *testing.T) {
 	if sc == nil {
 		t.Fatal("oauth-proxy SecurityContext is nil")
 	}
-	// RunAsUser must be absent — OpenShift SCC webhook injects the namespace UID.
+	// RunAsUser must be absent — restricted-v2 SCC injects the namespace UID.
 	if sc.RunAsUser != nil {
-		t.Errorf("oauth-proxy RunAsUser = %d; want nil (OpenShift SCC injects namespace UID)", *sc.RunAsUser)
+		t.Errorf("oauth-proxy RunAsUser = %d; want nil (no hardcoded UID)", *sc.RunAsUser)
 	}
 	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
 		t.Error("oauth-proxy must set runAsNonRoot=true")
@@ -98,9 +98,9 @@ func TestUIDeploymentAppHasWritableNginxPaths(t *testing.T) {
 
 	sc := app.SecurityContext
 	if sc == nil {
-		t.Error("app container SecurityContext is nil")
+		t.Error("app SecurityContext is nil")
 	} else if sc.RunAsUser != nil {
-		t.Errorf("app RunAsUser = %d; want nil (OpenShift SCC injects namespace UID)", *sc.RunAsUser)
+		t.Errorf("app RunAsUser = %d; want nil (no hardcoded UID)", *sc.RunAsUser)
 	}
 }
 

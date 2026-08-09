@@ -105,9 +105,10 @@ func KokuVolumeMounts(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Vo
 }
 
 // ubiMinimalInitSC is the security context for ubi-minimal-based init containers.
-// RunAsUser is intentionally omitted: OpenShift's SCC admission webhook injects
-// the namespace-allocated UID, so a hardcoded value would be rejected by
-// restricted-v2 which enforces the namespace UID range.
+// RunAsUser is intentionally absent: restricted-v2 SCC injects the namespace UID
+// before validation, satisfying RunAsNonRoot even when the image default is root.
+// ubi-minimal follows the Red Hat arbitrary-UID convention (GID 0, ug+rw on all
+// app directories) so it functions correctly under any injected UID.
 func ubiMinimalInitSC() *corev1.SecurityContext {
 	f := false
 	t := true
@@ -157,11 +158,14 @@ func WaitForValkeyInitContainer(cfg *costv1alpha1.CostManagementServiceConfig) c
 }
 
 // kokuAppContainerSC is used for koku application containers (API, Masu,
-// Listener, Celery). readOnlyRootFilesystem is omitted because koku's Django
-// settings.py unconditionally configures a file log handler at startup
-// regardless of DJANGO_LOG_HANDLERS, causing a boot failure on a read-only FS.
-// RunAsUser is omitted so OpenShift's SCC webhook injects the namespace-allocated
-// UID instead of a hardcoded value that would be rejected by restricted-v2.
+// Listener, Celery). RunAsUser is absent — restricted-v2 SCC injects the
+// namespace UID. The koku image uses adduser -g 0 with ug+rw permissions so
+// it works under any injected UID (confirmed by the SaaS Clowder deployment).
+//
+// ReadOnlyRootFilesystem is absent: Django's settings.py unconditionally
+// instantiates a file log handler at /opt/koku/koku/app.log at startup
+// regardless of DJANGO_LOG_HANDLERS. Fix in the koku image by making log
+// handler instantiation respect the env var.
 func kokuAppContainerSC() *corev1.SecurityContext {
 	f := false
 	t := true
@@ -192,7 +196,7 @@ func restrictedContainerSC() *corev1.SecurityContext {
 }
 
 // uiOAuthProxyContainerSC is for the oauth2-proxy sidecar.
-// RunAsUser omitted — OpenShift SCC webhook injects the namespace UID.
+// RunAsUser absent — restricted-v2 SCC injects the namespace UID.
 func uiOAuthProxyContainerSC() *corev1.SecurityContext {
 	f := false
 	t := true
@@ -206,8 +210,7 @@ func uiOAuthProxyContainerSC() *corev1.SecurityContext {
 }
 
 // uiAppContainerSC is for the koku-ui-onprem nginx container.
-// Writable nginx paths are provided via emptyDir mounts in UIDeployment.
-// RunAsUser omitted — OpenShift SCC webhook injects the namespace UID.
+// Writable nginx paths provided via emptyDir mounts. RunAsUser absent.
 func uiAppContainerSC() *corev1.SecurityContext {
 	f := false
 	t := true
