@@ -15,8 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
-	"github.com/project-koku/koku-server-operator/internal/controller"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
+	"github.com/project-koku/koku-service-operator/internal/controller"
 )
 
 var (
@@ -44,7 +44,7 @@ func main() {
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "Address for the metrics endpoint.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Address for health probes.")
 	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election for controller manager.")
-	flag.StringVar(&leaderElectionID, "leader-election-id", "koku-server-operator.costmanagement-service-cfg.openshift.io", "Leader election resource ID.")
+	flag.StringVar(&leaderElectionID, "leader-election-id", "costmanagementserviceconfigs.service.costmanagement.openshift.io", "Leader election resource ID.")
 	flag.BoolVar(&developmentMode, "dev", false, "Enable development mode (verbose logging).")
 	opts := zap.Options{Development: developmentMode}
 	opts.BindFlags(flag.CommandLine)
@@ -67,7 +67,7 @@ func main() {
 	if err = (&controller.CostManagementServiceConfigReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("koku-server-operator"),
+		Recorder: mgr.GetEventRecorderFor("koku-service-operator"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "CostManagementServiceConfig")
 		os.Exit(1)

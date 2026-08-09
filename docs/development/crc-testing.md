@@ -80,7 +80,7 @@ eval "$(crc oc-env)"
 
 # Bundled mode (DB + Cache provisioned by operator — dev only)
 oc apply -n cost-onprem \
-  -f config/samples/costmanagement-service-cfg_v1alpha1_costmanagementserviceconfig.yaml
+  -f config/samples/service.costmanagement_v1alpha1_costmanagementserviceconfig.yaml
 
 # Watch reconciliation
 oc get cmsc -n cost-onprem -w

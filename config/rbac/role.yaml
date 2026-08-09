@@ -72,32 +72,6 @@ rules:
   - update
   - watch
 - apiGroups:
-  - costmanagement-service-cfg.openshift.io
-  resources:
-  - costmanagementserviceconfigs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - costmanagement-service-cfg.openshift.io
-  resources:
-  - costmanagementserviceconfigs/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - costmanagement-service-cfg.openshift.io
-  resources:
-  - costmanagementserviceconfigs/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
   - monitoring.coreos.com
   resources:
   - prometheusrules
@@ -155,6 +129,32 @@ rules:
   - routes/custom-host
   verbs:
   - create
+- apiGroups:
+  - service.costmanagement.openshift.io
+  resources:
+  - costmanagementserviceconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - service.costmanagement.openshift.io
+  resources:
+  - costmanagementserviceconfigs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - service.costmanagement.openshift.io
+  resources:
+  - costmanagementserviceconfigs/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - storage.k8s.io
   resources:

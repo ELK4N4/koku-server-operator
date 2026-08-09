@@ -1,4 +1,4 @@
-# koku-server-operator
+# koku-service-operator
 
 Kubernetes operator that deploys and manages the on-premise Cost Management
 stack on OpenShift. Users install it via OLM, apply one `CostManagementServiceConfig`
@@ -9,12 +9,13 @@ external infrastructure.
 
 | Item | Value |
 |------|-------|
-| Module | `github.com/project-koku/koku-server-operator` |
-| API group | `costmanagement-service-cfg.openshift.io/v1alpha1` |
+| Module | `github.com/project-koku/koku-service-operator` |
+| API group | `service.costmanagement.openshift.io/v1alpha1` |
 | Kind | `CostManagementServiceConfig` |
 | Short name | `cmsc` |
-| Field manager | `koku-server-operator` |
-| Leader election ID | `koku-server-operator.costmanagement-service-cfg.openshift.io` |
+| Field manager | `koku-service-operator` |
+| Leader election ID | `costmanagementserviceconfigs.service.costmanagement.openshift.io` |
+| Finalizer | `costmanagementserviceconfigs.service.costmanagement.openshift.io/cleanup` |
 
 ## Build
 

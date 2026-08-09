@@ -14,8 +14,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
-	"github.com/project-koku/koku-server-operator/internal/resources"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
+	"github.com/project-koku/koku-service-operator/internal/resources"
 )
 
 const validationTimeout = 5 * time.Second

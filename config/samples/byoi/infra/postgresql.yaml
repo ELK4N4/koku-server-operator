@@ -4,7 +4,7 @@ metadata:
   name: postgresql-init
   namespace: cost-byoi-infra
   labels:
-    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/part-of: koku-service-operator-byoi
     app.kubernetes.io/component: postgresql
 data:
   01-init-databases.sh: |
@@ -49,7 +49,7 @@ metadata:
   name: postgresql-data
   namespace: cost-byoi-infra
   labels:
-    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/part-of: koku-service-operator-byoi
     app.kubernetes.io/component: postgresql
 spec:
   accessModes: ["ReadWriteOnce"]
@@ -63,7 +63,7 @@ metadata:
   name: postgresql
   namespace: cost-byoi-infra
   labels:
-    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/part-of: koku-service-operator-byoi
     app.kubernetes.io/component: postgresql
 spec:
   ports:
@@ -79,7 +79,7 @@ metadata:
   name: postgresql
   namespace: cost-byoi-infra
   labels:
-    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/part-of: koku-service-operator-byoi
     app.kubernetes.io/component: postgresql
     app.kubernetes.io/name: postgresql
 spec:
@@ -92,7 +92,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/part-of: koku-server-operator-byoi
+        app.kubernetes.io/part-of: koku-service-operator-byoi
         app.kubernetes.io/component: postgresql
         app.kubernetes.io/name: postgresql
     spec:

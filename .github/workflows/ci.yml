@@ -120,14 +120,15 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Install controller-gen
-        run: |
-          GOBIN=$(pwd)/bin go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.18.0
-
       - name: Regenerate deep-copy and CRD manifests
         run: |
-          bin/controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
-          bin/controller-gen rbac:roleName=manager-role crd paths="./..." \
+          # Explicitly list source packages to avoid scanning .claude/worktrees/
+          # which may contain stale Go packages from old feature branches.
+          PKGS="./api/...;./internal/...;./cmd/...;./test/..."
+          go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.18.0 \
+            object:headerFile="hack/boilerplate.go.txt" "paths=${PKGS}"
+          go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.18.0 \
+            rbac:roleName=manager-role crd "paths=${PKGS}" \
             output:crd:artifacts:config=config/crd/bases \
             output:rbac:artifacts:config=config/rbac
 
@@ -169,6 +170,6 @@ jobs:
           context: .
           file: Dockerfile
           push: false
-          tags: koku-server-operator:ci
+          tags: koku-service-operator:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max

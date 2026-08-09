@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
-	"github.com/project-koku/koku-server-operator/internal/resources"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
+	"github.com/project-koku/koku-service-operator/internal/resources"
 )
 
 const (

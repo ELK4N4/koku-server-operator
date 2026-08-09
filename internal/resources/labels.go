@@ -1,7 +1,7 @@
 package resources
 
 import (
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
 const (
@@ -12,7 +12,7 @@ const (
 	labelComponent = "app.kubernetes.io/component"
 	labelVersion   = "app.kubernetes.io/version"
 
-	ManagedBy = "koku-server-operator"
+	ManagedBy = "koku-service-operator"
 )
 
 // Labels returns the full set of labels for a resource owned by cfg.
@@ -20,7 +20,7 @@ func Labels(cfg *costv1alpha1.CostManagementServiceConfig, component string) map
 	return map[string]string{
 		labelApp:       cfg.Name,
 		labelInstance:  cfg.Name,
-		labelPartOf:    "koku-server-operator",
+		labelPartOf:    "koku-service-operator",
 		labelManagedBy: ManagedBy,
 		labelComponent: component,
 	}

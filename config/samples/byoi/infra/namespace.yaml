@@ -3,5 +3,5 @@ kind: Namespace
 metadata:
   name: cost-byoi-infra
   labels:
-    app.kubernetes.io/part-of: koku-server-operator-byoi
+    app.kubernetes.io/part-of: koku-service-operator-byoi
     app.kubernetes.io/component: infra

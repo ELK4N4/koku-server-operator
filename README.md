@@ -1,6 +1,6 @@
-# koku-server-operator
+# koku-service-operator
 
-[![CI](https://github.com/martinpovolny/koku-server-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/martinpovolny/koku-server-operator/actions/workflows/ci.yml)
+[![CI](https://github.com/martinpovolny/koku-service-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/martinpovolny/koku-service-operator/actions/workflows/ci.yml)
 
 Kubernetes operator for self-managed (on-premise) Cost Management on OpenShift.
 Users install via OLM, apply a single `CostManagementServiceConfig` CR, and the
@@ -27,13 +27,23 @@ make run                   # run locally against current kubeconfig
 See [docs/development/crc-testing.md](docs/development/crc-testing.md) for
 running against a local CRC cluster.
 
-## CRD
+## API / CRD naming
 
-```
-costmanagementserviceconfigs.costmanagement-service-cfg.openshift.io
-```
+| Identifier | Value |
+|-----------|-------|
+| API group | `service.costmanagement.openshift.io` |
+| Version | `v1alpha1` |
+| Kind | `CostManagementServiceConfig` |
+| CRD name | `costmanagementserviceconfigs.service.costmanagement.openshift.io` |
+| Short name | `cmsc` |
+| `apiVersion` in CR | `service.costmanagement.openshift.io/v1alpha1` |
+| Operator namespace | `koku-service-operator-system` |
+| Field manager | `koku-service-operator` |
+| Leader election ID | `costmanagementserviceconfigs.service.costmanagement.openshift.io` |
+| Finalizer | `costmanagementserviceconfigs.service.costmanagement.openshift.io/cleanup` |
 
-Short name: `cmsc`
+Naming parallels the companion operator:
+`costmanagement-metrics-cfg.openshift.io` / `CostManagementMetricsConfig` / `cmmc`
 
 ## Project status
 

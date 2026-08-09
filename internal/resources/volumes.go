@@ -3,7 +3,7 @@ package resources
 import (
 	corev1 "k8s.io/api/core/v1"
 
-	costv1alpha1 "github.com/project-koku/koku-server-operator/api/v1alpha1"
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
 // KokuVolumes returns the standard volume list shared by all Koku pods.

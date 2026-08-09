@@ -23,7 +23,7 @@
 #
 #   kubectl create secret generic my-django-secret \
 #     --from-literal=secret-key=<50-char-random-string>
-apiVersion: costmanagement-service-cfg.openshift.io/v1alpha1
+apiVersion: service.costmanagement.openshift.io/v1alpha1
 kind: CostManagementServiceConfig
 metadata:
   name: cost-management

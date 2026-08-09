@@ -2,7 +2,7 @@
 
 ## Selected naming vs sibling operator
 
-|                 | koku-metrics-operator                                    | koku-server-operator                                      |
+|                 | koku-metrics-operator                                    | koku-service-operator                                      |
 |-----------------|----------------------------------------------------------|-----------------------------------------------------------|
 | Domain          | `openshift.io`                                           | `openshift.io` ✓                                          |
 | Group           | `costmanagement-metrics-cfg`                             | `costmanagement-service-cfg` ✓                            |
@@ -14,7 +14,7 @@
 ## Scaffold command
 
 ```bash
-operator-sdk init --domain openshift.io --repo github.com/project-koku/koku-server-operator
+operator-sdk init --domain openshift.io --repo github.com/project-koku/koku-service-operator
 operator-sdk create api --group costmanagement-service-cfg --version v1alpha1 --kind CostManagementServiceConfig --resource --controller
 ```
 
