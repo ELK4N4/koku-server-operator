@@ -151,7 +151,13 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 	})
 
 	if err != nil {
+		// applyPhaseError handles structured PhaseError (condition + phase from err).
 		applyPhaseError(cfg, err)
+		// For any error (structured or plain), ensure Degraded is visible in status.
+		// Without this, plain fmt.Errorf from phases left Degraded unset.
+		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue,
+			"ReconcileError", err.Error())
+		cfg.Status.Phase = costv1alpha1.PhaseDegraded
 		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "ReconcileError", "%v", err)
 		return ctrl.Result{RequeueAfter: requeueSlow}, err
 	}
