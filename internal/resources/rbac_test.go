@@ -55,3 +55,32 @@ func TestRBACEnvUsesConfiguredCachePort(t *testing.T) {
 		t.Errorf("REDIS_PORT = %q, want %q (spec.cache.port is not honoured)", redisPort, "6380")
 	}
 }
+
+// TestRBACEnvDefaultsCachePort verifies that when spec.cache.port is zero,
+// REDIS_PORT defaults to 6379 (the standard Redis port).
+func TestRBACEnvDefaultsCachePort(t *testing.T) {
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: "test"},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			Cache: costv1alpha1.CacheConfig{
+				Host: "my-redis.example.com",
+				// Port deliberately zero — should default to 6379
+			},
+			RBAC: costv1alpha1.RBACConfig{
+				Image: costv1alpha1.ImageSpec{Repository: "rbac", Tag: "test"},
+			},
+		},
+	}
+
+	dep := RBACAPIDeployment(cfg)
+	var redisPort string
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		if e.Name == "REDIS_PORT" {
+			redisPort = e.Value
+			break
+		}
+	}
+	if redisPort != "6379" {
+		t.Errorf("REDIS_PORT = %q, want default 6379 when spec.cache.port is unset", redisPort)
+	}
+}

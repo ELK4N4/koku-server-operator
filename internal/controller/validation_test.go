@@ -149,6 +149,7 @@ const (
 	secretKeyUsername    = "username"
 	secretKeyPassword    = "password"
 	localHost            = "127.0.0.1"
+	testDBSecret         = "db-creds"
 )
 
 func newValidationReconciler(t *testing.T, objs ...client.Object) *CostManagementServiceConfigReconciler {
@@ -314,7 +315,7 @@ func TestReconcileValidation_DBSecretMissingKeys(t *testing.T) {
 	addr := ln.Addr().(*net.TCPAddr)
 
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "db-creds", Namespace: testNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: testDBSecret, Namespace: testNamespace},
 		Data: map[string][]byte{
 			// Only one key present; koku-user, koku-password, etc. are missing.
 			"postgres-user": []byte("admin"),
@@ -328,7 +329,7 @@ func TestReconcileValidation_DBSecretMissingKeys(t *testing.T) {
 				Deploy:     falsePtr(),
 				Host:       "127.0.0.1",
 				Port:       int32(addr.Port),
-				SecretName: "db-creds",
+				SecretName: testDBSecret,
 			},
 			Cache: costv1alpha1.CacheConfig{Deploy: truePtr()},
 			Kafka: costv1alpha1.KafkaConfig{BootstrapServers: ""},
@@ -371,8 +372,8 @@ func TestDBSecretValidationRequiresKruizeCredentials(t *testing.T) {
 
 	// Secret with all required keys EXCEPT kruize credentials.
 	secretMissingKruize := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "db-creds", Namespace: testNamespace},
-		Data: map[string][]byte{
+		ObjectMeta: metav1.ObjectMeta{Name: testDBSecret, Namespace: testNamespace},
+		Data: map[string][]byte{ //nolint:goconst // test data — key names must match real values
 			"postgres-user": []byte("postgres"), "postgres-password": []byte("pgpass"),
 			"koku-user": []byte("koku"), "koku-password": []byte("kokupass"),
 			"ros-user":  []byte("ros"),  "ros-password":  []byte("rospass"),
@@ -392,7 +393,7 @@ func TestDBSecretValidationRequiresKruizeCredentials(t *testing.T) {
 		"rbac-user", "rbac-password",
 		"kruize-user", "kruize-password",
 	}
-	err := r.checkSecretKeys(context.Background(), testNamespace, "db-creds", requiredKeys)
+	err := r.checkSecretKeys(context.Background(), testNamespace, testDBSecret, requiredKeys)
 	if err == nil {
 		t.Error("checkSecretKeys should fail when kruize-user/kruize-password are absent, got nil")
 	}

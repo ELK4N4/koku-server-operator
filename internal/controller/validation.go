@@ -20,6 +20,24 @@ import (
 
 const validationTimeout = 5 * time.Second
 
+// accessKeyKey would be less readable than the key name itself.
+//
+//nolint:goconst // Secret key names are intentionally literal — a constant like
+var (
+	// s3SecretKeys are the required keys in an objectStorage Secret.
+	s3SecretKeys = []string{"access-key", "secret-key"}
+
+	// dbSecretKeys lists the credential keys the operator expects in an
+	// externally-provided database Secret (spec.database.secretName).
+	dbSecretKeys = []string{
+		"postgres-user", "postgres-password",
+		"koku-user", "koku-password",
+		"ros-user", "ros-password",
+		"rbac-user", "rbac-password",
+		"kruize-user", "kruize-password",
+	}
+)
+
 // reconcileValidation probes all external dependencies and validates referenced
 // Secrets before the migration gate. DB and Cache failures block the pipeline;
 // Kafka and OIDC set conditions without blocking (init containers inside pods
@@ -43,13 +61,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileValidation(ctx context.
 		} else {
 			// Validate secret keys when the user provided their own secret.
 			if cfg.Spec.Database.SecretName != "" {
-				required := []string{ //nolint:goconst // Secret key names are clearer as literals than constants
-					"postgres-user", "postgres-password",
-					"koku-user", "koku-password",
-					"ros-user", "ros-password",
-					"rbac-user", "rbac-password",
-					"kruize-user", "kruize-password",
-				}
+				required := dbSecretKeys
 				if err := r.checkSecretKeys(ctx, cfg.Namespace, cfg.Spec.Database.SecretName, required); err != nil {
 					r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionFalse,
 						"DatabaseSecretInvalid", err.Error())
@@ -120,7 +132,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileValidation(ctx context.
 	// check is skipped. When the user provides their own secretName, validate it
 	// has the required keys so errors are surfaced early rather than at S3 access time.
 	if sn := cfg.Spec.ObjectStorage.SecretName; sn != "" {
-		if err := r.checkSecretKeys(ctx, cfg.Namespace, sn, []string{"access-key", "secret-key"}); err != nil { //nolint:goconst // S3 key names are clearer as literals
+		if err := r.checkSecretKeys(ctx, cfg.Namespace, sn, s3SecretKeys); err != nil {
 			r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
 				"StorageSecretInvalid", err.Error())
 		} else {

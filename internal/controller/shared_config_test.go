@@ -41,7 +41,7 @@ func TestEnsureSecretSkippedWhenExternalSecretNameSet(t *testing.T) {
 	falseVal := false
 
 	cfg := &costv1alpha1.CostManagementServiceConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: ns},
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: ns},
 		Spec: costv1alpha1.CostManagementServiceConfigSpec{
 			Database: costv1alpha1.DatabaseConfig{
 				Deploy:     &falseVal,
@@ -104,7 +104,7 @@ func TestEnsureSecretSkippedWhenExternalSecretNameSet(t *testing.T) {
 func TestEnsureSecretCreatedInBundledMode(t *testing.T) {
 	const ns = "test"
 	cfg := &costv1alpha1.CostManagementServiceConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: ns},
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: ns},
 		// SecretName intentionally empty — bundled mode
 	}
 

@@ -38,7 +38,7 @@ func TestKruizeCronJobDeletedWhenDisabled(t *testing.T) {
 	falseVal := false
 
 	cfg := &costv1alpha1.CostManagementServiceConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: ns},
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: ns},
 		Spec: costv1alpha1.CostManagementServiceConfigSpec{
 			Kruize: costv1alpha1.KruizeConfig{
 				Partitions: costv1alpha1.KruizePartitionsSpec{

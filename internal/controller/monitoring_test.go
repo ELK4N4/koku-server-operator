@@ -5,8 +5,10 @@ import (
 	"errors"
 	"testing"
 
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -28,7 +30,7 @@ func TestMonitoringRealApplyErrorSurfaces(t *testing.T) {
 	_ = costv1alpha1.AddToScheme(scheme)
 
 	cfg := &costv1alpha1.CostManagementServiceConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: "test"},
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: "test"},
 	}
 
 	realErr := errors.New("etcd is on fire")
@@ -51,5 +53,43 @@ func TestMonitoringRealApplyErrorSurfaces(t *testing.T) {
 	_, err := r.reconcileMonitoring(context.Background(), cfg)
 	if err == nil {
 		t.Error("reconcileMonitoring should surface non-CRD-absent apply errors, got nil")
+	}
+}
+
+// TestMonitoringCRDAbsentSkipsResource verifies that when apply returns an
+// IsNoMatchError (Prometheus Operator CRDs not installed), reconcileMonitoring
+// silently skips that resource and returns success — the operator should work
+// on clusters without the monitoring stack.
+func TestMonitoringCRDAbsentSkipsResource(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = costv1alpha1.AddToScheme(scheme)
+
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+	}
+
+	noMatchErr := &apimeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "monitoring.coreos.com", Kind: "ServiceMonitor"}}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				return noMatchErr
+			},
+		}).
+		Build()
+
+	r := &CostManagementServiceConfigReconciler{
+		Client:   fakeClient,
+		Recorder: &noopRecorder{},
+	}
+
+	result, err := r.reconcileMonitoring(context.Background(), cfg)
+	if err != nil {
+		t.Errorf("reconcileMonitoring should skip CRD-absent resources (got error: %v)", err)
+	}
+	if !result.IsZero() {
+		t.Errorf("reconcileMonitoring should return zero result on CRD-absent, got %+v", result)
 	}
 }
