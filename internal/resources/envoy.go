@@ -287,6 +287,34 @@ func EnvoyYAML(cfg *costv1alpha1.CostManagementServiceConfig) string {
                   exact: %s`, kcHost, kcHost)
 	}
 
+	rosRoute := ""
+	rosCluster := ""
+	if costv1alpha1.ROSEnabled(cfg) {
+		rosRoute = `              - match:
+                  prefix: "/api/cost-management/v1/recommendations/openshift"
+                route:
+                  cluster: ros-api-backend
+                  timeout: 30s
+                  retry_policy:
+                    retry_on: 5xx,reset,connect-failure,refused-stream
+                    num_retries: 2
+                    per_try_timeout: 15s
+`
+		rosCluster = `  - name: ros-api-backend
+    connect_timeout: 5s
+    type: STRICT_DNS
+    load_assignment:
+      cluster_name: ros-api-backend
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: ` + serviceFQDN(NameROSAPI(cfg), ns) + `
+                port_value: 8000
+`
+	}
+
 	replacer := strings.NewReplacer(
 		"__HTTP_PORT__", strconv.Itoa(int(envoyHTTPPort)),
 		"__ADMIN_PORT__", strconv.Itoa(int(envoyAdminPort)),
@@ -294,7 +322,8 @@ func EnvoyYAML(cfg *costv1alpha1.CostManagementServiceConfig) string {
 		"__AUDIENCES__", audYAML.String(),
 		"__JWKS_URI__", jwks,
 		"__LUA__", indentLua(envoyLuaFilter),
-		"__ROS_HOST__", serviceFQDN(NameROSAPI(cfg), ns),
+		"__ROS_ROUTE__", rosRoute,
+		"__ROS_CLUSTER__", rosCluster,
 		"__KOKU_HOST__", serviceFQDN(NameKokuAPI(cfg), ns),
 		"__INGRESS_HOST__", serviceFQDN(NameIngress(cfg), ns),
 		"__RBAC_HOST__", serviceFQDN(NameRBACAPI(cfg), ns),
@@ -345,16 +374,7 @@ const envoyYAMLTemplate = `static_resources:
             - name: backend
               domains: ["*"]
               routes:
-              - match:
-                  prefix: "/api/cost-management/v1/recommendations/openshift"
-                route:
-                  cluster: ros-api-backend
-                  timeout: 30s
-                  retry_policy:
-                    retry_on: 5xx,reset,connect-failure,refused-stream
-                    num_retries: 2
-                    per_try_timeout: 15s
-              - match:
+__ROS_ROUTE__              - match:
                   prefix: "/api/rbac/"
                 route:
                   cluster: rbac-api-backend
@@ -419,19 +439,7 @@ __LUA__
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
   clusters:
-  - name: ros-api-backend
-    connect_timeout: 5s
-    type: STRICT_DNS
-    load_assignment:
-      cluster_name: ros-api-backend
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: __ROS_HOST__
-                port_value: 8000
-  - name: koku-api-backend
+__ROS_CLUSTER__  - name: koku-api-backend
     connect_timeout: 5s
     type: STRICT_DNS
     load_assignment:

@@ -279,17 +279,19 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 			imageTag: cfg.Spec.CostManagement.API.Image.Tag,
 			build:    func() *batchv1.Job { return resources.MigrationJob(cfg, cfg.Spec.CostManagement.API.Image.Tag) },
 		},
-		{
+	}
+	if costv1alpha1.ROSEnabled(cfg) {
+		steps = append(steps, migStep{
 			name:     resources.NameROSMigration(cfg),
 			imageTag: cfg.Spec.ROS.Image.Tag,
 			build:    func() *batchv1.Job { return resources.ROSMigrationJob(cfg, cfg.Spec.ROS.Image.Tag) },
-		},
-		{
-			name:     resources.NameRBACMigration(cfg),
-			imageTag: resources.RBACSeedJobTag(cfg.Spec.RBAC.Image.Tag),
-			build:    func() *batchv1.Job { return resources.RBACMigrationJob(cfg, cfg.Spec.RBAC.Image.Tag) },
-		},
+		})
 	}
+	steps = append(steps, migStep{
+		name:     resources.NameRBACMigration(cfg),
+		imageTag: resources.RBACSeedJobTag(cfg.Spec.RBAC.Image.Tag),
+		build:    func() *batchv1.Job { return resources.RBACMigrationJob(cfg, cfg.Spec.RBAC.Image.Tag) },
+	})
 	if resources.AdminBootstrapJob(cfg, cfg.Spec.RBAC.Image.Tag) != nil {
 		steps = append(steps, migStep{
 			name:     resources.NameRBACAdminBootstrap(cfg),
@@ -308,7 +310,11 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 	// All steps completed.
 	r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionTrue, "MigrationComplete", "all schema migrations succeeded")
 	r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionFalse, "MigrationSucceeded", "")
-	r.Recorder.Event(cfg, corev1.EventTypeNormal, "MigrationComplete", "All schema migrations succeeded (Koku → ROS → RBAC)")
+	migMsg := "All schema migrations succeeded (Koku → RBAC)"
+	if costv1alpha1.ROSEnabled(cfg) {
+		migMsg = "All schema migrations succeeded (Koku → ROS → RBAC)"
+	}
+	r.Recorder.Event(cfg, corev1.EventTypeNormal, "MigrationComplete", migMsg)
 	return Result{}, nil
 }
 
@@ -377,23 +383,25 @@ func (r *CostManagementServiceConfigReconciler) runMigrationStep(
 // -----------------------------------------------------------------------------
 
 func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
-	// Kruize (needed by ROS Processor and Poller — deploy before ROS).
-	kruizeObjs := []client.Object{
-		resources.KruizeServiceAccount(cfg),
-		resources.KruizeConfigMap(cfg),
-		resources.KruizeDeployment(cfg),
-		resources.KruizeService(cfg),
-	}
-	for _, obj := range kruizeObjs {
-		if err := r.apply(ctx, cfg, obj); err != nil {
-			return Result{}, fmt.Errorf("kruize %s: %w", obj.GetName(), err)
+	// Kruize is used exclusively by ROS — skip when ROS is disabled.
+	if costv1alpha1.ROSEnabled(cfg) {
+		kruizeObjs := []client.Object{
+			resources.KruizeServiceAccount(cfg),
+			resources.KruizeConfigMap(cfg),
+			resources.KruizeDeployment(cfg),
+			resources.KruizeService(cfg),
 		}
-	}
-	// Kruize ClusterRole/ClusterRoleBinding are cluster-scoped — no ownerRef possible.
-	// Cleaned up by the CR finalizer in reconcileDelete().
-	for _, obj := range []client.Object{resources.KruizeClusterRole(cfg), resources.KruizeClusterRoleBinding(cfg)} {
-		if err := r.applyClusterScoped(ctx, obj); err != nil {
-			return Result{}, fmt.Errorf("kruize rbac %s: %w", obj.GetName(), err)
+		for _, obj := range kruizeObjs {
+			if err := r.apply(ctx, cfg, obj); err != nil {
+				return Result{}, fmt.Errorf("kruize %s: %w", obj.GetName(), err)
+			}
+		}
+		// Kruize ClusterRole/ClusterRoleBinding are cluster-scoped — no ownerRef possible.
+		// Cleaned up by the CR finalizer in reconcileDelete().
+		for _, obj := range []client.Object{resources.KruizeClusterRole(cfg), resources.KruizeClusterRoleBinding(cfg)} {
+			if err := r.applyClusterScoped(ctx, obj); err != nil {
+				return Result{}, fmt.Errorf("kruize rbac %s: %w", obj.GetName(), err)
+			}
 		}
 	}
 
@@ -409,15 +417,19 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 		}
 	}
 
-	// Koku core + ROS shared config.
+	// Koku core (+ ROS shared config when ROS is enabled).
 	objs := []client.Object{
-		resources.CdappConfigMap(cfg),
-		resources.ROSServiceAccount(cfg),
 		resources.KokuAPIDeployment(cfg),
 		resources.KokuAPIService(cfg),
 		resources.MasuDeployment(cfg),
 		resources.MasuService(cfg),
 		resources.ListenerDeployment(cfg),
+	}
+	if costv1alpha1.ROSEnabled(cfg) {
+		objs = append([]client.Object{
+			resources.CdappConfigMap(cfg),
+			resources.ROSServiceAccount(cfg),
+		}, objs...)
 	}
 	for _, obj := range objs {
 		if err := r.apply(ctx, cfg, obj); err != nil {
@@ -452,24 +464,20 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		objs = append(objs, d)
 	}
 
-	// ROS components
-	rosObjs := []client.Object{
-		resources.ROSAPIDeployment(cfg),
-		resources.ROSAPIService(cfg),
-		resources.ROSProcessorDeployment(cfg),
-		resources.ROSPollerDeployment(cfg),
-		resources.ROSHousekeeperDeployment(cfg),
-	}
-	objs = append(objs, rosObjs...)
-
-	// Kruize delete-partitions CronJob (if enabled)
-	if costv1alpha1.BoolVal(cfg.Spec.Kruize.Partitions.DeleteEnabled, true) {
-		objs = append(objs, resources.KruizeDeletePartitionsCronJob(cfg))
-	}
-
-	// ROS partition-cleaner CronJob (if enabled)
-	if costv1alpha1.BoolVal(cfg.Spec.ROS.Housekeeper.PartitionCleaner.Enabled, true) {
-		objs = append(objs, resources.ROSPartitionCleanerCronJob(cfg))
+	if costv1alpha1.ROSEnabled(cfg) {
+		objs = append(objs,
+			resources.ROSAPIDeployment(cfg),
+			resources.ROSAPIService(cfg),
+			resources.ROSProcessorDeployment(cfg),
+			resources.ROSPollerDeployment(cfg),
+			resources.ROSHousekeeperDeployment(cfg),
+		)
+		if costv1alpha1.BoolVal(cfg.Spec.Kruize.Partitions.DeleteEnabled, true) {
+			objs = append(objs, resources.KruizeDeletePartitionsCronJob(cfg))
+		}
+		if costv1alpha1.BoolVal(cfg.Spec.ROS.Housekeeper.PartitionCleaner.Enabled, true) {
+			objs = append(objs, resources.ROSPartitionCleanerCronJob(cfg))
+		}
 	}
 
 	// Ingress upload handler — must be deployed before reconcileEdge so the
@@ -539,13 +547,16 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 	}
 
 	// NetworkPolicies — restrict traffic to expected flows per component.
-	for _, np := range []client.Object{
+	netpols := []client.Object{
 		resources.GatewayNetworkPolicy(cfg),
 		resources.IngressNetworkPolicy(cfg),
-		resources.KruizeNetworkPolicy(cfg),
 		resources.RBACAPINetworkPolicy(cfg),
 		resources.KokuAPINetworkPolicy(cfg),
-	} {
+	}
+	if costv1alpha1.ROSEnabled(cfg) {
+		netpols = append(netpols, resources.KruizeNetworkPolicy(cfg))
+	}
+	for _, np := range netpols {
 		if err := r.apply(ctx, cfg, np); err != nil {
 			return Result{}, fmt.Errorf("networkpolicy %s: %w", np.GetName(), err)
 		}
@@ -624,11 +635,14 @@ func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.
 	if !costv1alpha1.BoolVal(cfg.Spec.Monitoring.Enabled, true) {
 		return Result{}, nil
 	}
-	for _, obj := range []client.Object{
+	monitors := []client.Object{
 		resources.AppServiceMonitor(cfg),
-		resources.KruizeServiceMonitor(cfg),
 		resources.PrometheusRules(cfg),
-	} {
+	}
+	if costv1alpha1.ROSEnabled(cfg) {
+		monitors = append(monitors, resources.KruizeServiceMonitor(cfg))
+	}
+	for _, obj := range monitors {
 		if err := r.apply(ctx, cfg, obj); err != nil {
 			gvk := obj.GetObjectKind().GroupVersionKind()
 			if apimeta.IsNoMatchError(err) {

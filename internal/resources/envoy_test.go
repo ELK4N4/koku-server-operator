@@ -156,6 +156,27 @@ func TestEnvoyYAMLHTTPKeycloakOmitsTLS(t *testing.T) {
 	}
 }
 
+func TestEnvoyYAMLOmitsROSWhenDisabled(t *testing.T) {
+	cfg := testCfg()
+	disabled := false
+	cfg.Spec.ROS.Enabled = &disabled
+	yaml := EnvoyYAML(cfg)
+	if strings.Contains(yaml, "ros-api-backend") {
+		t.Error("EnvoyYAML should omit ros-api-backend when ros.enabled=false")
+	}
+	if strings.Contains(yaml, "/api/cost-management/v1/recommendations/openshift") {
+		t.Error("EnvoyYAML should omit ROS recommendations route when ros.enabled=false")
+	}
+	if !strings.Contains(yaml, "name: koku-api-backend") {
+		t.Error("koku-api-backend must still be present")
+	}
+	for _, tok := range []string{"__ROS_ROUTE__", "__ROS_CLUSTER__"} {
+		if strings.Contains(yaml, tok) {
+			t.Errorf("EnvoyYAML left unsubstituted token %q", tok)
+		}
+	}
+}
+
 func TestEnvoyResourceNames(t *testing.T) {
 	cfg := testCfg()
 	cm := EnvoyConfigMap(cfg)

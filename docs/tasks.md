@@ -37,8 +37,8 @@ Last audited: 2026-08-09 against implementation in `internal/controller/` and `i
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API + Masu + Listener `1/1 Running` on CRC ✅, ROS API + Processor ✅, Kruize Deployment + Service + ClusterRole/Binding ✅, Bundled DB/Cache (dev-only extension) ✅. Missing: profile-based sizing, 5-minute readiness timeout with Degraded condition. |
-| [COST-7687](https://redhat.atlassian.net/browse/COST-7687) | Implement workers and scheduled jobs | ✅ | Celery Beat + 10 workers ✅, ROS Processor + Recommendation Poller + Housekeeper ✅, ROS Partition Cleaner CronJob ✅, Kruize DeletePartitions CronJob ✅. Ticket's six on-prem queues all present. |
+| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API + Masu + Listener `1/1 Running` on CRC ✅, ROS API + Processor ✅ (optional via `spec.ros.enabled`), Kruize Deployment + Service + ClusterRole/Binding ✅ (gated with ROS), Bundled DB/Cache (dev-only extension) ✅. **Beta: ROS/Kruize not required** — see Beta scope below. Missing: profile-based sizing, 5-minute readiness timeout with Degraded condition. |
+| [COST-7687](https://redhat.atlassian.net/browse/COST-7687) | Implement workers and scheduled jobs | ✅ | Celery Beat + 10 workers ✅, ROS Processor + Recommendation Poller + Housekeeper ✅ (when `spec.ros.enabled`), ROS Partition Cleaner CronJob ✅, Kruize DeletePartitions CronJob ✅. Ticket's six on-prem queues all present. |
 | [COST-7688](https://redhat.atlassian.net/browse/COST-7688) | Implement Gateway and Ingress | ✅ | Envoy JWT proxy Deployment + Service + ConfigMap wired to OIDC issuer/audiences ✅, OpenShift Route for gateway API ✅, insights-ingress-go Deployment + Service ✅ (S3/Kafka/CA wiring, port 8080 matching Envoy backend config). |
 | [COST-7689](https://redhat.atlassian.net/browse/COST-7689) | Implement RBAC Service | ✅ | RBAC API Deployment + Service + RBAC Celery worker Deployment ✅. Deployed in Stage 4 before Koku. Both wired with rbac-user/rbac-password from DB credentials secret + cache env vars. |
 | [COST-7690](https://redhat.atlassian.net/browse/COST-7690) | Implement UI and ConsoleLink | ✅ | UI Deployment (oauth2-proxy sidecar + nginx app container) ✅, ClusterIP Service with OpenShift service-CA TLS annotation ✅, UINginxConfigMap (proxies `/api/` to Envoy) ✅, operator-generated cookie Secret ✅, ConsoleLink (cluster-scoped, finalizer cleanup in `reconcileDelete`) ✅. UIRoute deferred to COST-7691. |
@@ -64,6 +64,14 @@ Last audited: 2026-08-09 against implementation in `internal/controller/` and `i
 | [COST-7700](https://redhat.atlassian.net/browse/COST-7700) | Write installation and configuration guides | ❌ | README, CLAUDE.md, CRC dev guide, design docs present. Formal installation/configuration/quickstart guides not written. |
 
 ---
+
+## Beta scope
+
+**ROS is not required for Beta.** `spec.ros.enabled` (default `true`) can be set to
+`false` to skip ROS and its Kruize dependency (migrations, Deployments, CronJobs,
+Envoy recommendation routes, NetworkPolicies, ServiceMonitors, cluster-scoped
+Kruize RBAC). BYOI samples default this to `false`. Full ROS/Kruize delivery
+remains tracked under COST-7686 / COST-7687 for post-Beta.
 
 ## Intentional Deviations and Known Gaps
 
