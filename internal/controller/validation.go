@@ -164,7 +164,10 @@ func kafkaTCPProbe(bootstrapServers string, timeout time.Duration) error {
 	return fmt.Errorf("bootstrap-servers %q is empty", bootstrapServers)
 }
 
-// httpProbe performs a GET to rawURL and returns nil for any response below HTTP 500.
+// httpProbe performs a GET to rawURL and returns nil only for 2xx responses.
+// 4xx responses are also treated as errors: a 401/403 means the endpoint
+// exists but is misconfigured; a 404 means the JWKS URL or realm is wrong.
+// Both indicate the OIDC provider is not usable, not that it is healthy.
 func httpProbe(rawURL string, insecureSkipVerify bool, timeout time.Duration) error {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
@@ -191,8 +194,8 @@ func httpProbe(rawURL string, insecureSkipVerify bool, timeout time.Duration) er
 	}
 	_ = resp.Body.Close()
 	transport.CloseIdleConnections()
-	if resp.StatusCode >= 500 {
-		return fmt.Errorf("server returned HTTP %d", resp.StatusCode)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected HTTP status %d (want 2xx)", resp.StatusCode)
 	}
 	return nil
 }

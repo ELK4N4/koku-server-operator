@@ -75,7 +75,11 @@ func TestHTTPProbe(t *testing.T) {
 		wantErr bool
 	}{
 		{"200 OK", http.StatusOK, false},
-		{"404 Not Found", http.StatusNotFound, false},
+		// 4xx must fail: a 401/403/404 means the OIDC endpoint is wrong or
+		// unreachable as configured — not a healthy JWKS endpoint.
+		{"401 Unauthorized", http.StatusUnauthorized, true},
+		{"403 Forbidden", http.StatusForbidden, true},
+		{"404 Not Found", http.StatusNotFound, true},
 		{"503 Service Unavailable", http.StatusServiceUnavailable, true},
 	}
 	for _, tc := range tests {
