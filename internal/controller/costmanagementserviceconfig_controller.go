@@ -137,7 +137,7 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 
 	// Policy bookkeeping (not a provisioning stage): surface ROSEnabled and
 	// tear down leftover ROS/Kruize objects when the feature is disabled.
-	if _, err := r.reconcileROSFeature(ctx, cfg); err != nil {
+	if err := r.reconcileROSFeature(ctx, cfg); err != nil {
 		applyPhaseError(cfg, err)
 		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "ReconcileError", "%v", err)
 		return ctrl.Result{RequeueAfter: requeueSlow}, err

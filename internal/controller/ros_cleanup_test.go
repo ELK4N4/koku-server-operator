@@ -11,6 +11,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
@@ -39,97 +40,47 @@ func TestROSCleanupObjects_IncludesClusterScoped(t *testing.T) {
 	}
 }
 
-func TestReconcileROSFeature_ToggleLifecycle(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	enabled := true
-	cfg.Spec.ROS.Enabled = &enabled
-
-	kruizeDep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: resources.NameKruize(cfg), Namespace: testNamespace},
-	}
-	rosAPI := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: resources.NameROSAPI(cfg), Namespace: testNamespace},
-	}
-	cdapp := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: resources.NameCdappConfigMap(cfg), Namespace: testNamespace},
-	}
-	kruizeCR := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{Name: resources.NameKruizeClusterRole(cfg)},
-	}
-	kruizeCRB := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: resources.NameKruizeClusterRole(cfg)},
-	}
-
-	c := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(cfg, kruizeDep, rosAPI, cdapp, kruizeCR, kruizeCRB).
-		WithStatusSubresource(cfg).
-		Build()
-	r := &CostManagementServiceConfigReconciler{Client: c, Scheme: scheme}
+func TestReconcileROSFeature_EnabledKeepsResources(t *testing.T) {
+	r, cfg, c := newROSFeatureFixture(t, true)
 	ctx := context.Background()
 
-	// 1. Enabled: resources remain; condition True.
-	if _, err := r.reconcileROSFeature(ctx, cfg); err != nil {
+	if err := r.reconcileROSFeature(ctx, cfg); err != nil {
 		t.Fatalf("enabled: %v", err)
 	}
-	cond := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionROSEnabled)
-	if cond == nil || cond.Status != metav1.ConditionTrue || cond.Reason != "Enabled" {
-		t.Fatalf("enabled condition = %+v", cond)
-	}
+	assertROSCondition(t, cfg, metav1.ConditionTrue, "Enabled")
 	if err := c.Get(ctx, types.NamespacedName{Name: resources.NameKruize(cfg), Namespace: testNamespace}, &appsv1.Deployment{}); err != nil {
 		t.Fatalf("kruize should remain while enabled: %v", err)
 	}
+}
 
-	// 2. Disable: cleanup deletes ROS/Kruize objects; condition False.
+func TestReconcileROSFeature_DisableDeletesResources(t *testing.T) {
+	r, cfg, c := newROSFeatureFixture(t, true)
+	ctx := context.Background()
+
 	disabled := false
 	cfg.Spec.ROS.Enabled = &disabled
-	if _, err := r.reconcileROSFeature(ctx, cfg); err != nil {
+	if err := r.reconcileROSFeature(ctx, cfg); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	cond = apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionROSEnabled)
-	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "Disabled" {
-		t.Fatalf("disabled condition = %+v", cond)
-	}
-	for _, key := range []types.NamespacedName{
-		{Name: resources.NameKruize(cfg), Namespace: testNamespace},
-		{Name: resources.NameROSAPI(cfg), Namespace: testNamespace},
-		{Name: resources.NameCdappConfigMap(cfg), Namespace: testNamespace},
-	} {
-		var dep appsv1.Deployment
-		var cm corev1.ConfigMap
-		var err error
-		if key.Name == resources.NameCdappConfigMap(cfg) {
-			err = c.Get(ctx, key, &cm)
-		} else {
-			err = c.Get(ctx, key, &dep)
-		}
-		if err == nil {
-			t.Errorf("expected %s deleted after disable", key.Name)
-		} else if !errors.IsNotFound(err) {
-			t.Errorf("get %s: %v", key.Name, err)
-		}
-	}
-	if err := c.Get(ctx, types.NamespacedName{Name: resources.NameKruizeClusterRole(cfg)}, &rbacv1.ClusterRole{}); err == nil {
-		t.Error("Kruize ClusterRole should be deleted when ROS is disabled")
-	}
-	if err := c.Get(ctx, types.NamespacedName{Name: resources.NameKruizeClusterRole(cfg)}, &rbacv1.ClusterRoleBinding{}); err == nil {
-		t.Error("Kruize ClusterRoleBinding should be deleted when ROS is disabled")
-	}
+	assertROSCondition(t, cfg, metav1.ConditionFalse, "Disabled")
+	assertROSObjectsGone(t, ctx, c, cfg)
+}
 
-	// 3. Re-enable: condition True; simulate core/workers re-applying resources.
+func TestReconcileROSFeature_ReEnableThenDisable(t *testing.T) {
+	r, cfg, c := newROSFeatureFixture(t, false)
+	ctx := context.Background()
+
+	enabled := true
 	cfg.Spec.ROS.Enabled = &enabled
-	if _, err := r.reconcileROSFeature(ctx, cfg); err != nil {
-		t.Fatalf("re-enable feature gate: %v", err)
+	if err := r.reconcileROSFeature(ctx, cfg); err != nil {
+		t.Fatalf("re-enable: %v", err)
 	}
-	cond = apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionROSEnabled)
-	if cond == nil || cond.Status != metav1.ConditionTrue {
-		t.Fatalf("re-enable condition = %+v", cond)
-	}
+	assertROSCondition(t, cfg, metav1.ConditionTrue, "Enabled")
+
 	if err := c.Create(ctx, &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: resources.NameKruize(cfg), Namespace: testNamespace},
 	}); err != nil {
-		t.Fatalf("re-create kruize after enable: %v", err)
+		t.Fatalf("re-create kruize: %v", err)
 	}
 	if err := c.Create(ctx, &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{Name: resources.NameKruizeClusterRole(cfg)},
@@ -137,9 +88,9 @@ func TestReconcileROSFeature_ToggleLifecycle(t *testing.T) {
 		t.Fatalf("re-create clusterrole: %v", err)
 	}
 
-	// 4. Disable again: re-created objects are cleaned up.
+	disabled := false
 	cfg.Spec.ROS.Enabled = &disabled
-	if _, err := r.reconcileROSFeature(ctx, cfg); err != nil {
+	if err := r.reconcileROSFeature(ctx, cfg); err != nil {
 		t.Fatalf("second disable: %v", err)
 	}
 	if err := c.Get(ctx, types.NamespacedName{Name: resources.NameKruize(cfg), Namespace: testNamespace}, &appsv1.Deployment{}); err == nil {
@@ -156,7 +107,69 @@ func TestReconcileROSCleanup_ToleratesMissing(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cfg).Build()
 	r := &CostManagementServiceConfigReconciler{Client: c, Scheme: scheme}
 
-	if _, err := r.reconcileROSCleanup(context.Background(), cfg); err != nil {
+	if err := r.reconcileROSCleanup(context.Background(), cfg); err != nil {
 		t.Fatalf("cleanup with no ROS objects: %v", err)
+	}
+}
+
+func newROSFeatureFixture(t *testing.T, seedObjects bool) (*CostManagementServiceConfigReconciler, *costv1alpha1.CostManagementServiceConfig, client.Client) {
+	t.Helper()
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	enabled := true
+	cfg.Spec.ROS.Enabled = &enabled
+
+	objs := []client.Object{cfg}
+	if seedObjects {
+		objs = append(objs,
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: resources.NameKruize(cfg), Namespace: testNamespace}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: resources.NameROSAPI(cfg), Namespace: testNamespace}},
+			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: resources.NameCdappConfigMap(cfg), Namespace: testNamespace}},
+			&rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: resources.NameKruizeClusterRole(cfg)}},
+			&rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: resources.NameKruizeClusterRole(cfg)}},
+		)
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objs...).
+		WithStatusSubresource(cfg).
+		Build()
+	r := &CostManagementServiceConfigReconciler{Client: c, Scheme: scheme}
+	return r, cfg, c
+}
+
+func assertROSCondition(t *testing.T, cfg *costv1alpha1.CostManagementServiceConfig, status metav1.ConditionStatus, reason string) {
+	t.Helper()
+	cond := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionROSEnabled)
+	if cond == nil || cond.Status != status || cond.Reason != reason {
+		t.Fatalf("ROSEnabled condition = %+v, want status=%s reason=%s", cond, status, reason)
+	}
+}
+
+func assertROSObjectsGone(t *testing.T, ctx context.Context, c client.Client, cfg *costv1alpha1.CostManagementServiceConfig) {
+	t.Helper()
+	for _, key := range []types.NamespacedName{
+		{Name: resources.NameKruize(cfg), Namespace: testNamespace},
+		{Name: resources.NameROSAPI(cfg), Namespace: testNamespace},
+		{Name: resources.NameCdappConfigMap(cfg), Namespace: testNamespace},
+	} {
+		var err error
+		if key.Name == resources.NameCdappConfigMap(cfg) {
+			err = c.Get(ctx, key, &corev1.ConfigMap{})
+		} else {
+			err = c.Get(ctx, key, &appsv1.Deployment{})
+		}
+		if err == nil {
+			t.Errorf("expected %s deleted after disable", key.Name)
+		} else if !errors.IsNotFound(err) {
+			t.Errorf("get %s: %v", key.Name, err)
+		}
+	}
+	if err := c.Get(ctx, types.NamespacedName{Name: resources.NameKruizeClusterRole(cfg)}, &rbacv1.ClusterRole{}); err == nil {
+		t.Error("Kruize ClusterRole should be deleted when ROS is disabled")
+	}
+	if err := c.Get(ctx, types.NamespacedName{Name: resources.NameKruizeClusterRole(cfg)}, &rbacv1.ClusterRoleBinding{}); err == nil {
+		t.Error("Kruize ClusterRoleBinding should be deleted when ROS is disabled")
 	}
 }

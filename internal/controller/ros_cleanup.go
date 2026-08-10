@@ -54,11 +54,11 @@ func rosCleanupObjects(cfg *costv1alpha1.CostManagementServiceConfig) []client.O
 // reconcileROSFeature is reconciler policy bookkeeping, not a provisioning
 // stage. It sets the ROSEnabled condition and, when ROS is disabled, deletes
 // leftover ROS/Kruize resources from a prior enabled state.
-func (r *CostManagementServiceConfigReconciler) reconcileROSFeature(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+func (r *CostManagementServiceConfigReconciler) reconcileROSFeature(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) error {
 	if costv1alpha1.ROSEnabled(cfg) {
 		r.setCondition(cfg, costv1alpha1.ConditionROSEnabled, metav1.ConditionTrue, "Enabled",
 			"ROS and Kruize are enabled")
-		return Result{}, nil
+		return nil
 	}
 
 	r.setCondition(cfg, costv1alpha1.ConditionROSEnabled, metav1.ConditionFalse, "Disabled",
@@ -68,13 +68,13 @@ func (r *CostManagementServiceConfigReconciler) reconcileROSFeature(ctx context.
 
 // reconcileROSCleanup deletes all ROS/Kruize managed objects. Missing objects
 // are ignored so the path is safe when ROS was never enabled.
-func (r *CostManagementServiceConfigReconciler) reconcileROSCleanup(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+func (r *CostManagementServiceConfigReconciler) reconcileROSCleanup(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) error {
 	logger := log.FromContext(ctx)
 	for _, obj := range rosCleanupObjects(cfg) {
 		if err := r.Delete(ctx, obj, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !errors.IsNotFound(err) {
-			return Result{}, fmt.Errorf("deleting ROS/Kruize resource %s: %w", obj.GetName(), err)
+			return fmt.Errorf("deleting ROS/Kruize resource %s: %w", obj.GetName(), err)
 		}
 	}
 	logger.Info("cleaned up ROS/Kruize resources (ros.enabled=false)")
-	return Result{}, nil
+	return nil
 }
