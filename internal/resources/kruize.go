@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strconv"
 
@@ -25,8 +26,13 @@ func NameKruizeConfigMap(cfg *costv1alpha1.CostManagementServiceConfig) string {
 }
 
 // NameKruizeClusterRole returns the ClusterRole name for Kruize.
+// Format: "{crName}-kruize-{nsHash8}" where nsHash8 is the first 4 bytes
+// (8 hex chars) of sha256(namespace). This keeps the CR name readable in
+// `kubectl get clusterrole` while ensuring uniqueness across namespaces
+// and staying well under the 253-char Kubernetes name limit.
 func NameKruizeClusterRole(cfg *costv1alpha1.CostManagementServiceConfig) string {
-	return cfg.Name + "-kruize"
+	h := sha256.Sum256([]byte(cfg.Namespace))
+	return fmt.Sprintf("%s-kruize-%x", cfg.Name, h[:4])
 }
 
 // NameKruizeServiceAccount returns the Kruize service account name.

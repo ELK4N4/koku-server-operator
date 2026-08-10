@@ -28,3 +28,27 @@ func TestKruizeClusterRoleDoesNotGrantSecretsAccess(t *testing.T) {
 		}
 	}
 }
+
+// TestKruizeClusterRoleNameIsNamespaceScoped verifies that the ClusterRole name
+// includes the namespace so two CRs with the same name in different namespaces
+// do not collide on the same cluster-scoped object.
+func TestKruizeClusterRoleNameIsNamespaceScoped(t *testing.T) {
+	cfg1 := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: "ns-a"},
+	}
+	cfg2 := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: "ns-b"},
+	}
+	name1 := NameKruizeClusterRole(cfg1)
+	name2 := NameKruizeClusterRole(cfg2)
+	if name1 == name2 {
+		t.Errorf("NameKruizeClusterRole collision: both 'cost-management' CRs in different namespaces produce %q — "+
+			"deleting one CR would remove the ClusterRole used by the other", name1)
+	}
+	// Names must stay under the 253-char Kubernetes resource name limit.
+	for _, name := range []string{name1, name2} {
+		if len(name) > 253 {
+			t.Errorf("NameKruizeClusterRole %q is %d chars, exceeds 253-char limit", name, len(name))
+		}
+	}
+}
