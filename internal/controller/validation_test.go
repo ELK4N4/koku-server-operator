@@ -397,3 +397,51 @@ func TestDBSecretValidationRequiresKruizeCredentials(t *testing.T) {
 		t.Error("checkSecretKeys should fail when kruize-user/kruize-password are absent, got nil")
 	}
 }
+
+// TestReconcileValidationChecksS3Secret verifies that reconcileValidation
+// validates the S3 Secret when spec.objectStorage.secretName is explicitly set.
+// Without this, a Secret with missing credentials silently passes validation —
+// discovered only at runtime when koku/masu fails to write to S3.
+func TestReconcileValidationChecksS3Secret(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = costv1alpha1.AddToScheme(scheme)
+
+	// Secret exists but is missing secret-key.
+	incomplete := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "s3-creds", Namespace: testNamespace},
+		Data: map[string][]byte{
+			"access-key": []byte("AKIAIOSFODNN7EXAMPLE"),
+			// secret-key intentionally absent
+		},
+	}
+
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			// Bundled DB/Cache so those probes are skipped.
+			Database: costv1alpha1.DatabaseConfig{Deploy: truePtr()},
+			Cache:    costv1alpha1.CacheConfig{Deploy: truePtr()},
+			// User-provided S3 secret with missing key.
+			ObjectStorage: costv1alpha1.ObjectStorageConfig{
+				SecretName: "s3-creds",
+			},
+		},
+	}
+
+	r := newValidationReconciler(t, incomplete)
+
+	_, _ = r.reconcileValidation(context.Background(), cfg)
+
+	// After the fix, StorageReady=False with StorageSecretInvalid reason must be set.
+	found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionStorageReady)
+	if found == nil {
+		t.Fatal("StorageReady condition not set — reconcileValidation does not validate objectStorage.secretName")
+	}
+	if found.Status != metav1.ConditionFalse {
+		t.Errorf("StorageReady = %s, want False (secret-key is missing)", found.Status)
+	}
+	if found.Reason != "StorageSecretInvalid" {
+		t.Errorf("StorageReady reason = %q, want StorageSecretInvalid", found.Reason)
+	}
+}

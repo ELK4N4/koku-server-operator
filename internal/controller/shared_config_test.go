@@ -66,7 +66,7 @@ func TestEnsureSecretSkippedWhenExternalSecretNameSet(t *testing.T) {
 	// Verify the BUG: the operator-generated secret now exists.
 	generatedName := resources.NameDBCredentials(cfg)
 	got := &corev1.Secret{}
-	if err := r.Client.Get(context.Background(),
+	if err := r.Get(context.Background(),
 		types.NamespacedName{Namespace: ns, Name: generatedName}, got); err != nil {
 		t.Logf("secret not found (this would be the fixed behaviour): %v", err)
 	} else {
@@ -90,7 +90,7 @@ func TestEnsureSecretSkippedWhenExternalSecretNameSet(t *testing.T) {
 
 	// After fix: the operator-generated secret must NOT exist.
 	got2 := &corev1.Secret{}
-	err := r2.Client.Get(context.Background(),
+	err := r2.Get(context.Background(),
 		types.NamespacedName{Namespace: ns, Name: generatedName}, got2)
 	if !errors.IsNotFound(err) {
 		t.Errorf("FAIL: %q was created even though database.secretName=%q is set — "+
@@ -121,7 +121,7 @@ func TestEnsureSecretCreatedInBundledMode(t *testing.T) {
 	}
 
 	got := &corev1.Secret{}
-	err := r.Client.Get(context.Background(),
+	err := r.Get(context.Background(),
 		types.NamespacedName{Namespace: ns, Name: resources.NameDBCredentials(cfg)}, got)
 	if err != nil {
 		t.Errorf("expected db-credentials Secret in bundled mode, got: %v", err)
@@ -131,7 +131,7 @@ func TestEnsureSecretCreatedInBundledMode(t *testing.T) {
 // noopRecorder satisfies record.EventRecorder for tests that don't inspect events.
 type noopRecorder struct{}
 
-func (n *noopRecorder) Event(_ runtime.Object, _, _, _ string)               {}
-func (n *noopRecorder) Eventf(_ runtime.Object, _, _, _ string, _ ...any)   {}
+func (n *noopRecorder) Event(_ runtime.Object, _, _, _ string)            {}
+func (n *noopRecorder) Eventf(_ runtime.Object, _, _, _ string, _ ...any) {}
 func (n *noopRecorder) AnnotatedEventf(_ runtime.Object, _ map[string]string, _, _, _ string, _ ...any) {
 }

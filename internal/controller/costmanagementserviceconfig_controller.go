@@ -482,7 +482,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		objs = append(objs, resources.KruizeDeletePartitionsCronJob(cfg))
 	} else {
 		cj := resources.KruizeDeletePartitionsCronJob(cfg)
-		if err := r.Client.Delete(ctx, cj); err != nil && !errors.IsNotFound(err) {
+		if err := r.Delete(ctx, cj); err != nil && !errors.IsNotFound(err) {
 			return Result{}, fmt.Errorf("delete kruize delete-partitions cronjob: %w", err)
 		}
 	}
@@ -492,7 +492,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		objs = append(objs, resources.ROSPartitionCleanerCronJob(cfg))
 	} else {
 		cj := resources.ROSPartitionCleanerCronJob(cfg)
-		if err := r.Client.Delete(ctx, cj); err != nil && !errors.IsNotFound(err) {
+		if err := r.Delete(ctx, cj); err != nil && !errors.IsNotFound(err) {
 			return Result{}, fmt.Errorf("delete ros partition-cleaner cronjob: %w", err)
 		}
 	}

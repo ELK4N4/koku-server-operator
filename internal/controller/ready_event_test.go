@@ -44,9 +44,9 @@ func TestReadyEventEmittedOnlyOnTransition(t *testing.T) {
 	// Capture the original phase BEFORE overwriting it, then check that.
 	fixedEventCount := 0
 	for _, priorPhase := range []costv1alpha1.Phase{
-		costv1alpha1.PhasePending,      // first pass → transition → emit
-		costv1alpha1.PhaseProgressing,  // still transitioning → emit
-		costv1alpha1.PhaseReady,        // already Ready → NO event
+		costv1alpha1.PhasePending,     // first pass → transition → emit
+		costv1alpha1.PhaseProgressing, // still transitioning → emit
+		costv1alpha1.PhaseReady,       // already Ready → NO event
 	} {
 		originalPhase := priorPhase // captured before reconcile overwrites
 

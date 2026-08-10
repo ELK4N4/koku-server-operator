@@ -63,7 +63,7 @@ func TestKruizeCronJobDeletedWhenDisabled(t *testing.T) {
 	_, _ = r.reconcileWorkers(context.Background(), cfg)
 
 	cj := &batchv1.CronJob{}
-	err := r.Client.Get(context.Background(),
+	err := r.Get(context.Background(),
 		types.NamespacedName{Namespace: ns, Name: existingCJ.Name}, cj)
 	if err == nil {
 		t.Errorf("BUG(D8): CronJob %q still exists after being disabled — "+

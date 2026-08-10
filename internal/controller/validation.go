@@ -43,7 +43,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileValidation(ctx context.
 		} else {
 			// Validate secret keys when the user provided their own secret.
 			if cfg.Spec.Database.SecretName != "" {
-				required := []string{
+				required := []string{ //nolint:goconst // Secret key names are clearer as literals than constants
 					"postgres-user", "postgres-password",
 					"koku-user", "koku-password",
 					"ros-user", "ros-password",
@@ -112,6 +112,20 @@ func (r *CostManagementServiceConfigReconciler) reconcileValidation(ctx context.
 				r.setCondition(cfg, costv1alpha1.ConditionKafkaReady, metav1.ConditionTrue,
 					"KafkaReachable", bs)
 			}
+		}
+	}
+
+	// --- S3 / ObjectStorage (non-blocking; only when user explicitly names a Secret) ---
+	// When secretName is auto-detected via OBC/NooBaa (discovery stage), this
+	// check is skipped. When the user provides their own secretName, validate it
+	// has the required keys so errors are surfaced early rather than at S3 access time.
+	if sn := cfg.Spec.ObjectStorage.SecretName; sn != "" {
+		if err := r.checkSecretKeys(ctx, cfg.Namespace, sn, []string{"access-key", "secret-key"}); err != nil { //nolint:goconst // S3 key names are clearer as literals
+			r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
+				"StorageSecretInvalid", err.Error())
+		} else {
+			r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionTrue,
+				"StorageSecretValid", fmt.Sprintf("secret %q has required keys", sn))
 		}
 	}
 
