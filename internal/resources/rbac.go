@@ -35,7 +35,7 @@ func rbacEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVar {
 		EnvVal("DATABASE_HOST", host),
 		EnvVal("DATABASE_PORT", int32String(port)),
 		EnvVal("REDIS_HOST", CacheHost(cfg)),
-		EnvVal("REDIS_PORT", "6379"),
+		EnvVal("REDIS_PORT", cachePortStr(cfg)),
 		EnvFromSecret("DJANGO_SECRET_KEY", NameDjangoSecret(cfg), "secret-key"),
 		EnvVal("V2_BOOTSTRAP_TENANT", "True"),
 		// Placeholder UUIDs required by RBAC V2/Kessel bootstrap (same as chart).

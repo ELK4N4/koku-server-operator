@@ -112,6 +112,14 @@ func DatabaseHost(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	return cfg.Spec.Database.Host
 }
 
+// cachePortStr returns the cache port as a string, defaulting to "6379".
+func cachePortStr(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	if cfg.Spec.Cache.Port != 0 {
+		return int32String(cfg.Spec.Cache.Port)
+	}
+	return "6379"
+}
+
 // CacheHost returns the hostname of the Valkey/Redis instance.
 func CacheHost(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	if costv1alpha1.BoolVal(cfg.Spec.Cache.Deploy, true) {
