@@ -376,7 +376,7 @@ func TestDBSecretValidationRequiresKruizeCredentials(t *testing.T) {
 		Data: map[string][]byte{ //nolint:goconst // test data — key names must match real values
 			"postgres-user": []byte("postgres"), "postgres-password": []byte("pgpass"),
 			"koku-user": []byte("koku"), "koku-password": []byte("kokupass"),
-			"ros-user":  []byte("ros"),  "ros-password":  []byte("rospass"),
+			"ros-user": []byte("ros"), "ros-password": []byte("rospass"),
 			"rbac-user": []byte("rbac"), "rbac-password": []byte("rbacpass"),
 			// kruize-user and kruize-password intentionally absent
 		},

@@ -186,7 +186,7 @@ func (r *CostManagementServiceConfigReconciler) upsertStorageCredentials(ctx con
 		// Use Data (not StringData) so the controller-runtime fake client
 		// round-trips credentials correctly in unit tests.
 		Data: map[string][]byte{
-			"access-key": []byte(accessKey),
+			"access-key": []byte(accessKey), //nolint:goconst
 			"secret-key": []byte(secretKey),
 		},
 	}
