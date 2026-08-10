@@ -480,7 +480,6 @@ func migrationJob(
 ) *batchv1.Job {
 	backoff := MigrationBackoffLimit
 	deadline := MigrationDeadlineSeconds
-	ttlSecs := int32(3600)
 	return &batchv1.Job{
 		TypeMeta: metav1.TypeMeta{APIVersion: "batch/v1", Kind: "Job"},
 		ObjectMeta: metav1.ObjectMeta{
@@ -492,9 +491,8 @@ func migrationJob(
 			},
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit:            &backoff,
-			ActiveDeadlineSeconds:   &deadline,
-			TTLSecondsAfterFinished: &ttlSecs,
+			BackoffLimit:          &backoff,
+			ActiveDeadlineSeconds: &deadline,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: Labels(cfg, component)},
 				Spec: corev1.PodSpec{
