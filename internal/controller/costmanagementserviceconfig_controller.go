@@ -174,8 +174,12 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 
 func (r *CostManagementServiceConfigReconciler) reconcileSharedConfig(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
 	// Secrets — create-if-absent only (never overwrite credentials).
-	if err := r.ensureSecret(ctx, cfg, resources.DBCredentialsSecret(cfg)); err != nil {
-		return Result{}, fmt.Errorf("db-credentials secret: %w", err)
+	// Skip DB credentials when the user named their own external Secret:
+	// creating one with random passwords would silently overwrite their creds.
+	if cfg.Spec.Database.SecretName == "" {
+		if err := r.ensureSecret(ctx, cfg, resources.DBCredentialsSecret(cfg)); err != nil {
+			return Result{}, fmt.Errorf("db-credentials secret: %w", err)
+		}
 	}
 	if err := r.ensureSecret(ctx, cfg, resources.DjangoSecret(cfg)); err != nil {
 		return Result{}, fmt.Errorf("django secret: %w", err)
