@@ -657,13 +657,15 @@ func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.
 		if err := r.apply(ctx, cfg, obj); err != nil {
 			gvk := obj.GetObjectKind().GroupVersionKind()
 			if apimeta.IsNoMatchError(err) {
+				// Prometheus Operator CRDs not installed — expected on clusters
+				// without the monitoring stack. Skip silently.
 				log.FromContext(ctx).Info("monitoring resource skipped (CRD absent)",
 					"kind", gvk.Kind, "name", obj.GetName())
-			} else {
-				log.FromContext(ctx).Error(err, "monitoring resource apply failed",
-					"kind", gvk.Kind, "name", obj.GetName())
+				continue
 			}
-			continue
+			// Real error (permissions, API server issues, etc.) — surface it so
+			// the reconcile loop sets Degraded and the user is notified.
+			return Result{}, fmt.Errorf("monitoring %s %s: %w", gvk.Kind, obj.GetName(), err)
 		}
 	}
 	return Result{}, nil
