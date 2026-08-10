@@ -570,6 +570,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		resources.KruizeNetworkPolicy(cfg),
 		resources.RBACAPINetworkPolicy(cfg),
 		resources.KokuAPINetworkPolicy(cfg),
+		resources.ROSAPINetworkPolicy(cfg),
 	} {
 		if err := r.apply(ctx, cfg, np); err != nil {
 			return Result{}, fmt.Errorf("networkpolicy %s: %w", np.GetName(), err)

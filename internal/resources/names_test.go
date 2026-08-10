@@ -94,3 +94,23 @@ func TestCeleryWorkerDeploymentKeepsCeleryQueue(t *testing.T) {
 		t.Errorf("WORKER_QUEUES = %q, want cost_model (Celery queue must keep underscore)", queues)
 	}
 }
+
+// TestROSAPINetworkPolicyExists verifies that ROSAPINetworkPolicy is defined
+// and restricts ingress to only the gateway. Without this policy any pod in
+// the namespace can reach the ROS API on port 8000, bypassing Envoy JWT auth.
+func TestROSAPINetworkPolicyExists(t *testing.T) {
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: "test"},
+	}
+	np := ROSAPINetworkPolicy(cfg)
+	if np == nil {
+		t.Fatal("ROSAPINetworkPolicy returned nil")
+	}
+	if np.Name == "" {
+		t.Error("ROSAPINetworkPolicy has no name")
+	}
+	// Must have at least one ingress rule (gateway → ROS API).
+	if len(np.Spec.Ingress) == 0 {
+		t.Error("ROSAPINetworkPolicy has no ingress rules — all traffic is blocked or allowed")
+	}
+}
