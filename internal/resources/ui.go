@@ -28,8 +28,26 @@ func NameUICookieSecret(cfg *costv1alpha1.CostManagementServiceConfig) string {
 }
 
 // NameUIOAuthClientSecret returns the name of the OAuth client secret (user-provided).
+// Uses spec.ui.oauthClientSecretRef.name when set; otherwise {name}-ui-oauth-client.
 func NameUIOAuthClientSecret(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	if name := cfg.Spec.UI.OAuthClientSecretRef.Name; name != "" {
+		return name
+	}
 	return cfg.Name + "-ui-oauth-client"
+}
+
+// ValidateUIOAuthClientSecret checks that the Secret has non-empty client-id and
+// client-secret keys required by oauth2-proxy.
+func ValidateUIOAuthClientSecret(secret *corev1.Secret) error {
+	if secret == nil {
+		return fmt.Errorf("secret is nil")
+	}
+	id := secret.Data["client-id"]
+	sec := secret.Data["client-secret"]
+	if len(id) == 0 || len(sec) == 0 {
+		return fmt.Errorf("secret %q must contain non-empty keys client-id and client-secret", secret.Name)
+	}
+	return nil
 }
 
 // NameUITLSSecret returns the name of the TLS secret auto-created by the OpenShift service CA.

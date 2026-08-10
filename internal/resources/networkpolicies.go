@@ -132,13 +132,28 @@ func RBACAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networ
 // -----------------------------------------------------------------------------
 
 // KokuAPINetworkPolicy allows the gateway and internal services to reach the
-// Koku API. The gateway handles external traffic; masu and listeners call the
-// API internally.
+// Koku API on its Service port (8000), and Prometheus to scrape the metrics
+// port (9000).
 func KokuAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
-	const kokuPort = int32(8000)
+	const (
+		kokuAPIPort     = int32(8000)
+		kokuMetricsPort = int32(9000)
+	)
 	return netpol(cfg, cfg.Name+"-koku-api", "cost-management-api", []networkingv1.NetworkPolicyIngressRule{
-		podFrom(cfg, "gateway", kokuPort),
-		podFrom(cfg, "cost-processor", kokuPort),
-		podFrom(cfg, "ros-housekeeper", kokuPort),
+		podFrom(cfg, "gateway", kokuAPIPort),
+		podFrom(cfg, "cost-processor", kokuAPIPort),
+		podFrom(cfg, "ros-housekeeper", kokuAPIPort),
+		// Prometheus scraping metrics port
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"network.openshift.io/policy-group": "monitoring"},
+				}},
+				{NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"kubernetes.io/metadata.name": "openshift-monitoring"},
+				}},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{tcpPort(kokuMetricsPort)},
+		},
 	})
 }

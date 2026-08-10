@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	rbacDBName = "costonprem_rbac"
+	rbacDBName = RbacDBName
 
 	// MigrationBackoffLimit is the number of Kubernetes retries per Job,
 	// matching the COST-7685 specification.
@@ -493,6 +493,12 @@ func migrationJob(
 		Spec: batchv1.JobSpec{
 			BackoffLimit:          &backoff,
 			ActiveDeadlineSeconds: &deadline,
+			// TTLSecondsAfterFinished intentionally absent: runMigrationStep uses
+			// Job existence to determine whether a migration has already completed.
+			// Setting a TTL causes GC to delete the Job, making the controller
+			// re-run migrations on every subsequent reconcile (~every hour).
+			// Failed Jobs must also persist so the operator holds in Degraded state
+			// rather than silently retrying.
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: Labels(cfg, component)},
 				Spec: corev1.PodSpec{

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	rosDBName     = "costonprem_ros"
+	rosDBName     = RosDBName
 	rosAPIPort    = 8000
 	rosMetricPort = 9000
 
@@ -149,7 +149,7 @@ func waitForROSDB(cfg *costv1alpha1.CostManagementServiceConfig) corev1.Containe
 	}
 	return corev1.Container{
 		Name:  "wait-for-db",
-		Image: "registry.access.redhat.com/ubi9/ubi-minimal:9.7",
+		Image: UBIMinimalImage,
 		Command: []string{
 			"bash", "-c",
 			`until bash -c "echo >/dev/tcp/` + host + `/` + int32String(port) + `" 2>/dev/null; do echo 'waiting for db'; sleep 2; done`,
@@ -164,7 +164,7 @@ func waitForKafka(cfg *costv1alpha1.CostManagementServiceConfig) corev1.Containe
 	port := KafkaPort(cfg)
 	return corev1.Container{
 		Name:  "wait-for-kafka",
-		Image: "registry.access.redhat.com/ubi9/ubi-minimal:9.7",
+		Image: UBIMinimalImage,
 		Command: []string{
 			"bash", "-c",
 			`until bash -c "echo >/dev/tcp/` + host + `/` + port + `" 2>/dev/null; do echo 'waiting for kafka'; sleep 2; done`,
@@ -178,7 +178,7 @@ func waitForKruize(cfg *costv1alpha1.CostManagementServiceConfig) corev1.Contain
 	host := NameKruize(cfg)
 	return corev1.Container{
 		Name:  "wait-for-kruize",
-		Image: "registry.access.redhat.com/ubi9/ubi-minimal:9.7",
+		Image: UBIMinimalImage,
 		Command: []string{
 			"bash", "-c",
 			`until curl -sf http://` + host + `:8080/listPerformanceProfiles >/dev/null 2>&1; do echo 'waiting for kruize'; sleep 5; done`,
@@ -194,7 +194,7 @@ func waitForKoku(cfg *costv1alpha1.CostManagementServiceConfig) corev1.Container
 	host := NameKokuAPI(cfg)
 	return corev1.Container{
 		Name:  "wait-for-koku",
-		Image: "registry.access.redhat.com/ubi9/ubi-minimal:9.7",
+		Image: UBIMinimalImage,
 		Command: []string{
 			"bash", "-c",
 			`until timeout 3 bash -c "echo > /dev/tcp/` + host + `/8000" 2>/dev/null; do echo 'waiting for koku'; sleep 5; done`,
