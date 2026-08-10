@@ -1,0 +1,93 @@
+# Separate BYOI CostManagementServiceConfig — deploy:false for DB/cache.
+# Point clusterDomain at your cluster's apps domain before relying on Routes.
+apiVersion: service.costmanagement.openshift.io/v1alpha1
+kind: CostManagementServiceConfig
+metadata:
+  name: cost-management
+  namespace: cost-byoi
+spec:
+  global:
+    clusterDomain: "apps.cluster.example.com"
+    storageClass: ""
+
+  database:
+    deploy: false
+    host: "postgresql.cost-byoi-infra.svc.cluster.local"
+    port: 5432
+    sslMode: "disable"
+    secretName: "byoi-db-credentials"
+
+  cache:
+    deploy: false
+    host: "valkey.cost-byoi-infra.svc.cluster.local"
+    port: 6379
+    auth:
+      enabled: true
+      secretName: "byoi-cache-credentials"
+    tls:
+      enabled: false
+
+  kafka:
+    # AMQ Streams from ./config/samples/byoi/deploy-kafka.sh (default names).
+    bootstrapServers: "cost-onprem-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+    securityProtocol: "PLAINTEXT"
+
+  objectStorage:
+    endpoint: "minio.cost-byoi-infra.svc.cluster.local"
+    port: 9000
+    useSSL: false
+    secretName: "byoi-s3-credentials"
+    s3:
+      region: "us-east-1"
+      addressingStyle: "path"
+
+  costManagement:
+    storage:
+      bucketName: "koku-bucket"
+      rosBucketName: "ros-data"
+    api:
+      image:
+        # amd64 — suitable for clusterbot / typical OpenShift nodes
+        repository: quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku
+        tag: "d8055ac"
+      replicas: 1
+    masu:
+      image:
+        repository: quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku
+        tag: "d8055ac"
+      replicas: 1
+    listener:
+      replicas: 1
+    celery:
+      workers:
+        default:
+          replicas: 1
+        priority:
+          replicas: 1
+        summary:
+          replicas: 1
+        ocp:
+          replicas: 1
+        costModel:
+          replicas: 1
+
+  # Envoy JWT gateway requires a reachable Keycloak/RHBK JWKS endpoint.
+  # Placeholder URL — replace with a real Keycloak before exercising the /api Route.
+  auth:
+    keycloak:
+      # JWKS fetch URL (prefer in-cluster Service). When RHBK sets a public
+      # hostname, tokens use that URL as iss — set issuerURL to match.
+      url: "http://keycloak-service.keycloak.svc.cluster.local:8080"
+      # issuerURL: "https://keycloak-keycloak.apps.example.com"
+      realm: "kubernetes"
+      audiences:
+        - "cost-management-operator"
+        - "cost-management-ui"
+    envoy:
+      image:
+        repository: registry.redhat.io/openshift-service-mesh/proxyv2-rhel9
+        tag: "2.6"
+      replicas: 1
+
+  monitoring:
+    enabled: false

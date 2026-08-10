@@ -1,0 +1,189 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-init
+  namespace: cost-byoi-infra
+  labels:
+    app.kubernetes.io/part-of: koku-service-operator-byoi
+    app.kubernetes.io/component: postgresql
+data:
+  01-init-databases.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    echo "Initializing BYOI databases and users..."
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<EOF
+    DO \$\$
+    BEGIN
+      IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${KOKU_USER}') THEN
+        EXECUTE 'CREATE USER ' || quote_ident('${KOKU_USER}') || ' WITH PASSWORD ' || quote_literal('${KOKU_PASSWORD}');
+      END IF;
+      IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${ROS_USER}') THEN
+        EXECUTE 'CREATE USER ' || quote_ident('${ROS_USER}') || ' WITH PASSWORD ' || quote_literal('${ROS_PASSWORD}');
+      END IF;
+      IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${KRUIZE_USER}') THEN
+        EXECUTE 'CREATE USER ' || quote_ident('${KRUIZE_USER}') || ' WITH PASSWORD ' || quote_literal('${KRUIZE_PASSWORD}');
+      END IF;
+      IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${RBAC_USER}') THEN
+        EXECUTE 'CREATE USER ' || quote_ident('${RBAC_USER}') || ' WITH PASSWORD ' || quote_literal('${RBAC_PASSWORD}');
+      END IF;
+    END
+    \$\$;
+
+    SELECT 'CREATE DATABASE costonprem_koku'  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'costonprem_koku')\gexec
+    SELECT 'CREATE DATABASE costonprem_ros'   WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'costonprem_ros')\gexec
+    SELECT 'CREATE DATABASE costonprem_kruize' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'costonprem_kruize')\gexec
+    SELECT 'CREATE DATABASE costonprem_rbac'  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'costonprem_rbac')\gexec
+
+    GRANT ALL PRIVILEGES ON DATABASE costonprem_koku   TO ${KOKU_USER};   ALTER DATABASE costonprem_koku   OWNER TO ${KOKU_USER};
+    GRANT ALL PRIVILEGES ON DATABASE costonprem_ros    TO ${ROS_USER};    ALTER DATABASE costonprem_ros    OWNER TO ${ROS_USER};
+    GRANT ALL PRIVILEGES ON DATABASE costonprem_kruize TO ${KRUIZE_USER}; ALTER DATABASE costonprem_kruize OWNER TO ${KRUIZE_USER};
+    GRANT ALL PRIVILEGES ON DATABASE costonprem_rbac   TO ${RBAC_USER};   ALTER DATABASE costonprem_rbac   OWNER TO ${RBAC_USER};
+
+    \c costonprem_koku
+    CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+    EOF
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-data
+  namespace: cost-byoi-infra
+  labels:
+    app.kubernetes.io/part-of: koku-service-operator-byoi
+    app.kubernetes.io/component: postgresql
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  namespace: cost-byoi-infra
+  labels:
+    app.kubernetes.io/part-of: koku-service-operator-byoi
+    app.kubernetes.io/component: postgresql
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    app.kubernetes.io/name: postgresql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  namespace: cost-byoi-infra
+  labels:
+    app.kubernetes.io/part-of: koku-service-operator-byoi
+    app.kubernetes.io/component: postgresql
+    app.kubernetes.io/name: postgresql
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: koku-service-operator-byoi
+        app.kubernetes.io/component: postgresql
+        app.kubernetes.io/name: postgresql
+    spec:
+      serviceAccountName: byoi-infra
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:16
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: postgres-password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: KOKU_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: koku-user
+            - name: KOKU_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: koku-password
+            - name: ROS_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: ros-user
+            - name: ROS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: ros-password
+            - name: KRUIZE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: kruize-user
+            - name: KRUIZE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: kruize-password
+            - name: RBAC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: rbac-user
+            - name: RBAC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: rbac-password
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgresql-data
+        - name: init
+          configMap:
+            name: postgresql-init
+            defaultMode: 0755

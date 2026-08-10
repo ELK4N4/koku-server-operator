@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cost-byoi-infra
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - credentials.yaml
+  - postgresql.yaml
+  - valkey.yaml
+  - minio.yaml
+  # kafka.yaml (Redpanda) is optional — apply with kubectl apply -f …/kafka.yaml
+  # Prefer ../deploy-kafka.sh (AMQ Streams) for chart infra tests.

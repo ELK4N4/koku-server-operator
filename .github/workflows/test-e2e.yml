@@ -27,6 +27,10 @@ jobs:
         run: kind version
 
       - name: Running Test e2e
+        env:
+          # Our operator uses plain HTTP metrics on :8080, not cert-manager TLS on :8443.
+          # Skip cert-manager install until COST-7697 adapts the e2e suite.
+          CERT_MANAGER_INSTALL_SKIP: "true"
         run: |
           go mod tidy
           make test-e2e

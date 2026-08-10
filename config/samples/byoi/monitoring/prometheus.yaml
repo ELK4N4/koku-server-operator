@@ -1,0 +1,125 @@
+---
+# Prometheus ConfigMap — static scrape targets for the cost-management CR.
+# CR name assumed: cost-management  (matches config/samples/byoi/app/)
+# App namespace:   cost-byoi
+# If your CR name or namespace differs, update the target hostnames below.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 30s
+      evaluation_interval: 30s
+
+    scrape_configs:
+      # ── Core Koku services ────────────────────────────────────────────────
+      - job_name: koku-api
+        static_configs:
+          - targets: ['cost-management-koku-api.cost-byoi.svc:9000']
+            labels: {component: koku-api}
+
+      - job_name: masu
+        static_configs:
+          - targets: ['cost-management-koku-masu.cost-byoi.svc:9000']
+            labels: {component: masu}
+
+      - job_name: listener
+        static_configs:
+          - targets: ['cost-management-koku-listener.cost-byoi.svc:9000']
+            labels: {component: listener}
+
+      # ── ROS ──────────────────────────────────────────────────────────────
+      - job_name: ros-api
+        static_configs:
+          - targets: ['cost-management-ros-api.cost-byoi.svc:9000']
+            labels: {component: ros-api}
+
+      # ── Ingress upload handler ────────────────────────────────────────────
+      - job_name: ingress
+        static_configs:
+          - targets: ['cost-management-ingress.cost-byoi.svc:9000']
+            labels: {component: ingress}
+
+      # ── Kruize (resource optimiser) ───────────────────────────────────────
+      - job_name: kruize
+        static_configs:
+          - targets: ['cost-management-kruize.cost-byoi.svc:8080']
+            labels: {component: kruize}
+        metrics_path: /metrics
+
+      # ── Prometheus self-monitoring ────────────────────────────────────────
+      - job_name: prometheus
+        static_configs:
+          - targets: ['localhost:9090']
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534  # nobody
+      containers:
+        - name: prometheus
+          image: quay.io/prometheus/prometheus:v2.54.1
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=7d
+            - --web.enable-lifecycle
+          ports:
+            - name: http
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+              readOnly: true
+            - name: data
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
