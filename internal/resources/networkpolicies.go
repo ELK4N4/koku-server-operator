@@ -105,7 +105,7 @@ func IngressNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networ
 // housekeeper to reach Kruize REST endpoints.
 func KruizeNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
 	const kruizePort = int32(8080)
-	return netpol(cfg, cfg.Name+"-kruize", "kruize", []networkingv1.NetworkPolicyIngressRule{
+	return netpol(cfg, cfg.Name+"-kruize", "ros-optimization", []networkingv1.NetworkPolicyIngressRule{
 		podFrom(cfg, "ros-processor", kruizePort),
 		podFrom(cfg, "ros-recommendation-poller", kruizePort),
 		podFrom(cfg, "ros-housekeeper", kruizePort),
@@ -121,8 +121,8 @@ func KruizeNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *network
 func RBACAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
 	return netpol(cfg, cfg.Name+"-rbac-api", "rbac-api", []networkingv1.NetworkPolicyIngressRule{
 		podFrom(cfg, "gateway", rbacAPIPort),
-		podFrom(cfg, "koku-api", rbacAPIPort),
-		podFrom(cfg, "masu", rbacAPIPort),
+		podFrom(cfg, "cost-management-api", rbacAPIPort),
+		podFrom(cfg, "cost-processor", rbacAPIPort),
 		podFrom(cfg, "ros-api", rbacAPIPort),
 	})
 }
@@ -139,9 +139,9 @@ func KokuAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networ
 		kokuAPIPort     = int32(8000)
 		kokuMetricsPort = int32(9000)
 	)
-	return netpol(cfg, cfg.Name+"-koku-api", "koku-api", []networkingv1.NetworkPolicyIngressRule{
+	return netpol(cfg, cfg.Name+"-koku-api", "cost-management-api", []networkingv1.NetworkPolicyIngressRule{
 		podFrom(cfg, "gateway", kokuAPIPort),
-		podFrom(cfg, "masu", kokuAPIPort),
+		podFrom(cfg, "cost-processor", kokuAPIPort),
 		podFrom(cfg, "ros-housekeeper", kokuAPIPort),
 		// Prometheus scraping metrics port
 		{
