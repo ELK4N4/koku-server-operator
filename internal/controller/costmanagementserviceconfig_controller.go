@@ -131,6 +131,9 @@ func (r *CostManagementServiceConfigReconciler) reconcileDelete(ctx context.Cont
 //  6. Workers (Celery, ROS, Kruize)
 //  7. Edge (Envoy gateway, UI, Route)
 func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (ctrl.Result, error) {
+	// Capture the phase before overwriting it so we can detect the
+	// first Ready transition at the end of this pass.
+	priorPhase := cfg.Status.Phase
 	cfg.Status.ObservedGeneration = cfg.Generation
 	cfg.Status.Phase = costv1alpha1.PhaseProgressing
 	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionTrue, "Reconciling", "Reconciliation in progress")
@@ -156,8 +159,10 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 		return ctrl.Result{RequeueAfter: result.RequeueAfter}, nil
 	}
 
-	// Emit Ready event only on the first transition to Ready (phase was not Ready before).
-	if cfg.Status.Phase != costv1alpha1.PhaseReady {
+	// Emit Ready event only on the first transition to Ready.
+	// Use priorPhase (captured before this pass reset it to Progressing)
+	// to detect a genuine non-Ready → Ready transition.
+	if priorPhase != costv1alpha1.PhaseReady {
 		r.Recorder.Event(cfg, corev1.EventTypeNormal, "Ready", "All components are running")
 	}
 	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "AllComponentsReady", "All components are running")
