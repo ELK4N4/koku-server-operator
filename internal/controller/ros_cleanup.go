@@ -6,6 +6,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -67,14 +68,21 @@ func (r *CostManagementServiceConfigReconciler) reconcileROSFeature(ctx context.
 }
 
 // reconcileROSCleanup deletes all ROS/Kruize managed objects. Missing objects
-// are ignored so the path is safe when ROS was never enabled.
+// and absent CRDs (e.g. ServiceMonitor without Prometheus Operator) are ignored
+// so the path is safe when ROS was never enabled or monitoring CRDs are absent.
 func (r *CostManagementServiceConfigReconciler) reconcileROSCleanup(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) error {
 	logger := log.FromContext(ctx)
 	for _, obj := range rosCleanupObjects(cfg) {
-		if err := r.Delete(ctx, obj, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !errors.IsNotFound(err) {
+		if err := r.Delete(ctx, obj, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil && !isIgnorableROSCleanupErr(err) {
 			return fmt.Errorf("deleting ROS/Kruize resource %s: %w", obj.GetName(), err)
 		}
 	}
 	logger.Info("cleaned up ROS/Kruize resources (ros.enabled=false)")
 	return nil
+}
+
+// isIgnorableROSCleanupErr reports whether a delete failure should be treated as
+// success: NotFound (never created) or NoKindMatch (CRD absent on the cluster).
+func isIgnorableROSCleanupErr(err error) bool {
+	return errors.IsNotFound(err) || apimeta.IsNoMatchError(err)
 }

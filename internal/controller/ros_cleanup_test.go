@@ -2,14 +2,16 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -112,6 +114,22 @@ func TestReconcileROSCleanup_ToleratesMissing(t *testing.T) {
 	}
 }
 
+func TestIsIgnorableROSCleanupErr(t *testing.T) {
+	notFound := apierrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "deployments"}, "x")
+	noMatch := &apimeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "monitoring.coreos.com", Kind: "ServiceMonitor"}}
+	other := fmt.Errorf("permission denied")
+
+	if !isIgnorableROSCleanupErr(notFound) {
+		t.Error("NotFound should be ignorable")
+	}
+	if !isIgnorableROSCleanupErr(noMatch) {
+		t.Error("NoKindMatchError should be ignorable")
+	}
+	if isIgnorableROSCleanupErr(other) {
+		t.Error("other errors must not be ignored")
+	}
+}
+
 func newROSFeatureFixture(t *testing.T, seedObjects bool) (*CostManagementServiceConfigReconciler, *costv1alpha1.CostManagementServiceConfig, client.Client) {
 	t.Helper()
 	scheme := ownershipScheme(t)
@@ -162,7 +180,7 @@ func assertROSObjectsGone(t *testing.T, ctx context.Context, c client.Client, cf
 		}
 		if err == nil {
 			t.Errorf("expected %s deleted after disable", key.Name)
-		} else if !errors.IsNotFound(err) {
+		} else if !apierrors.IsNotFound(err) {
 			t.Errorf("get %s: %v", key.Name, err)
 		}
 	}
