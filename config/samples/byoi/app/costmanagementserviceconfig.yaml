@@ -71,6 +71,10 @@ spec:
         costModel:
           replicas: 1
 
+  # Beta: ROS (and Kruize) are optional. Set enabled: true to deploy them.
+  ros:
+    enabled: false
+
   # Envoy JWT gateway requires a reachable Keycloak/RHBK JWKS endpoint.
   # Placeholder URL — replace with a real Keycloak before exercising the /api Route.
   auth:

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
@@ -153,6 +154,40 @@ func TestEnvoyYAMLHTTPKeycloakOmitsTLS(t *testing.T) {
 	}
 	if !strings.Contains(yaml, "port_value: 8080") {
 		t.Error("expected Keycloak port 8080")
+	}
+}
+
+func TestEnvoyYAMLOmitsROSWhenDisabled(t *testing.T) {
+	cfg := testCfg()
+	disabled := false
+	cfg.Spec.ROS.Enabled = &disabled
+	yaml := EnvoyYAML(cfg)
+	if strings.Contains(yaml, "ros-api-backend") {
+		t.Error("EnvoyYAML should omit ros-api-backend when ros.enabled=false")
+	}
+	if strings.Contains(yaml, "/api/cost-management/v1/recommendations/openshift") {
+		t.Error("EnvoyYAML should omit ROS recommendations route when ros.enabled=false")
+	}
+	if !strings.Contains(yaml, "name: koku-api-backend") {
+		t.Error("koku-api-backend must still be present")
+	}
+	for _, tok := range []string{"__ROS_ROUTE__", "__ROS_CLUSTER__"} {
+		if strings.Contains(yaml, tok) {
+			t.Errorf("EnvoyYAML left unsubstituted token %q", tok)
+		}
+	}
+}
+
+func TestEnvoyYAMLParsesForROSEnabledAndDisabled(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		cfg := testCfg()
+		e := enabled
+		cfg.Spec.ROS.Enabled = &e
+		raw := EnvoyYAML(cfg)
+		var doc any
+		if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
+			t.Errorf("ros.enabled=%v: invalid YAML: %v", enabled, err)
+		}
 	}
 }
 

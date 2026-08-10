@@ -2177,6 +2177,13 @@ spec:
                             type: object
                         type: object
                     type: object
+                  enabled:
+                    default: true
+                    description: |-
+                      When false, the operator skips ROS and Kruize (ROS-only dependency):
+                      migrations, Deployments/Services, CronJobs, NetworkPolicies, Envoy routes,
+                      and cluster-scoped Kruize RBAC. Defaults to true.
+                    type: boolean
                   housekeeper:
                     properties:
                       partitionCleaner:
