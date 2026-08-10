@@ -55,7 +55,7 @@ func KruizeClusterRole(cfg *costv1alpha1.CostManagementServiceConfig) *rbacv1.Cl
 			Labels: Labels(cfg, "ros-optimization"),
 		},
 		Rules: []rbacv1.PolicyRule{
-			{APIGroups: []string{""}, Resources: []string{"pods", "services", "configmaps", "secrets", "nodes", "endpoints"}, Verbs: []string{"get", "list", "watch"}},
+			{APIGroups: []string{""}, Resources: []string{"pods", "services", "configmaps", "nodes", "endpoints"}, Verbs: []string{"get", "list", "watch"}},
 			{APIGroups: []string{"apps"}, Resources: []string{"deployments", "replicasets", "statefulsets", "daemonsets"}, Verbs: []string{"get", "list", "watch"}},
 			{APIGroups: []string{"metrics.k8s.io"}, Resources: []string{"nodes", "pods"}, Verbs: []string{"get", "list"}},
 			{APIGroups: []string{"custom.metrics.k8s.io"}, Resources: []string{"*"}, Verbs: []string{"get", "list"}},
