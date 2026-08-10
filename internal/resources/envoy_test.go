@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"gopkg.in/yaml.v3"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
@@ -173,6 +174,19 @@ func TestEnvoyYAMLOmitsROSWhenDisabled(t *testing.T) {
 	for _, tok := range []string{"__ROS_ROUTE__", "__ROS_CLUSTER__"} {
 		if strings.Contains(yaml, tok) {
 			t.Errorf("EnvoyYAML left unsubstituted token %q", tok)
+		}
+	}
+}
+
+func TestEnvoyYAMLParsesForROSEnabledAndDisabled(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		cfg := testCfg()
+		e := enabled
+		cfg.Spec.ROS.Enabled = &e
+		raw := EnvoyYAML(cfg)
+		var doc any
+		if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
+			t.Errorf("ros.enabled=%v: invalid YAML: %v", enabled, err)
 		}
 	}
 }

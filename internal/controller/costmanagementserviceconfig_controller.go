@@ -135,6 +135,14 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 	cfg.Status.Phase = costv1alpha1.PhaseProgressing
 	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionTrue, "Reconciling", "Reconciliation in progress")
 
+	// Policy bookkeeping (not a provisioning stage): surface ROSEnabled and
+	// tear down leftover ROS/Kruize objects when the feature is disabled.
+	if _, err := r.reconcileROSFeature(ctx, cfg); err != nil {
+		applyPhaseError(cfg, err)
+		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "ReconcileError", "%v", err)
+		return ctrl.Result{RequeueAfter: requeueSlow}, err
+	}
+
 	result, err := runPhases([]PhaseFn{
 		func() (Result, error) { return r.reconcileDiscovery(ctx, cfg) },
 		func() (Result, error) { return r.reconcileSharedConfig(ctx, cfg) },

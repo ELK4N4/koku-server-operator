@@ -27,6 +27,8 @@ const (
 	ConditionAuthReady         = "AuthenticationReady"
 	ConditionSchemaUpToDate    = "SchemaUpToDate"
 	ConditionUIReady           = "UIReady"
+	// ConditionROSEnabled reports whether ROS/Kruize are active per spec.ros.enabled.
+	ConditionROSEnabled = "ROSEnabled"
 )
 
 // -----------------------------------------------------------------------------
