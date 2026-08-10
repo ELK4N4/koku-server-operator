@@ -215,3 +215,62 @@ func TestEnvoyResourceNames(t *testing.T) {
 		t.Error("expected CA combine init container")
 	}
 }
+
+// TestEnvoyDeploymentHasConfigHash verifies that EnvoyDeployment includes a
+// content hash of the ConfigMap in the pod template annotations. Without this,
+// Envoy pods are never restarted when the ConfigMap changes (e.g., OIDC URL
+// update), so the gateway keeps running with stale JWT configuration.
+func TestEnvoyDeploymentHasConfigHash(t *testing.T) {
+	cfg := testCfg()
+	cm := EnvoyConfigMap(cfg)
+	dep := EnvoyDeployment(cfg)
+
+	const hashAnnotation = "koku.costmanagement.io/envoy-config-hash"
+	hash, ok := dep.Spec.Template.Annotations[hashAnnotation]
+	if !ok {
+		t.Fatalf("EnvoyDeployment pod template missing annotation %q — "+
+			"ConfigMap changes will not trigger pod restarts", hashAnnotation)
+	}
+	if hash == "" {
+		t.Fatalf("annotation %q is empty", hashAnnotation)
+	}
+
+	// Changing the ConfigMap content must change the hash.
+	cfg2 := testCfg()
+	cfg2.Spec.Auth.Keycloak.URL = "https://other-keycloak.example.com"
+	cm2 := EnvoyConfigMap(cfg2)
+	dep2 := EnvoyDeployment(cfg2)
+
+	if cm.Data["envoy.yaml"] == cm2.Data["envoy.yaml"] {
+		t.Skip("test configs produced identical ConfigMap content — adjust testCfg()")
+	}
+
+	hash2 := dep2.Spec.Template.Annotations[hashAnnotation]
+	if hash == hash2 {
+		t.Errorf("hash did not change when ConfigMap content changed: both = %q", hash)
+	}
+}
+
+// TestEnvoyDeploymentMountsKeycloakCACert verifies that when
+// auth.keycloak.tls.caCertSecretName is set, the Envoy Deployment mounts
+// that Secret as an additional CA source so Envoy can verify the Keycloak
+// Route certificate (router CA, not the service CA).
+func TestEnvoyDeploymentMountsKeycloakCACert(t *testing.T) {
+	cfg := testCfg()
+	cfg.Spec.Auth.Keycloak.TLS.CACertSecretName = "my-router-ca"
+
+	dep := EnvoyDeployment(cfg)
+
+	// The secret must appear as a volume.
+	var found bool
+	for _, v := range dep.Spec.Template.Spec.Volumes {
+		if v.Secret != nil && v.Secret.SecretName == "my-router-ca" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("EnvoyDeployment missing volume for keycloak caCertSecretName=%q — "+
+			"Envoy will fail to verify Keycloak Route certificates", "my-router-ca")
+	}
+}
