@@ -103,9 +103,10 @@ func IngressNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networ
 
 // KruizeNetworkPolicy allows ROS processor, recommendation-poller, and
 // housekeeper to reach Kruize REST endpoints.
+// Kruize pods use component label "ros-optimization" (set in kruize.go).
 func KruizeNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
 	const kruizePort = int32(8080)
-	return netpol(cfg, cfg.Name+"-kruize", "kruize", []networkingv1.NetworkPolicyIngressRule{
+	return netpol(cfg, cfg.Name+"-kruize", "ros-optimization", []networkingv1.NetworkPolicyIngressRule{
 		podFrom(cfg, "ros-processor", kruizePort),
 		podFrom(cfg, "ros-recommendation-poller", kruizePort),
 		podFrom(cfg, "ros-housekeeper", kruizePort),
@@ -116,13 +117,14 @@ func KruizeNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *network
 // RBAC API
 // -----------------------------------------------------------------------------
 
-// RBACAPINetworkPolicy allows the gateway, koku-api, masu, and ros-api to
+// RBACAPINetworkPolicy allows the gateway, koku API, masu, and ros-api to
 // call the RBAC service for authorization checks.
+// Component labels match koku.go: "cost-management-api" and "cost-processor".
 func RBACAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
 	return netpol(cfg, cfg.Name+"-rbac-api", "rbac-api", []networkingv1.NetworkPolicyIngressRule{
 		podFrom(cfg, "gateway", rbacAPIPort),
-		podFrom(cfg, "koku-api", rbacAPIPort),
-		podFrom(cfg, "masu", rbacAPIPort),
+		podFrom(cfg, "cost-management-api", rbacAPIPort),
+		podFrom(cfg, "cost-processor", rbacAPIPort),
 		podFrom(cfg, "ros-api", rbacAPIPort),
 	})
 }
@@ -132,13 +134,13 @@ func RBACAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networ
 // -----------------------------------------------------------------------------
 
 // KokuAPINetworkPolicy allows the gateway and internal services to reach the
-// Koku API. The gateway handles external traffic; masu and listeners call the
-// API internally.
+// Koku API. Component label is "cost-management-api" (set in koku.go).
+// Service port is 8000 (KokuAPIService exposes 8000, not the metrics port 9000).
 func KokuAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
-	const kokuPort = int32(9000)
-	return netpol(cfg, cfg.Name+"-koku-api", "koku-api", []networkingv1.NetworkPolicyIngressRule{
-		podFrom(cfg, "gateway", kokuPort),
-		podFrom(cfg, "masu", kokuPort),
-		podFrom(cfg, "ros-housekeeper", kokuPort),
+	const kokuServicePort = int32(8000)
+	return netpol(cfg, cfg.Name+"-koku-api", "cost-management-api", []networkingv1.NetworkPolicyIngressRule{
+		podFrom(cfg, "gateway", kokuServicePort),
+		podFrom(cfg, "cost-processor", kokuServicePort),
+		podFrom(cfg, "ros-housekeeper", kokuServicePort),
 	})
 }
