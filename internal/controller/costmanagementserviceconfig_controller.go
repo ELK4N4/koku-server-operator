@@ -534,30 +534,8 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 	r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionTrue,
 		"GatewayReady", "Envoy JWT gateway and API Route are ready")
 
-	// UI — cookie secret (operator-generated), nginx config, deployment, service.
-	if err := r.ensureSecret(ctx, cfg, resources.UICookieSecret(cfg)); err != nil {
-		return Result{}, fmt.Errorf("ui cookie secret: %w", err)
-	}
-	for _, obj := range []client.Object{
-		resources.UINginxConfigMap(cfg),
-		resources.UIDeployment(cfg),
-		resources.UIService(cfg),
-	} {
-		if err := r.apply(ctx, cfg, obj); err != nil {
-			return Result{}, fmt.Errorf("ui %s: %w", obj.GetName(), err)
-		}
-	}
-
-	// UI Route (deferred until cluster domain is resolved).
-	if uiRoute := resources.UIRoute(cfg); uiRoute != nil {
-		if err := r.apply(ctx, cfg, uiRoute); err != nil {
-			return Result{}, fmt.Errorf("ui route: %w", err)
-		}
-	}
-
-	// ConsoleLink is cluster-scoped — apply without ownerRef, cleaned up by finalizer.
-	if err := r.applyClusterScoped(ctx, resources.ConsoleLink(cfg)); err != nil {
-		return Result{}, fmt.Errorf("consolelink: %w", err)
+	if err := r.reconcileUI(ctx, cfg); err != nil {
+		return Result{}, err
 	}
 
 	// NetworkPolicies — restrict traffic to expected flows per component.
@@ -573,7 +551,65 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		}
 	}
 
+	if apimeta.IsStatusConditionFalse(cfg.Status.Conditions, costv1alpha1.ConditionUIReady) {
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
 	return Result{}, nil
+}
+
+// reconcileUI ensures cookie/nginx config, validates the user-provided OAuth
+// client Secret, and applies UI Deploy/Service/Route/ConsoleLink when ready.
+func (r *CostManagementServiceConfigReconciler) reconcileUI(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) error {
+	// Cookie secret + nginx ConfigMap are safe without OAuth credentials.
+	if err := r.ensureSecret(ctx, cfg, resources.UICookieSecret(cfg)); err != nil {
+		return fmt.Errorf("ui cookie secret: %w", err)
+	}
+	if err := r.apply(ctx, cfg, resources.UINginxConfigMap(cfg)); err != nil {
+		return fmt.Errorf("ui %s: %w", resources.NameUINginxConfigMap(cfg), err)
+	}
+
+	// OAuth client Secret is user-provided (same-namespace SecretRef). Gate UI
+	// Deploy/Service/Route/ConsoleLink until client-id and client-secret exist.
+	oauthSecretName := resources.NameUIOAuthClientSecret(cfg)
+	var oauthSecret corev1.Secret
+	err := r.Get(ctx, types.NamespacedName{Name: oauthSecretName, Namespace: cfg.Namespace}, &oauthSecret)
+	switch {
+	case errors.IsNotFound(err):
+		r.setCondition(cfg, costv1alpha1.ConditionUIReady, metav1.ConditionFalse,
+			"OAuthClientSecretMissing",
+			fmt.Sprintf("Secret %q with keys client-id and client-secret is required for the UI", oauthSecretName))
+		return nil
+	case err != nil:
+		return fmt.Errorf("get ui oauth client secret %s: %w", oauthSecretName, err)
+	case resources.ValidateUIOAuthClientSecret(&oauthSecret) != nil:
+		r.setCondition(cfg, costv1alpha1.ConditionUIReady, metav1.ConditionFalse,
+			"OAuthClientSecretInvalid",
+			fmt.Sprintf("Secret %q must contain non-empty keys client-id and client-secret", oauthSecretName))
+		return nil
+	}
+
+	r.setCondition(cfg, costv1alpha1.ConditionUIReady, metav1.ConditionTrue,
+		"OAuthClientSecretReady", "UI OAuth client Secret is present")
+
+	for _, obj := range []client.Object{
+		resources.UIDeployment(cfg),
+		resources.UIService(cfg),
+	} {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			return fmt.Errorf("ui %s: %w", obj.GetName(), err)
+		}
+	}
+
+	if uiRoute := resources.UIRoute(cfg); uiRoute != nil {
+		if err := r.apply(ctx, cfg, uiRoute); err != nil {
+			return fmt.Errorf("ui route: %w", err)
+		}
+	}
+
+	if err := r.applyClusterScoped(ctx, resources.ConsoleLink(cfg)); err != nil {
+		return fmt.Errorf("consolelink: %w", err)
+	}
+	return nil
 }
 
 // -----------------------------------------------------------------------------
@@ -594,12 +630,15 @@ func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.
 		resources.PrometheusRules(cfg),
 	} {
 		if err := r.apply(ctx, cfg, obj); err != nil {
-			// Monitoring CRDs may not be installed — log and continue rather than
-			// blocking the pipeline.
-			log.FromContext(ctx).Info("monitoring resource skipped (CRD absent?)",
-				"kind", obj.GetObjectKind().GroupVersionKind().Kind,
-				"name", obj.GetName(),
-				"error", err.Error())
+			gvk := obj.GetObjectKind().GroupVersionKind()
+			if apimeta.IsNoMatchError(err) {
+				log.FromContext(ctx).Info("monitoring resource skipped (CRD absent)",
+					"kind", gvk.Kind, "name", obj.GetName())
+			} else {
+				log.FromContext(ctx).Error(err, "monitoring resource apply failed",
+					"kind", gvk.Kind, "name", obj.GetName())
+			}
+			continue
 		}
 	}
 	return Result{}, nil

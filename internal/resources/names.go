@@ -7,6 +7,15 @@ import (
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
+const (
+	UBIMinimalImage = "registry.access.redhat.com/ubi9/ubi-minimal:9.7"
+
+	KokuDBName   = "costonprem_koku"
+	RosDBName    = "costonprem_ros"
+	RbacDBName   = "costonprem_rbac"
+	KruizeDBName = "costonprem_kruize"
+)
+
 // Names derives resource names from the CR name so they are deterministic
 // and consistent across reconcile loops.
 

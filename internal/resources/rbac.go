@@ -101,6 +101,7 @@ func rbacAppContainerSC() *corev1.SecurityContext {
 		AllowPrivilegeEscalation: &f,
 		Privileged:               &f,
 		RunAsNonRoot:             &t,
+		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}
 }
 
@@ -113,7 +114,7 @@ func waitForRBACDB(cfg *costv1alpha1.CostManagementServiceConfig) corev1.Contain
 	}
 	return corev1.Container{
 		Name:  "wait-for-db",
-		Image: "registry.access.redhat.com/ubi9/ubi-minimal:9.7",
+		Image: UBIMinimalImage,
 		Command: []string{
 			"bash", "-c",
 			`until bash -c "echo >/dev/tcp/` + host + `/` + int32String(port) + `" 2>/dev/null; do echo 'waiting for rbac db'; sleep 2; done`,
