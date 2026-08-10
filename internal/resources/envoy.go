@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -100,6 +101,13 @@ func serviceFQDN(name, namespace string) string {
 	return name + "." + namespace + ".svc.cluster.local"
 }
 
+// envoyConfigHash returns a short SHA-256 digest of the rendered envoy.yaml.
+// Embedded in the pod template so ConfigMap changes trigger a rolling restart.
+func envoyConfigHash(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	h := sha256.Sum256([]byte(EnvoyYAML(cfg)))
+	return fmt.Sprintf("%x", h[:8])
+}
+
 // EnvoyConfigMap builds the ConfigMap containing envoy.yaml.
 func EnvoyConfigMap(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
@@ -167,7 +175,16 @@ func EnvoyDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Depl
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{MatchLabels: sel},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: all},
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: all,
+					// Hash of the rendered envoy.yaml content so that ConfigMap
+					// changes (e.g. OIDC issuer URL update) trigger a rolling restart.
+					// Envoy reads its config at startup only (static --config flag),
+					// so a pod restart is the correct mechanism for config propagation.
+					Annotations: map[string]string{
+						"koku.costmanagement.io/envoy-config-hash": envoyConfigHash(cfg),
+					},
+				},
 				Spec: corev1.PodSpec{
 					AutomountServiceAccountToken: &falseVal,
 					SecurityContext:              nonRootPodSC(),

@@ -123,10 +123,8 @@ func CacheHost(cfg *costv1alpha1.CostManagementServiceConfig) string {
 // firstBroker returns the first broker from a comma-separated bootstrap servers
 // string. "a:9092,b:9093" → "a:9092".
 func firstBroker(bootstrapServers string) string {
-	if i := strings.IndexByte(bootstrapServers, ','); i >= 0 {
-		return bootstrapServers[:i]
-	}
-	return bootstrapServers
+	first, _, _ := strings.Cut(bootstrapServers, ",")
+	return first
 }
 
 // KafkaHost returns the hostname of the first Kafka broker.
