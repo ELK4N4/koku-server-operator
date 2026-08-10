@@ -48,6 +48,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileValidation(ctx context.
 					"koku-user", "koku-password",
 					"ros-user", "ros-password",
 					"rbac-user", "rbac-password",
+					"kruize-user", "kruize-password",
 				}
 				if err := r.checkSecretKeys(ctx, cfg.Namespace, cfg.Spec.Database.SecretName, required); err != nil {
 					r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionFalse,

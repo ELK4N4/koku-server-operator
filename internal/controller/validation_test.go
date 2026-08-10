@@ -360,3 +360,40 @@ func findCondition(conditions []metav1.Condition, condType string) *metav1.Condi
 	}
 	return nil
 }
+
+// TestDBSecretValidationRequiresKruizeCredentials verifies that the database
+// Secret validation (checkSecretKeys) includes kruize-user and kruize-password.
+// Kruize connects to the same PostgreSQL instance; missing its credentials
+// causes Kruize pods to fail silently after migrations complete.
+func TestDBSecretValidationRequiresKruizeCredentials(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	// Secret with all required keys EXCEPT kruize credentials.
+	secretMissingKruize := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "db-creds", Namespace: testNamespace},
+		Data: map[string][]byte{
+			"postgres-user": []byte("postgres"), "postgres-password": []byte("pgpass"),
+			"koku-user": []byte("koku"), "koku-password": []byte("kokupass"),
+			"ros-user":  []byte("ros"),  "ros-password":  []byte("rospass"),
+			"rbac-user": []byte("rbac"), "rbac-password": []byte("rbacpass"),
+			// kruize-user and kruize-password intentionally absent
+		},
+	}
+	r := &CostManagementServiceConfigReconciler{
+		Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(secretMissingKruize).Build(),
+	}
+
+	// The required list in validation.go must include kruize credentials.
+	requiredKeys := []string{
+		"postgres-user", "postgres-password",
+		"koku-user", "koku-password",
+		"ros-user", "ros-password",
+		"rbac-user", "rbac-password",
+		"kruize-user", "kruize-password",
+	}
+	err := r.checkSecretKeys(context.Background(), testNamespace, "db-creds", requiredKeys)
+	if err == nil {
+		t.Error("checkSecretKeys should fail when kruize-user/kruize-password are absent, got nil")
+	}
+}
