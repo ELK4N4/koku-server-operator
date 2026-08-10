@@ -274,16 +274,11 @@ type KeycloakTLSSpec struct {
 	CACertSecretName string `json:"caCertSecretName,omitempty"`
 }
 
-// RealmUser defines an initial Keycloak user created by the operator.
-// NOTE: do not put production credentials here — the Password field is stored
-// in etcd. Use a Secret reference instead once secret-backed user provisioning
-// is implemented (COST-7694).
+// RealmUser identifies a user whose RBAC admin identity (Tenant + Principal)
+// is bootstrapped into the RBAC database by AdminBootstrapJob.
+// Keycloak user provisioning is handled externally (deploy-rhbk.sh), not here.
 type RealmUser struct {
 	Username      string `json:"username"`
-	Password      string `json:"password"`
-	Email         string `json:"email,omitempty"`
-	FirstName     string `json:"firstName,omitempty"`
-	LastName      string `json:"lastName,omitempty"`
 	OrgID         string `json:"orgId,omitempty"`
 	AccountNumber string `json:"accountNumber,omitempty"`
 	OrgAdmin      bool   `json:"orgAdmin,omitempty"`
