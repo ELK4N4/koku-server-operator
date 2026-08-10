@@ -231,42 +231,63 @@ func EnvoyDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Depl
 						Resources:       cfg.Spec.Auth.Envoy.Resources,
 						SecurityContext: restrictedContainerSC(),
 					}},
-					Volumes: []corev1.Volume{
-						{
-							Name: "envoy-config",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{Name: NameEnvoyConfigMap(cfg)},
-									Items:                []corev1.KeyToPath{{Key: "envoy.yaml", Path: "envoy.yaml"}},
-								},
-							},
-						},
-						{
-							Name: "ca-scripts",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{Name: NameCACombineConfigMap(cfg)},
-									Items: []corev1.KeyToPath{
-										{Key: "combine-ca.sh", Path: "combine-ca.sh", Mode: int32Ptr(0755)},
-									},
-								},
-							},
-						},
-						{
-							Name: "ca-source",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{Name: NameServiceCAConfigMap(cfg)},
-								},
-							},
-						},
-						{Name: "combined-ca-bundle", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-						{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-					},
+					Volumes: envoyVolumes(cfg),
 				},
 			},
 		},
 	}
+}
+
+// envoyVolumes builds the volume list for the Envoy Deployment.
+// When auth.keycloak.tls.caCertSecretName is set, the named Secret is added
+// as an extra ca-source so CACombineInitContainer merges its CA into the
+// bundle that Envoy uses for JWKS endpoint TLS verification. Without this,
+// Envoy cannot verify Keycloak Route certificates signed by the router CA.
+func envoyVolumes(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Volume {
+	vols := []corev1.Volume{
+		{
+			Name: "envoy-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: NameEnvoyConfigMap(cfg)},
+					Items:                []corev1.KeyToPath{{Key: "envoy.yaml", Path: "envoy.yaml"}},
+				},
+			},
+		},
+		{
+			Name: "ca-scripts",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: NameCACombineConfigMap(cfg)},
+					Items: []corev1.KeyToPath{
+						{Key: "combine-ca.sh", Path: "combine-ca.sh", Mode: int32Ptr(0755)},
+					},
+				},
+			},
+		},
+		{
+			Name: "ca-source",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: NameServiceCAConfigMap(cfg)},
+				},
+			},
+		},
+		{Name: "combined-ca-bundle", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+	}
+	if secret := cfg.Spec.Auth.Keycloak.TLS.CACertSecretName; secret != "" {
+		vols = append(vols, corev1.Volume{
+			Name: "keycloak-ca",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: secret,
+					Items:      []corev1.KeyToPath{{Key: "ca.crt", Path: "keycloak-ca.crt"}},
+				},
+			},
+		})
+	}
+	return vols
 }
 
 // EnvoyYAML renders the Envoy static config from the CR (ported from the Helm chart).

@@ -215,3 +215,27 @@ func TestEnvoyDeploymentHasConfigHash(t *testing.T) {
 		t.Errorf("hash did not change when ConfigMap content changed: both = %q", hash)
 	}
 }
+
+// TestEnvoyDeploymentMountsKeycloakCACert verifies that when
+// auth.keycloak.tls.caCertSecretName is set, the Envoy Deployment mounts
+// that Secret as an additional CA source so Envoy can verify the Keycloak
+// Route certificate (router CA, not the service CA).
+func TestEnvoyDeploymentMountsKeycloakCACert(t *testing.T) {
+	cfg := testCfg()
+	cfg.Spec.Auth.Keycloak.TLS.CACertSecretName = "my-router-ca"
+
+	dep := EnvoyDeployment(cfg)
+
+	// The secret must appear as a volume.
+	var found bool
+	for _, v := range dep.Spec.Template.Spec.Volumes {
+		if v.Secret != nil && v.Secret.SecretName == "my-router-ca" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("EnvoyDeployment missing volume for keycloak caCertSecretName=%q — "+
+			"Envoy will fail to verify Keycloak Route certificates", "my-router-ca")
+	}
+}
