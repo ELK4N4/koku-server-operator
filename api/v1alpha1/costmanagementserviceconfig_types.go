@@ -26,6 +26,7 @@ const (
 	ConditionKafkaReady        = "KafkaReady"
 	ConditionAuthReady         = "AuthenticationReady"
 	ConditionSchemaUpToDate    = "SchemaUpToDate"
+	ConditionUIReady           = "UIReady"
 )
 
 // -----------------------------------------------------------------------------
@@ -498,6 +499,10 @@ type UIConfig struct {
 	ReplicaCount int32          `json:"replicaCount,omitempty"`
 	OAuthProxy   OAuthProxySpec `json:"oauthProxy,omitempty"`
 	App          UIAppSpec      `json:"app,omitempty"`
+	// OAuthClientSecretRef names a Secret in the CR namespace with keys
+	// client-id and client-secret for oauth2-proxy.
+	// When empty, defaults to {metadata.name}-ui-oauth-client.
+	OAuthClientSecretRef corev1.LocalObjectReference `json:"oauthClientSecretRef,omitempty"`
 }
 
 type OAuthProxySpec struct {

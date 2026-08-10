@@ -18,7 +18,12 @@ does **not** provision DB/cache; it only connects.
    Kafka-API compatible, emptyDir, no OLM. Fine for smoke connectivity; **not**
    enough for AMQ Streams–specific pytest. Not in the default infra kustomize.
 
-Keycloak/OIDC is intentionally omitted (placeholder URL in the CR).
+Keycloak/OIDC is external (BYOI), same as Kafka. The sample CR has a
+placeholder `spec.auth.keycloak.url`. The operator never deploys RHBK and
+never invents the UI OAuth client Secret — that Secret must be mirrored from
+Keycloak into the CR namespace (see **UI OAuth Secret** below). The operator
+only creates the UI cookie Secret and sets `UIReady` when the client Secret
+is present.
 
 **Credentials in these YAMLs are fixed test values — not for production.**
 
@@ -84,10 +89,28 @@ spec:
 Do **not** use `KAFKA_NAMESPACE=cost-byoi-infra` for chart kafka suite expectations
 that require Strimzi; use AMQ Streams for those.
 
+## UI OAuth Secret
+
+After Keycloak/RHBK is up (e.g. chart `scripts/deploy-rhbk.sh`), mirror the
+UI confidential client into the CR namespace before expecting `UIReady=True`:
+
+```bash
+# Defaults: KEYCLOAK_NAMESPACE=keycloak, NAMESPACE=cost-byoi, CR_NAME=cost-management
+# Target Secret: {CR_NAME}-ui-oauth-client (keys client-id / client-secret)
+./config/samples/byoi/mirror-ui-oauth-secret.sh
+
+# Chart pytest / hybrid CR example:
+NAMESPACE=cost-tests CR_NAME=cost-onprem ./config/samples/byoi/mirror-ui-oauth-secret.sh
+```
+
+Override the Secret name with `spec.ui.oauthClientSecretRef.name` if needed.
+Cookie session Secret (`{cr}-ui-cookie-secret`) is still created by the operator.
+
 ## Apply
 
 ```bash
 # 0. Kafka — AMQ Streams (recommended) or Redpanda (lightweight); see above
+# 0b. Keycloak (external) + mirror UI OAuth Secret — see UI OAuth Secret above
 
 # 1. Infrastructure (Postgres, Valkey, MinIO)
 kubectl apply -k config/samples/byoi/infra
