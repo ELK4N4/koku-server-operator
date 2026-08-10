@@ -8,6 +8,38 @@ import (
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
+func kafkaCfg(bs string) *costv1alpha1.CostManagementServiceConfig {
+	cfg := &costv1alpha1.CostManagementServiceConfig{}
+	cfg.Spec.Kafka.BootstrapServers = bs
+	return cfg
+}
+
+func TestKafkaHostSingleBroker(t *testing.T) {
+	if got := KafkaHost(kafkaCfg("kafka.example.com:9092")); got != "kafka.example.com" {
+		t.Errorf("KafkaHost single broker = %q, want %q", got, "kafka.example.com")
+	}
+}
+
+func TestKafkaPortSingleBroker(t *testing.T) {
+	if got := KafkaPort(kafkaCfg("kafka.example.com:9092")); got != "9092" {
+		t.Errorf("KafkaPort single broker = %q, want %q", got, "9092")
+	}
+}
+
+func TestKafkaHostMultiBroker(t *testing.T) {
+	// Multi-broker: "a:9092,b:9092" — must return host of first broker only.
+	// Bug: scanning from the right finds the last colon, returning "a:9092,b".
+	if got := KafkaHost(kafkaCfg("kafka-1.example.com:9092,kafka-2.example.com:9092")); got != "kafka-1.example.com" {
+		t.Errorf("KafkaHost multi-broker = %q, want %q", got, "kafka-1.example.com")
+	}
+}
+
+func TestKafkaPortMultiBroker(t *testing.T) {
+	if got := KafkaPort(kafkaCfg("kafka-1.example.com:9092,kafka-2.example.com:9093")); got != "9092" {
+		t.Errorf("KafkaPort multi-broker = %q, want %q", got, "9092")
+	}
+}
+
 func TestDNS1123Label(t *testing.T) {
 	tests := []struct {
 		in, want string
