@@ -143,6 +143,10 @@ spec:
 
   ui:
     replicaCount: 1
+    # User-provided OAuth client Secret (keys: client-id, client-secret).
+    # Default: {metadata.name}-ui-oauth-client — see byoi/mirror-ui-oauth-secret.sh
+    # oauthClientSecretRef:
+    #   name: cost-management-ui-oauth-client
     app:
       image:
         repository: quay.io/insights-onprem/koku-ui-onprem

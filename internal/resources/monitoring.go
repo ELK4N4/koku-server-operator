@@ -54,14 +54,14 @@ func serviceMonitor(cfg *costv1alpha1.CostManagementServiceConfig, name, portNam
 // AppServiceMonitor watches all application services that expose metrics on port 9000.
 func AppServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
 	return serviceMonitor(cfg, cfg.Name+"-app-metrics", "metrics", []string{
-		"koku-api", "masu", "listener",
+		"cost-management-api", "cost-processor", "listener",
 		"ros-api", "ingress",
 	})
 }
 
 // KruizeServiceMonitor watches Kruize which exposes metrics on port 8080.
 func KruizeServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
-	return serviceMonitor(cfg, cfg.Name+"-kruize-metrics", "metrics", []string{"kruize"})
+	return serviceMonitor(cfg, cfg.Name+"-kruize-metrics", "metrics", []string{"ros-optimization"})
 }
 
 // OperatorServiceMonitor watches the controller-manager metrics endpoint.

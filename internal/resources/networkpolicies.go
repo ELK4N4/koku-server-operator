@@ -103,7 +103,6 @@ func IngressNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networ
 
 // KruizeNetworkPolicy allows ROS processor, recommendation-poller, and
 // housekeeper to reach Kruize REST endpoints.
-// Kruize pods use component label "ros-optimization" (set in kruize.go).
 func KruizeNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
 	const kruizePort = int32(8080)
 	return netpol(cfg, cfg.Name+"-kruize", "ros-optimization", []networkingv1.NetworkPolicyIngressRule{
@@ -117,9 +116,8 @@ func KruizeNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *network
 // RBAC API
 // -----------------------------------------------------------------------------
 
-// RBACAPINetworkPolicy allows the gateway, koku API, masu, and ros-api to
+// RBACAPINetworkPolicy allows the gateway, koku-api, masu, and ros-api to
 // call the RBAC service for authorization checks.
-// Component labels match koku.go: "cost-management-api" and "cost-processor".
 func RBACAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
 	return netpol(cfg, cfg.Name+"-rbac-api", "rbac-api", []networkingv1.NetworkPolicyIngressRule{
 		podFrom(cfg, "gateway", rbacAPIPort),
@@ -134,13 +132,28 @@ func RBACAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networ
 // -----------------------------------------------------------------------------
 
 // KokuAPINetworkPolicy allows the gateway and internal services to reach the
-// Koku API. Component label is "cost-management-api" (set in koku.go).
-// Service port is 8000 (KokuAPIService exposes 8000, not the metrics port 9000).
+// Koku API on its Service port (8000), and Prometheus to scrape the metrics
+// port (9000).
 func KokuAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
-	const kokuServicePort = int32(8000)
+	const (
+		kokuAPIPort     = int32(8000)
+		kokuMetricsPort = int32(9000)
+	)
 	return netpol(cfg, cfg.Name+"-koku-api", "cost-management-api", []networkingv1.NetworkPolicyIngressRule{
-		podFrom(cfg, "gateway", kokuServicePort),
-		podFrom(cfg, "cost-processor", kokuServicePort),
-		podFrom(cfg, "ros-housekeeper", kokuServicePort),
+		podFrom(cfg, "gateway", kokuAPIPort),
+		podFrom(cfg, "cost-processor", kokuAPIPort),
+		podFrom(cfg, "ros-housekeeper", kokuAPIPort),
+		// Prometheus scraping metrics port
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"network.openshift.io/policy-group": "monitoring"},
+				}},
+				{NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"kubernetes.io/metadata.name": "openshift-monitoring"},
+				}},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{tcpPort(kokuMetricsPort)},
+		},
 	})
 }

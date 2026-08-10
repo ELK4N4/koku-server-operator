@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -72,11 +73,7 @@ func asPhaseError(err error, target **PhaseError) bool {
 	if err == nil {
 		return false
 	}
-	if pe, ok := err.(*PhaseError); ok {
-		*target = pe
-		return true
-	}
-	return false
+	return errors.As(err, target)
 }
 
 // runPhases executes phases in order. Each phase can:

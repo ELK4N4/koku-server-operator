@@ -117,17 +117,25 @@ func boolStr(b bool) string {
 	return "False"
 }
 
-// MergeEnv appends user-provided env overrides after the base set,
-// letting user-specified values take precedence for duplicate keys.
-// Keys are sorted so SSA applies produce a stable pod template (map
-// iteration order would otherwise thrash Deployment rollouts).
+// MergeEnv replaces base entries whose key appears in overrides, then
+// appends any override keys not already present. Keys are sorted so SSA
+// applies produce a stable pod template.
 func MergeEnv(base []corev1.EnvVar, overrides map[string]string) []corev1.EnvVar {
 	if len(overrides) == 0 {
 		return base
 	}
+	seen := make(map[string]bool, len(overrides))
+	for i, e := range base {
+		if v, ok := overrides[e.Name]; ok {
+			base[i] = EnvVal(e.Name, v)
+			seen[e.Name] = true
+		}
+	}
 	keys := make([]string, 0, len(overrides))
 	for k := range overrides {
-		keys = append(keys, k)
+		if !seen[k] {
+			keys = append(keys, k)
+		}
 	}
 	slices.SortFunc(keys, cmp.Compare)
 	for _, k := range keys {

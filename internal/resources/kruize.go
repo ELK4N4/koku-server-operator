@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	kruizeDBName = "costonprem_kruize"
+	kruizeDBName = KruizeDBName
 	kruizePort   = 8080
 )
 

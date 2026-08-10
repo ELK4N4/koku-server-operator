@@ -87,6 +87,24 @@ oc get cmsc -n cost-onprem -w
 oc describe cmsc cost-management -n cost-onprem
 ```
 
+### UI OAuth client Secret (Keycloak stays external)
+
+Bundled DB/cache does **not** include Keycloak. The UI needs a same-namespace
+Secret with keys `client-id` and `client-secret` (default name
+`{cr}-ui-oauth-client`). Until it exists, condition `UIReady` stays False and
+the UI Deployment is not applied. Cookie Secret is operator-created.
+
+```bash
+# After deploy-rhbk.sh (or equivalent) has created
+# keycloak-client-secret-cost-management-ui in the keycloak namespace:
+NAMESPACE=cost-onprem CR_NAME=cost-management \
+  ./config/samples/byoi/mirror-ui-oauth-secret.sh
+```
+
+For RHBK Route TLS/OIDC, also set `spec.auth.keycloak.issuerURL` to the public
+issuer (`iss`) and either `spec.auth.keycloak.tls.caCertSecretName` or
+`insecureSkipVerify` as needed for JWKS fetch.
+
 ## Image note: arm64 vs amd64
 
 CRC on Apple Silicon runs an **arm64** node. The production koku image

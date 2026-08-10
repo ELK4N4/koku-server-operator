@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
@@ -101,6 +102,72 @@ func TestUIDeploymentAppHasWritableNginxPaths(t *testing.T) {
 		t.Error("app SecurityContext is nil")
 	} else if sc.RunAsUser != nil {
 		t.Errorf("app RunAsUser = %d; want nil (no hardcoded UID)", *sc.RunAsUser)
+	}
+}
+
+func TestNameUIOAuthClientSecretDefaultAndOverride(t *testing.T) {
+	cfg := uiTestCfg()
+	if got := NameUIOAuthClientSecret(cfg); got != "cost-management-ui-oauth-client" {
+		t.Errorf("default NameUIOAuthClientSecret = %q", got)
+	}
+	cfg.Spec.UI.OAuthClientSecretRef = corev1.LocalObjectReference{Name: "my-ui-oauth"}
+	if got := NameUIOAuthClientSecret(cfg); got != "my-ui-oauth" {
+		t.Errorf("override NameUIOAuthClientSecret = %q", got)
+	}
+}
+
+func TestValidateUIOAuthClientSecret(t *testing.T) {
+	if err := ValidateUIOAuthClientSecret(nil); err == nil {
+		t.Fatal("expected error for nil secret")
+	}
+	empty := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "s"}, Data: map[string][]byte{}}
+	if err := ValidateUIOAuthClientSecret(empty); err == nil {
+		t.Fatal("expected error for missing keys")
+	}
+	partial := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "s"},
+		Data:       map[string][]byte{"client-id": []byte("id")},
+	}
+	if err := ValidateUIOAuthClientSecret(partial); err == nil {
+		t.Fatal("expected error for missing client-secret")
+	}
+	ok := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "s"},
+		Data: map[string][]byte{
+			"client-id":     []byte("id"),
+			"client-secret": []byte("sec"),
+		},
+	}
+	if err := ValidateUIOAuthClientSecret(ok); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUIDeploymentUsesOAuthClientSecretRef(t *testing.T) {
+	cfg := uiTestCfg()
+	cfg.Spec.UI.OAuthClientSecretRef = corev1.LocalObjectReference{Name: "custom-oauth"}
+	dep := UIDeployment(cfg)
+	proxy := containerByName(t, dep.Spec.Template.Spec.Containers, "oauth-proxy")
+	foundID, foundSecret := false, false
+	for _, e := range proxy.Env {
+		if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
+			continue
+		}
+		if e.Name == "OAUTH2_PROXY_CLIENT_ID" {
+			foundID = true
+			if e.ValueFrom.SecretKeyRef.Name != "custom-oauth" || e.ValueFrom.SecretKeyRef.Key != "client-id" {
+				t.Errorf("CLIENT_ID secretRef = %s/%s", e.ValueFrom.SecretKeyRef.Name, e.ValueFrom.SecretKeyRef.Key)
+			}
+		}
+		if e.Name == "OAUTH2_PROXY_CLIENT_SECRET" {
+			foundSecret = true
+			if e.ValueFrom.SecretKeyRef.Name != "custom-oauth" {
+				t.Errorf("CLIENT_SECRET secret name = %s", e.ValueFrom.SecretKeyRef.Name)
+			}
+		}
+	}
+	if !foundID || !foundSecret {
+		t.Fatal("oauth-proxy missing OAUTH2_PROXY_CLIENT_ID/SECRET envFrom")
 	}
 }
 
