@@ -471,14 +471,24 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 	}
 	objs = append(objs, rosObjs...)
 
-	// Kruize delete-partitions CronJob (if enabled)
+	// Kruize delete-partitions CronJob — apply when enabled, delete when disabled.
 	if costv1alpha1.BoolVal(cfg.Spec.Kruize.Partitions.DeleteEnabled, true) {
 		objs = append(objs, resources.KruizeDeletePartitionsCronJob(cfg))
+	} else {
+		cj := resources.KruizeDeletePartitionsCronJob(cfg)
+		if err := r.Client.Delete(ctx, cj); err != nil && !errors.IsNotFound(err) {
+			return Result{}, fmt.Errorf("delete kruize delete-partitions cronjob: %w", err)
+		}
 	}
 
-	// ROS partition-cleaner CronJob (if enabled)
+	// ROS partition-cleaner CronJob — apply when enabled, delete when disabled.
 	if costv1alpha1.BoolVal(cfg.Spec.ROS.Housekeeper.PartitionCleaner.Enabled, true) {
 		objs = append(objs, resources.ROSPartitionCleanerCronJob(cfg))
+	} else {
+		cj := resources.ROSPartitionCleanerCronJob(cfg)
+		if err := r.Client.Delete(ctx, cj); err != nil && !errors.IsNotFound(err) {
+			return Result{}, fmt.Errorf("delete ros partition-cleaner cronjob: %w", err)
+		}
 	}
 
 	// Ingress upload handler — must be deployed before reconcileEdge so the
