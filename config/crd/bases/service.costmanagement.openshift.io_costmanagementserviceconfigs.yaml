@@ -140,6 +140,7 @@ spec:
                         - cost-management-ui
                         description: JWT audiences accepted by the gateway.
                         items:
+                          pattern: ^[^\x00-\x1f\x7f]*$
                           type: string
                         type: array
                       issuerURL:
@@ -149,12 +150,14 @@ spec:
                           as iss even when clients obtain them via the in-cluster Service — set
                           this to that frontend base URL (or the full .../realms/<realm> issuer).
                           When empty, issuer is derived from url + realm.
+                        pattern: ^[^\x00-\x1f\x7f]*$
                         type: string
                       namespace:
                         description: Keycloak namespace. Defaults to "keycloak".
                         type: string
                       realm:
                         default: kubernetes
+                        pattern: ^[^\x00-\x1f\x7f]*$
                         type: string
                       tls:
                         properties:
@@ -177,6 +180,7 @@ spec:
                           issuerURL is unset). Prefer an in-cluster http(s) Service URL so Envoy
                           can reach JWKS without depending on the OpenShift router.
                           Example: http://keycloak-service.keycloak.svc.cluster.local:8080
+                        pattern: ^[^\x00-\x1f\x7f]*$
                         type: string
                     type: object
                   realmUsers:
