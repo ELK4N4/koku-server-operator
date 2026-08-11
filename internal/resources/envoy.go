@@ -188,6 +188,7 @@ func EnvoyDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Depl
 				Spec: corev1.PodSpec{
 					AutomountServiceAccountToken: &falseVal,
 					SecurityContext:              nonRootPodSC(),
+					ImagePullSecrets:             imagePullSecrets(cfg),
 					InitContainers: []corev1.Container{
 						CACombineInitContainer(cfg),
 					},

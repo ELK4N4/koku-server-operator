@@ -256,6 +256,7 @@ func KruizeDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Dep
 				Spec: corev1.PodSpec{
 					ServiceAccountName: NameKruizeServiceAccount(cfg),
 					SecurityContext:    nonRootPodSC(),
+					ImagePullSecrets:   imagePullSecrets(cfg),
 					InitContainers:     initContainers,
 					Containers: []corev1.Container{{
 						Name:            "kruize",
@@ -335,8 +336,9 @@ func KruizeDeletePartitionsCronJob(cfg *costv1alpha1.CostManagementServiceConfig
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{Labels: Labels(cfg, "ros-optimization-maintenance")},
 						Spec: corev1.PodSpec{
-							RestartPolicy:   onFailure,
-							SecurityContext: nonRootPodSC(),
+							RestartPolicy:    onFailure,
+							SecurityContext:  nonRootPodSC(),
+							ImagePullSecrets: imagePullSecrets(cfg),
 							Containers: []corev1.Container{{
 								Name:            "delete-kruize-partitions",
 								Image:           image,

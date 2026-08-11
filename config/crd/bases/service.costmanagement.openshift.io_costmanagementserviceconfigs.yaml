@@ -1504,6 +1504,9 @@ spec:
                       Auto-detected by the Discovery phase when empty.
                     type: string
                   imagePullSecrets:
+                    description: |-
+                      ImagePullSecrets are applied to every Pod the operator creates (Deployments,
+                      StatefulSets, Jobs, CronJobs) so workloads can pull from private registries.
                     items:
                       description: |-
                         LocalObjectReference contains enough information to let you locate the

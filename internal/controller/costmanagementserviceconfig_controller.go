@@ -702,9 +702,10 @@ func (r *CostManagementServiceConfigReconciler) applyStatefulSet(ctx context.Con
 	if err != nil {
 		return err
 	}
-	// Only update mutable fields (replicas, container image, resources).
+	// Only update mutable fields (replicas, container image, resources, pull secrets).
 	patch := existing.DeepCopy()
 	patch.Spec.Replicas = desired.Spec.Replicas
+	patch.Spec.Template.Spec.ImagePullSecrets = desired.Spec.Template.Spec.ImagePullSecrets
 	if len(patch.Spec.Template.Spec.Containers) > 0 && len(desired.Spec.Template.Spec.Containers) > 0 {
 		patch.Spec.Template.Spec.Containers[0].Image = desired.Spec.Template.Spec.Containers[0].Image
 		patch.Spec.Template.Spec.Containers[0].Resources = desired.Spec.Template.Spec.Containers[0].Resources

@@ -275,6 +275,7 @@ func ROSAPIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Dep
 					ServiceAccountName:           NameROSServiceAccount(cfg),
 					AutomountServiceAccountToken: &falseVal,
 					SecurityContext:              nonRootPodSC(),
+					ImagePullSecrets:             imagePullSecrets(cfg),
 					InitContainers: []corev1.Container{
 						waitForROSDB(cfg),
 						waitForKafka(cfg),
@@ -412,6 +413,7 @@ func ROSProcessorDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *apps
 				Spec: corev1.PodSpec{
 					AutomountServiceAccountToken: &falseVal,
 					SecurityContext:              nonRootPodSC(),
+					ImagePullSecrets:             imagePullSecrets(cfg),
 					InitContainers: []corev1.Container{
 						waitForROSDB(cfg),
 						waitForKafka(cfg),
@@ -490,6 +492,7 @@ func ROSPollerDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.
 				Spec: corev1.PodSpec{
 					AutomountServiceAccountToken: &falseVal,
 					SecurityContext:              nonRootPodSC(),
+					ImagePullSecrets:             imagePullSecrets(cfg),
 					InitContainers: []corev1.Container{
 						waitForROSDB(cfg),
 						waitForKafka(cfg),
@@ -564,6 +567,7 @@ func ROSHousekeeperDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *ap
 				Spec: corev1.PodSpec{
 					AutomountServiceAccountToken: &falseVal,
 					SecurityContext:              nonRootPodSC(),
+					ImagePullSecrets:             imagePullSecrets(cfg),
 					InitContainers: []corev1.Container{
 						waitForROSDB(cfg),
 						waitForKafka(cfg),
@@ -625,6 +629,7 @@ func ROSPartitionCleanerCronJob(cfg *costv1alpha1.CostManagementServiceConfig) *
 							ServiceAccountName: NameROSServiceAccount(cfg),
 							RestartPolicy:      onFailure,
 							SecurityContext:    nonRootPodSC(),
+							ImagePullSecrets:   imagePullSecrets(cfg),
 							Containers: []corev1.Container{{
 								Name:            "ros-partition-cleaner",
 								Image:           image,
