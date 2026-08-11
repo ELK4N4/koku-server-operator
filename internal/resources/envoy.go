@@ -311,8 +311,9 @@ func yamlScalar(s string) string {
 // Uses token replacement (not fmt.Sprintf) so Lua source with %s is left intact.
 func EnvoyYAML(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	issuer := yamlScalar(KeycloakIssuerURL(cfg))
-	jwks := KeycloakJWKSURL(cfg)
+	jwks := yamlScalar(KeycloakJWKSURL(cfg))
 	kcHost, kcPort, useTLS := keycloakHostPort(cfg)
+	kcHost = yamlScalar(kcHost)
 
 	var audYAML strings.Builder
 	for _, a := range KeycloakAudiences(cfg) {

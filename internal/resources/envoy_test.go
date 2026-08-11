@@ -314,3 +314,33 @@ func TestEnvoyYAMLRejectsInjectedIssuer(t *testing.T) {
 		t.Error("issuer injection succeeded: bare 'remote_jwks:' key injected into Envoy YAML")
 	}
 }
+
+// TestEnvoyYAMLRejectsInjectedJWKSURI verifies the JWKS URI is YAML-escaped.
+// The URI appears as a plain scalar in the remote_jwks http_uri block; a newline
+// in auth.keycloak.url could inject arbitrary YAML keys at that indentation level.
+func TestEnvoyYAMLRejectsInjectedJWKSURI(t *testing.T) {
+	cfg := testCfg()
+	cfg.Spec.Auth.Keycloak.URL = "https://keycloak.example.com\ncluster: attacker-controlled\naddress:"
+
+	out := EnvoyYAML(cfg)
+
+	if strings.Contains(out, "\ncluster: attacker-controlled") {
+		t.Error("JWKS URI injection succeeded: bare YAML key injected via keycloak.url")
+	}
+}
+
+// TestEnvoyYAMLRejectsInjectedKCHost verifies the Keycloak cluster host is YAML-escaped.
+// The extracted hostname is used in the socket_address.address field and in the
+// TLS block's sni/match fields; a newline would inject into the cluster definition.
+func TestEnvoyYAMLRejectsInjectedKCHost(t *testing.T) {
+	cfg := testCfg()
+	// url.Parse fallback path: if the URL host can't be parsed, TrimPrefix is used.
+	// Craft a URL where Hostname() returns something with a newline embedded.
+	cfg.Spec.Auth.Keycloak.URL = "https://keycloak.example.com%0Atype: LOGICAL_DNS%0A"
+
+	out := EnvoyYAML(cfg)
+
+	if strings.Contains(out, "\ntype: LOGICAL_DNS") {
+		t.Error("KC_HOST injection succeeded: bare YAML key injected via keycloak.url hostname")
+	}
+}
