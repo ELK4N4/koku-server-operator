@@ -345,17 +345,37 @@ func TestEnvoyYAMLRejectsInjectedJWKSURI(t *testing.T) {
 }
 
 // TestEnvoyYAMLRejectsInjectedKCHost verifies the Keycloak cluster host is YAML-escaped.
-// The extracted hostname is used in the socket_address.address field and in the
-// TLS block's sni/match fields; a newline would inject into the cluster definition.
+// The extracted hostname appears in socket_address.address and in the TLS block's
+// sni/match fields; a newline in auth.keycloak.url that fails url.Parse triggers the
+// TrimPrefix fallback, which preserves the raw bytes — including any embedded newline.
 func TestEnvoyYAMLRejectsInjectedKCHost(t *testing.T) {
 	cfg := testCfg()
-	// url.Parse fallback path: if the URL host can't be parsed, TrimPrefix is used.
-	// Craft a URL where Hostname() returns something with a newline embedded.
-	cfg.Spec.Auth.Keycloak.URL = "https://keycloak.example.com%0Atype: LOGICAL_DNS%0A"
+	// A literal \n causes url.Parse to return an error; keycloakHostPort() falls
+	// back to strings.TrimPrefix, which does not URL-decode and returns the raw
+	// string (including the newline) as kcHost.
+	cfg.Spec.Auth.Keycloak.URL = "https://keycloak.example.com\ntype: LOGICAL_DNS\n"
 
 	out := EnvoyYAML(cfg)
 
 	if strings.Contains(out, "\ntype: LOGICAL_DNS") {
 		t.Error("KC_HOST injection succeeded: bare YAML key injected via keycloak.url hostname")
+	}
+}
+
+// TestEnvoyYAMLEscapesColonSpace verifies that a colon+space in any CR-derived
+// scalar is quoted. Without quoting, ": " in a YAML plain scalar creates a mapping-
+// value indicator — turning a list entry into a one-key map (silent type change) or
+// causing a hard parse error in a scalar position.
+func TestEnvoyYAMLEscapesColonSpace(t *testing.T) {
+	cfg := testCfg()
+	// Audience with colon+space: without quoting this becomes a YAML mapping entry.
+	cfg.Spec.Auth.Keycloak.Audiences = []string{"evil: value"}
+
+	out := EnvoyYAML(cfg)
+
+	// After quoting the audience is a double-quoted scalar; the bare "evil: value"
+	// plain-scalar form must not appear at the expected indentation.
+	if strings.Contains(out, "\n                        - evil: value\n") {
+		t.Error("colon+space audience appeared as unquoted plain scalar in YAML")
 	}
 }

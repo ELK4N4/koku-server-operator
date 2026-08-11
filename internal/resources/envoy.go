@@ -292,16 +292,21 @@ func envoyVolumes(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Volume
 }
 
 // yamlScalar returns a YAML-safe representation of s for inline embedding.
-// The injection risk is embedded newlines — they break out of the current
-// scalar and allow the remainder to be parsed as new YAML structure.
-// Any string containing a newline, carriage return, or NUL byte is
-// double-quoted using strconv.Quote, which escapes control characters
-// as \n, \r, \x00, etc.
-// Plain scalars (URLs, identifiers) that contain no control characters are
-// returned as-is; they are valid YAML without quoting.
+// Two classes of characters break plain YAML scalars:
+//   - Line-break characters (\n, \r, \x00): break out of the current line and
+//     allow the remainder to be parsed as new YAML structure (injection).
+//   - Colon+space (": " or ":\t"): YAML treats this as a mapping-value indicator
+//     even inside a scalar — silently changes the type of a list entry, or causes
+//     a parse error in a scalar position.
+//
+// Affected strings are double-quoted using strconv.Quote, which escapes all
+// control characters as \n, \r, \x00, etc. Everything else is returned as-is.
 func yamlScalar(s string) string {
-	for _, c := range s {
-		if c == '\n' || c == '\r' || c == '\x00' {
+	for i, c := range s {
+		switch {
+		case c == '\n' || c == '\r' || c == '\x00':
+			return strconv.Quote(s)
+		case c == ':' && i+1 < len(s) && (s[i+1] == ' ' || s[i+1] == '\t'):
 			return strconv.Quote(s)
 		}
 	}
