@@ -213,8 +213,8 @@ func (r *CostManagementServiceConfigReconciler) reconcileSharedConfig(ctx contex
 		}
 	}
 
-	// ServiceAccount
-	if err := r.apply(ctx, cfg, resources.KokuServiceAccount(cfg)); err != nil {
+	// ServiceAccount (skipped when costManagement.serviceAccount.create=false).
+	if err := r.ensureServiceAccount(ctx, cfg, cfg.Spec.CostManagement.ServiceAccount, resources.KokuServiceAccount(cfg)); err != nil {
 		return Result{}, fmt.Errorf("koku serviceaccount: %w", err)
 	}
 
@@ -424,10 +424,14 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 		}
 	}
 
+	// ROS ServiceAccount (skipped when ros.serviceAccount.create=false).
+	if err := r.ensureServiceAccount(ctx, cfg, cfg.Spec.ROS.ServiceAccount, resources.ROSServiceAccount(cfg)); err != nil {
+		return Result{}, fmt.Errorf("ros serviceaccount: %w", err)
+	}
+
 	// Koku core + ROS shared config.
 	objs := []client.Object{
 		resources.CdappConfigMap(cfg),
-		resources.ROSServiceAccount(cfg),
 		resources.KokuAPIDeployment(cfg),
 		resources.KokuAPIService(cfg),
 		resources.MasuDeployment(cfg),
@@ -687,6 +691,30 @@ func (r *CostManagementServiceConfigReconciler) apply(ctx context.Context, cfg *
 	obj.SetNamespace(cfg.Namespace)
 	setOwnerRef(cfg, obj)
 	return r.Patch(ctx, obj, client.Apply, client.ForceOwnership, client.FieldOwner(fieldOwner))
+}
+
+// ensureServiceAccount applies sa when spec.Create is true (the default).
+// When create=false, it only verifies the named ServiceAccount already exists —
+// it never applies, sets ownerRefs, or otherwise mutates the object (so deleting
+// the CR cannot garbage-collect a user-managed SA).
+func (r *CostManagementServiceConfigReconciler) ensureServiceAccount(
+	ctx context.Context,
+	cfg *costv1alpha1.CostManagementServiceConfig,
+	spec costv1alpha1.ServiceAccountSpec,
+	sa *corev1.ServiceAccount,
+) error {
+	if !costv1alpha1.BoolVal(spec.Create, true) {
+		existing := &corev1.ServiceAccount{}
+		key := types.NamespacedName{Namespace: cfg.Namespace, Name: sa.Name}
+		if err := r.Get(ctx, key, existing); err != nil {
+			if errors.IsNotFound(err) {
+				return fmt.Errorf("serviceaccount %q not found (create=false); create it manually or set create=true", sa.Name)
+			}
+			return fmt.Errorf("get serviceaccount %q: %w", sa.Name, err)
+		}
+		return nil
+	}
+	return r.apply(ctx, cfg, sa)
 }
 
 // applyStatefulSet applies a StatefulSet, handling the VolumeClaimTemplate
