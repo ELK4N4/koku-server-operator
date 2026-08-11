@@ -295,9 +295,11 @@ func envoyVolumes(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Volume
 // Two classes of characters break plain YAML scalars:
 //   - Line-break characters (\n, \r, \x00): break out of the current line and
 //     allow the remainder to be parsed as new YAML structure (injection).
-//   - Colon+space (": " or ":\t"): YAML treats this as a mapping-value indicator
-//     even inside a scalar — silently changes the type of a list entry, or causes
-//     a parse error in a scalar position.
+//   - Colon+space/tab/end-of-value (": ", ":\t", or trailing ":"): YAML treats
+//     this as a mapping-value indicator even inside a scalar — silently changes
+//     the type of a list entry to a mapping, or causes a parse error in a scalar
+//     position. A trailing colon triggers this because the template always places
+//     a newline immediately after each interpolated value.
 //
 // Affected strings are double-quoted using strconv.Quote, which escapes all
 // control characters as \n, \r, \x00, etc. Everything else is returned as-is.
@@ -306,7 +308,7 @@ func yamlScalar(s string) string {
 		switch {
 		case c == '\n' || c == '\r' || c == '\x00':
 			return strconv.Quote(s)
-		case c == ':' && i+1 < len(s) && (s[i+1] == ' ' || s[i+1] == '\t'):
+		case c == ':' && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t'):
 			return strconv.Quote(s)
 		}
 	}

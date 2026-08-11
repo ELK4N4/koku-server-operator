@@ -362,20 +362,37 @@ func TestEnvoyYAMLRejectsInjectedKCHost(t *testing.T) {
 	}
 }
 
-// TestEnvoyYAMLEscapesColonSpace verifies that a colon+space in any CR-derived
-// scalar is quoted. Without quoting, ": " in a YAML plain scalar creates a mapping-
-// value indicator — turning a list entry into a one-key map (silent type change) or
-// causing a hard parse error in a scalar position.
+// TestEnvoyYAMLEscapesColonSpace verifies that a colon+space or trailing colon
+// in any CR-derived scalar is quoted. Without quoting, ": " or a bare ":" at
+// end-of-value creates a YAML mapping-value indicator — silently turning a list
+// entry into a one-key map, or causing a hard parse error in a scalar position.
+// A trailing colon is equally dangerous because the template places a newline
+// immediately after every interpolated value (yaml-cpp's EndScalar() trigger).
 func TestEnvoyYAMLEscapesColonSpace(t *testing.T) {
-	cfg := testCfg()
-	// Audience with colon+space: without quoting this becomes a YAML mapping entry.
-	cfg.Spec.Auth.Keycloak.Audiences = []string{"evil: value"}
-
-	out := EnvoyYAML(cfg)
-
-	// After quoting the audience is a double-quoted scalar; the bare "evil: value"
-	// plain-scalar form must not appear at the expected indentation.
-	if strings.Contains(out, "\n                        - evil: value\n") {
-		t.Error("colon+space audience appeared as unquoted plain scalar in YAML")
+	cases := []struct {
+		name     string
+		audience string
+		banned   string
+	}{
+		{
+			name:     "colon-space",
+			audience: "evil: value",
+			banned:   "\n                        - evil: value\n",
+		},
+		{
+			name:     "trailing-colon",
+			audience: "evil:",
+			banned:   "\n                        - evil:\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testCfg()
+			cfg.Spec.Auth.Keycloak.Audiences = []string{tc.audience}
+			out := EnvoyYAML(cfg)
+			if strings.Contains(out, tc.banned) {
+				t.Errorf("audience %q appeared as unquoted plain scalar in YAML", tc.audience)
+			}
+		})
 	}
 }
