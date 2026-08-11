@@ -48,7 +48,7 @@ spec:
   - name: Koku Service Operator
     url: https://github.com/project-koku/koku-service-operator
   maintainers:
-  - email: cost-mgmt-dev@redhat.com
+  - email: costmanagement@redhat.com
     name: Cost Management
   maturity: beta
   provider:

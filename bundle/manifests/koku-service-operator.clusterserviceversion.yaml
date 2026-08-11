@@ -146,148 +146,6 @@ metadata:
               "replicaCount": 1
             }
           }
-        },
-        {
-          "apiVersion": "service.costmanagement.openshift.io/v1alpha1",
-          "kind": "CostManagementServiceConfig",
-          "metadata": {
-            "name": "cost-management-byoi",
-            "namespace": "cost-onprem"
-          },
-          "spec": {
-            "auth": {
-              "envoy": {
-                "image": {
-                  "repository": "registry.redhat.io/openshift-service-mesh/proxyv2-rhel9",
-                  "tag": "2.6"
-                },
-                "replicas": 2
-              },
-              "keycloak": {
-                "audiences": [
-                  "cost-management-operator",
-                  "cost-management-ui"
-                ],
-                "realm": "kubernetes",
-                "url": "https://keycloak.auth.svc.cluster.local"
-              }
-            },
-            "cache": {
-              "auth": {
-                "enabled": true,
-                "secretName": "my-cache-credentials"
-              },
-              "deploy": false,
-              "host": "redis.cache.svc.cluster.local",
-              "port": 6379,
-              "tls": {
-                "enabled": false
-              }
-            },
-            "costManagement": {
-              "api": {
-                "image": {
-                  "repository": "quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku",
-                  "tag": "d8055ac"
-                },
-                "replicas": 1
-              },
-              "celery": {
-                "workers": {
-                  "costModel": {
-                    "replicas": 1
-                  },
-                  "default": {
-                    "replicas": 1
-                  },
-                  "ocp": {
-                    "replicas": 2
-                  },
-                  "priority": {
-                    "replicas": 1
-                  },
-                  "summary": {
-                    "replicas": 2
-                  }
-                }
-              },
-              "listener": {
-                "replicas": 2
-              },
-              "masu": {
-                "image": {
-                  "repository": "quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku",
-                  "tag": "d8055ac"
-                },
-                "replicas": 1
-              }
-            },
-            "database": {
-              "deploy": false,
-              "host": "postgresql.databases.svc.cluster.local",
-              "port": 5432,
-              "secretName": "my-db-credentials",
-              "sslMode": "require"
-            },
-            "global": {
-              "clusterDomain": "apps.cluster.example.com"
-            },
-            "kafka": {
-              "bootstrapServers": "kafka-kafka-bootstrap.kafka.svc.cluster.local:9092",
-              "securityProtocol": "PLAINTEXT"
-            },
-            "kruize": {
-              "image": {
-                "repository": "quay.io/redhat-services-prod/kruize-autotune-tenant/autotune",
-                "tag": "d1f0140"
-              },
-              "replicas": 1
-            },
-            "monitoring": {
-              "enabled": true
-            },
-            "objectStorage": {
-              "endpoint": "s3.openshift-storage.svc.cluster.local",
-              "port": 443,
-              "s3": {
-                "addressingStyle": "path",
-                "region": "us-east-1"
-              },
-              "secretName": "my-s3-credentials",
-              "useSSL": true
-            },
-            "rbac": {
-              "api": {
-                "replicas": 1
-              },
-              "image": {
-                "repository": "quay.io/redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac",
-                "tag": "73870d8"
-              },
-              "worker": {
-                "replicas": 1
-              }
-            },
-            "ros": {
-              "enabled": false,
-              "image": {
-                "repository": "quay.io/redhat-services-prod/insights-management-tenant/insights-ocp-resource-optimization/ros-ocp-backend",
-                "tag": "ae8c990"
-              },
-              "processor": {
-                "replicas": 1
-              }
-            },
-            "ui": {
-              "app": {
-                "image": {
-                  "repository": "quay.io/insights-onprem/koku-ui-onprem",
-                  "tag": "2f23c646581028bd385856b6713e6bf367baf953"
-                }
-              },
-              "replicaCount": 1
-            }
-          }
         }
       ]
     capabilities: Basic Install
@@ -604,10 +462,10 @@ spec:
   - name: Koku Service Operator
     url: https://github.com/project-koku/koku-service-operator
   maintainers:
-  - email: cost-mgmt-dev@redhat.com
+  - email: costmanagement@redhat.com
     name: Cost Management
   maturity: beta
   provider:
-    name: Red Hat
+    name: Red Hat, Inc.
     url: https://github.com/project-koku/koku-service-operator
   version: 0.0.1

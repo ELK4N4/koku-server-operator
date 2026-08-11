@@ -12,6 +12,7 @@ existing external infrastructure (PostgreSQL, Kafka, S3, OIDC).
 | Document | Description |
 |----------|-------------|
 | [docs/development/crc-testing.md](docs/development/crc-testing.md) | Local development and CRC testing guide |
+| [docs/development/olm-bundle-testing.md](docs/development/olm-bundle-testing.md) | Build/push/run OLM bundle via `operator-sdk run bundle` |
 | [docs/tasks.md](docs/tasks.md) | Implementation status per JIRA ticket |
 | [docs/design/design-vs-jira.md](docs/design/design-vs-jira.md) | Design decisions and Kubernetes best-practice analysis |
 | [docs/jira/](docs/jira/) | JIRA ticket source (COST-7678–7700) |
