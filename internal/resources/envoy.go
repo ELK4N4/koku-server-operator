@@ -294,8 +294,9 @@ func envoyVolumes(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.Volume
 // yamlScalar returns a YAML-safe representation of s for inline embedding.
 // The injection risk is embedded newlines — they break out of the current
 // scalar and allow the remainder to be parsed as new YAML structure.
-// Any string containing a newline or carriage return is double-quoted using
-// strconv.Quote, which escapes control characters as \n, \r, etc.
+// Any string containing a newline, carriage return, or NUL byte is
+// double-quoted using strconv.Quote, which escapes control characters
+// as \n, \r, \x00, etc.
 // Plain scalars (URLs, identifiers) that contain no control characters are
 // returned as-is; they are valid YAML without quoting.
 func yamlScalar(s string) string {

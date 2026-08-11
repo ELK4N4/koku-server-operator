@@ -276,29 +276,44 @@ func TestEnvoyDeploymentMountsKeycloakCACert(t *testing.T) {
 }
 
 // TestEnvoyYAMLRejectsInjectedAudience verifies that audience values containing
-// embedded newlines cannot inject YAML structure into Envoy's JWT filter config.
-// Without escaping, a newline breaks out of the audience list and the injected
-// content becomes new YAML keys — which could override the remote_jwks endpoint
-// and route token validation to an attacker-controlled server.
+// control characters cannot inject YAML structure into Envoy's JWT filter config.
+// Without escaping, a line-breaking control character breaks out of the audience
+// list and the injected content becomes new YAML keys — which could override the
+// remote_jwks endpoint and route token validation to an attacker-controlled server.
 //
 // Best practice is structural YAML generation (not string templates); this test
 // guards the current escape-at-interpolation approach as defense-in-depth.
 func TestEnvoyYAMLRejectsInjectedAudience(t *testing.T) {
-	cfg := testCfg()
-	// Payload: embedded newline followed by a "remote_jwks:" key that would
-	// override the JWKS endpoint if injected as a bare YAML line.
-	cfg.Spec.Auth.Keycloak.Audiences = []string{
-		"legit-audience",
-		"evil\nremote_jwks:\n  http_uri:\n    uri: http://attacker.example.com/jwks",
+	cases := []struct {
+		name    string
+		payload string
+		banned  string
+	}{
+		{
+			name:    "newline",
+			payload: "evil\nremote_jwks:\n  http_uri:\n    uri: http://attacker.example.com/jwks",
+			banned:  "\nremote_jwks:",
+		},
+		{
+			name:    "carriage-return",
+			payload: "evil\rremote_jwks:\r  http_uri:\r    uri: http://attacker.example.com/jwks",
+			banned:  "\rremote_jwks:",
+		},
+		{
+			name:    "nul-byte",
+			payload: "evil\x00remote_jwks:\x00  http_uri:\x00    uri: http://attacker.example.com/jwks",
+			banned:  "\x00remote_jwks:",
+		},
 	}
-
-	out := EnvoyYAML(cfg)
-
-	// After the fix the injected string is quoted as a YAML scalar — the
-	// newline is escaped as \n so "remote_jwks:" never appears as a bare key.
-	// The URL may appear inside a quoted scalar value, which is safe.
-	if strings.Contains(out, "\nremote_jwks:") {
-		t.Error("audience injection succeeded: bare 'remote_jwks:' key injected into Envoy YAML")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testCfg()
+			cfg.Spec.Auth.Keycloak.Audiences = []string{"legit-audience", tc.payload}
+			out := EnvoyYAML(cfg)
+			if strings.Contains(out, tc.banned) {
+				t.Errorf("audience injection succeeded via %s: bare 'remote_jwks:' key in Envoy YAML", tc.name)
+			}
+		})
 	}
 }
 
