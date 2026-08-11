@@ -1,6 +1,6 @@
 # koku-service-operator
 
-[![CI](https://github.com/martinpovolny/koku-service-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/martinpovolny/koku-service-operator/actions/workflows/ci.yml)
+[![CI](https://github.com/project-koku/koku-service-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/project-koku/koku-service-operator/actions/workflows/ci.yml)
 
 Kubernetes operator for self-managed (on-premise) Cost Management on OpenShift.
 Users install via OLM, apply a single `CostManagementServiceConfig` CR, and the

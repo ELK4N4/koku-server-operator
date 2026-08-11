@@ -14,15 +14,12 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-
-      - name: go vet
-        run: go vet ./...
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
@@ -72,9 +69,9 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
@@ -86,15 +83,15 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
       - name: Cache envtest binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: bin/k8s
           key: envtest-${{ runner.os }}-${{ hashFiles('go.mod') }}
@@ -113,24 +110,17 @@ jobs:
     name: Check Generated Code
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
       - name: Regenerate deep-copy and CRD manifests
-        run: |
-          # Explicitly list source packages to avoid scanning .claude/worktrees/
-          # which may contain stale Go packages from old feature branches.
-          PKGS="./api/...;./internal/...;./cmd/...;./test/..."
-          go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.18.0 \
-            object:headerFile="hack/boilerplate.go.txt" "paths=${PKGS}"
-          go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.18.0 \
-            rbac:roleName=manager-role crd "paths=${PKGS}" \
-            output:crd:artifacts:config=config/crd/bases \
-            output:rbac:artifacts:config=config/rbac
+        # Use the same targets developers run locally so CI drift matches
+        # `make generate manifests` (paths, webhook, RBAC outputs).
+        run: make generate manifests
 
       - name: Fail if generated files are stale
         run: |
@@ -144,7 +134,7 @@ jobs:
     name: Check Links
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: lycheeverse/lychee-action@v2
         with:
@@ -160,12 +150,12 @@ jobs:
     name: Container Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build container image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
@@ -173,3 +163,28 @@ jobs:
           tags: koku-service-operator:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install Kind
+        run: |
+          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Run e2e tests
+        env:
+          # Operator uses plain HTTP metrics on :8080, not cert-manager TLS on :8443.
+          # Skip cert-manager until COST-7697 adapts the e2e suite.
+          CERT_MANAGER_INSTALL_SKIP: "true"
+        run: make test-e2e

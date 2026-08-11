@@ -29,8 +29,9 @@ golangci-lint run ./...
 govulncheck ./...
 ```
 
-The `bin/controller-gen` binary is checked in (v0.18.0 arm64). CI runs all
-of the above via `.github/workflows/ci.yml`.
+The `bin/controller-gen` binary is checked in (v0.18.0 arm64). CI
+(`.github/workflows/ci.yml`) runs lint, govulncheck, build, `make test`,
+generated-file drift checks, link checks, container build, and Kind e2e.
 
 ## Production design target
 
