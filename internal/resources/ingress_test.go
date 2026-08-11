@@ -3,6 +3,8 @@ package resources
 import (
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
@@ -117,5 +119,42 @@ func TestIngressService(t *testing.T) {
 	}
 	if svc.Spec.Ports[0].Port != 8080 || svc.Spec.Ports[1].Port != 9000 {
 		t.Errorf("ports = %+v", svc.Spec.Ports)
+	}
+}
+
+func TestIngressDeploymentStorageCredentialEnv(t *testing.T) {
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: "cost-onprem"},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			ObjectStorage: costv1alpha1.ObjectStorageConfig{
+				SecretName: "user-s3-creds",
+			},
+			Ingress: costv1alpha1.IngressConfig{
+				Image: costv1alpha1.ImageSpec{
+					Repository: "quay.io/cloudservices/insights-ingress",
+					Tag:        "latest",
+				},
+			},
+		},
+	}
+
+	dep := IngressDeployment(cfg)
+	byName := map[string]string{}
+	for _, c := range dep.Spec.Template.Spec.Containers {
+		for _, e := range c.Env {
+			if e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+				byName[e.Name] = e.ValueFrom.SecretKeyRef.Name + "/" + e.ValueFrom.SecretKeyRef.Key
+			}
+		}
+	}
+
+	want := map[string]string{
+		"INGRESS_MINIOACCESSKEY": "user-s3-creds/access-key",
+		"INGRESS_MINIOSECRETKEY": "user-s3-creds/secret-key",
+	}
+	for name, wantRef := range want {
+		if got := byName[name]; got != wantRef {
+			t.Errorf("%s: got %q, want %q", name, got, wantRef)
+		}
 	}
 }
