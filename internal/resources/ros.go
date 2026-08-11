@@ -258,7 +258,7 @@ func ROSAPIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Dep
 		EnvVal("DB_POOL_SIZE", "10"),
 		EnvVal("DB_MAX_OVERFLOW", "20"),
 		EnvVal("SERVICE_NAME", "ros-api"),
-		EnvVal("LOG_LEVEL", "INFO"),
+		EnvVal("LOG_LEVEL", cfg.Spec.ROS.API.LogLevel),
 	)
 
 	volumes, mounts := rosAPIVolumes(cfg)
