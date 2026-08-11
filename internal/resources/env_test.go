@@ -35,9 +35,9 @@ func TestKokuCommonEnvS3CredentialNames(t *testing.T) {
 	// Contract: koku EnvConfigurator reads S3_ACCESS_KEY / S3_SECRET into
 	// settings.S3_*; AWS_* remain for the boto3 default credential chain.
 	want := map[string]string{
-		"S3_ACCESS_KEY":        "access-key",
-		"S3_SECRET":            "secret-key",
-		"AWS_ACCESS_KEY_ID":    "access-key",
+		"S3_ACCESS_KEY":         "access-key",
+		"S3_SECRET":             "secret-key",
+		"AWS_ACCESS_KEY_ID":     "access-key",
 		"AWS_SECRET_ACCESS_KEY": "secret-key",
 	}
 	for name, wantKey := range want {
