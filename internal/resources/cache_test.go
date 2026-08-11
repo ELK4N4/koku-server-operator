@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"slices"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -46,7 +47,7 @@ func TestCacheDeployment_Defaults(t *testing.T) {
 	}
 	wantArgs := []string{"--bind", "0.0.0.0", "--port", "6379", "--dir", "/data", "--appendonly", "yes"}
 	for _, want := range wantArgs {
-		if !containsString(c.Args, want) {
+		if !slices.Contains(c.Args, want) {
 			t.Errorf("Args missing %q: %v", want, c.Args)
 		}
 	}
@@ -113,13 +114,4 @@ func TestCachePVC_CustomSize(t *testing.T) {
 	if got.Cmp(resource.MustParse("20Gi")) != 0 {
 		t.Errorf("storage request = %s", got.String())
 	}
-}
-
-func containsString(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
