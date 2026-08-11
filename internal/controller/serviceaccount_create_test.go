@@ -93,6 +93,9 @@ func TestEnsureServiceAccount_CreateFalseMissingErrors(t *testing.T) {
 	if !strings.Contains(err.Error(), "create=false") {
 		t.Fatalf("error should mention create=false, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), testNamespace+"/missing-ros-sa") {
+		t.Fatalf("error should include namespace/name, got: %v", err)
+	}
 }
 
 func TestEnsureServiceAccount_CreateFalseGetError(t *testing.T) {
@@ -109,9 +112,13 @@ func TestEnsureServiceAccount_CreateFalseGetError(t *testing.T) {
 		Build()
 
 	r := &CostManagementServiceConfigReconciler{Client: c, Recorder: &noopRecorder{}}
-	err := r.ensureServiceAccount(context.Background(), cfg, cfg.Spec.CostManagement.ServiceAccount, resources.KokuServiceAccount(cfg))
+	sa := resources.KokuServiceAccount(cfg)
+	err := r.ensureServiceAccount(context.Background(), cfg, cfg.Spec.CostManagement.ServiceAccount, sa)
 	if err == nil || !strings.Contains(err.Error(), "get serviceaccount") {
 		t.Fatalf("expected wrapped get error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), testNamespace+"/"+sa.Name) {
+		t.Fatalf("error should include namespace/name, got: %v", err)
 	}
 }
 

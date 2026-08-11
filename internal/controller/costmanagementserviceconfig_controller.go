@@ -708,9 +708,9 @@ func (r *CostManagementServiceConfigReconciler) ensureServiceAccount(
 		key := types.NamespacedName{Namespace: cfg.Namespace, Name: sa.Name}
 		if err := r.Get(ctx, key, existing); err != nil {
 			if errors.IsNotFound(err) {
-				return fmt.Errorf("serviceaccount %q not found (create=false); create it manually or set create=true", sa.Name)
+				return fmt.Errorf("serviceaccount %s/%s not found (create=false); create it manually or set create=true", key.Namespace, key.Name)
 			}
-			return fmt.Errorf("get serviceaccount %q: %w", sa.Name, err)
+			return fmt.Errorf("get serviceaccount %s/%s: %w", key.Namespace, key.Name, err)
 		}
 		return nil
 	}
