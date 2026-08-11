@@ -53,8 +53,7 @@ Alternatively, do it manually:
 
 ```bash
 oc new-project cost-onprem
-make manifests
-oc apply -f config/crd/bases/
+make install   # regenerates manifests and applies CRDs via config/crd kustomize
 oc adm policy add-cluster-role-to-user cluster-admin \
   system:serviceaccount:cost-onprem:default
 oc adm policy add-scc-to-user anyuid -z default -n cost-onprem

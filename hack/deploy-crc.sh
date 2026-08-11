@@ -13,11 +13,11 @@ echo ""
 # Create namespace
 oc get namespace "$NS" &>/dev/null || oc create namespace "$NS"
 
-# Install CRDs
+# Install CRDs via kustomize (only the resources listed in config/crd/kustomization.yaml).
+# Do not `oc apply -f config/crd/bases/` — that directory is a generator output and
+# may contain leftover files from prior API-group renames.
 echo "[1/3] Installing CRDs..."
-bin/controller-gen rbac:roleName=manager-role crd paths="./..." \
-  output:crd:artifacts:config=config/crd/bases
-oc apply -f config/crd/bases/
+make install
 
 # Apply RBAC needed by the operator
 echo "[2/3] Applying RBAC..."
