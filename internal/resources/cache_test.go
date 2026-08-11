@@ -81,7 +81,7 @@ func TestCacheService_DefaultPort(t *testing.T) {
 	if len(svc.Spec.Ports) != 1 || svc.Spec.Ports[0].Port != 6379 {
 		t.Errorf("ports = %+v", svc.Spec.Ports)
 	}
-	if svc.Spec.Selector["app.kubernetes.io/component"] != "cache" {
+	if svc.Spec.Selector[labelComponent] != "cache" {
 		t.Errorf("selector = %v", svc.Spec.Selector)
 	}
 }

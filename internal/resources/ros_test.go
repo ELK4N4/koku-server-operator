@@ -72,12 +72,7 @@ func TestROSAPIDeployment_Shape(t *testing.T) {
 	if len(c.Ports) != 2 || c.Ports[0].ContainerPort != rosAPIPort || c.Ports[1].ContainerPort != rosMetricPort {
 		t.Errorf("ports = %+v", c.Ports)
 	}
-	env := map[string]string{}
-	for _, e := range c.Env {
-		if e.Value != "" {
-			env[e.Name] = e.Value
-		}
-	}
+	env := envValues(c)
 	if env["DB_NAME"] != rosDBName {
 		t.Errorf("DB_NAME = %q", env["DB_NAME"])
 	}
@@ -101,6 +96,10 @@ func TestROSAPIService_Ports(t *testing.T) {
 	if len(svc.Spec.Ports) != 2 || svc.Spec.Ports[0].Port != rosAPIPort || svc.Spec.Ports[1].Port != rosMetricPort {
 		t.Errorf("ports = %+v", svc.Spec.Ports)
 	}
+	wantSel := SelectorLabels(cfg, "ros-api")
+	if svc.Spec.Selector[labelComponent] != wantSel[labelComponent] {
+		t.Errorf("selector[%s] = %q, want %q", labelComponent, svc.Spec.Selector[labelComponent], wantSel[labelComponent])
+	}
 }
 
 func TestROSProcessorDeployment_Shape(t *testing.T) {
@@ -115,12 +114,7 @@ func TestROSProcessorDeployment_Shape(t *testing.T) {
 		t.Errorf("replicas = %v", d.Spec.Replicas)
 	}
 	c := d.Spec.Template.Spec.Containers[0]
-	env := map[string]string{}
-	for _, e := range c.Env {
-		if e.Value != "" {
-			env[e.Name] = e.Value
-		}
-	}
+	env := envValues(c)
 	if env["SERVICE_NAME"] != "ros-processor" {
 		t.Errorf("SERVICE_NAME = %q", env["SERVICE_NAME"])
 	}
@@ -149,12 +143,7 @@ func TestROSPollerDeployment_Shape(t *testing.T) {
 	if c.Name != "ros-rec-poller" {
 		t.Errorf("container = %q", c.Name)
 	}
-	env := map[string]string{}
-	for _, e := range c.Env {
-		if e.Value != "" {
-			env[e.Name] = e.Value
-		}
-	}
+	env := envValues(c)
 	if env["SERVICE_NAME"] != "ros-recommendation-poller" {
 		t.Errorf("SERVICE_NAME = %q", env["SERVICE_NAME"])
 	}
@@ -172,12 +161,7 @@ func TestROSHousekeeperDeployment_WaitsForKoku(t *testing.T) {
 	if len(d.Spec.Template.Spec.InitContainers) < 4 {
 		t.Fatalf("expected DB+Kafka+Kruize+Koku inits, got %d", len(d.Spec.Template.Spec.InitContainers))
 	}
-	env := map[string]string{}
-	for _, e := range d.Spec.Template.Spec.Containers[0].Env {
-		if e.Value != "" {
-			env[e.Name] = e.Value
-		}
-	}
+	env := envValues(d.Spec.Template.Spec.Containers[0])
 	if env["SERVICE_NAME"] != "ros-housekeeper-sources" {
 		t.Errorf("SERVICE_NAME = %q", env["SERVICE_NAME"])
 	}

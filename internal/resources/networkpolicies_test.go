@@ -14,7 +14,7 @@ func TestGatewayNetworkPolicy(t *testing.T) {
 		t.Errorf("Name = %q", np.Name)
 	}
 	assertIngressOnly(t, np)
-	if got := np.Spec.PodSelector.MatchLabels["app.kubernetes.io/component"]; got != "gateway" {
+	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "gateway" {
 		t.Errorf("podSelector component = %q", got)
 	}
 	// Router + UI + monitoring rules.
@@ -86,14 +86,18 @@ func TestRBACAPINetworkPolicy(t *testing.T) {
 }
 
 func TestKokuAPINetworkPolicy(t *testing.T) {
+	const (
+		kokuAPIPort     = int32(8000)
+		kokuMetricsPort = int32(9000)
+	)
 	cfg := testCfg()
 	np := KokuAPINetworkPolicy(cfg)
 	assertIngressOnly(t, np)
-	if !ruleAllowsPort(np.Spec.Ingress, 8000) {
-		t.Error("missing koku API port 8000")
+	if !ruleAllowsPort(np.Spec.Ingress, kokuAPIPort) {
+		t.Errorf("missing koku API port %d", kokuAPIPort)
 	}
-	if !ruleAllowsPort(np.Spec.Ingress, 9000) {
-		t.Error("missing koku metrics port 9000")
+	if !ruleAllowsPort(np.Spec.Ingress, kokuMetricsPort) {
+		t.Errorf("missing koku metrics port %d", kokuMetricsPort)
 	}
 	if !peerHasComponent(np.Spec.Ingress[0], "gateway") {
 		t.Error("first rule should allow gateway")
@@ -125,7 +129,7 @@ func assertIngressOnly(t *testing.T, np *networkingv1.NetworkPolicy) {
 
 func peerHasComponent(rule networkingv1.NetworkPolicyIngressRule, component string) bool {
 	for _, from := range rule.From {
-		if from.PodSelector != nil && from.PodSelector.MatchLabels["app.kubernetes.io/component"] == component {
+		if from.PodSelector != nil && from.PodSelector.MatchLabels[labelComponent] == component {
 			return true
 		}
 	}

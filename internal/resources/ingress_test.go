@@ -35,6 +35,17 @@ func TestIngressS3EndpointFromDiscovered(t *testing.T) {
 	}
 }
 
+func TestIngressS3EndpointDiscoveredTakesPrecedence(t *testing.T) {
+	cfg := ingressCfg()
+	// Spec still has minio…:9000 from ingressCfg(); discovered must win.
+	cfg.Status.DiscoveredConfig = &costv1alpha1.DiscoveredConfig{
+		S3: &costv1alpha1.DiscoveredS3{Endpoint: "http://obc-bucket.openshift-storage.svc:443"},
+	}
+	if got := ingressS3Endpoint(cfg); got != "obc-bucket.openshift-storage.svc:443" {
+		t.Errorf("discovered should win over spec; got %q", got)
+	}
+}
+
 func TestIngressS3UseSSL(t *testing.T) {
 	cfg := ingressCfg()
 	if got := ingressS3UseSSL(cfg); got != "false" {
@@ -62,12 +73,7 @@ func TestIngressDeployment(t *testing.T) {
 	if len(c.Ports) != 2 {
 		t.Fatalf("ports = %+v", c.Ports)
 	}
-	env := map[string]string{}
-	for _, e := range c.Env {
-		if e.Value != "" {
-			env[e.Name] = e.Value
-		}
-	}
+	env := envValues(c)
 	checks := map[string]string{
 		"INGRESS_WEBPORT":              "8080",
 		"INGRESS_METRICSPORT":          "9000",
