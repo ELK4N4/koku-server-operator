@@ -64,28 +64,55 @@ func TestKokuCommonEnvS3CredentialNames(t *testing.T) {
 func TestKokuWorkloadsCarryS3CredentialEnv(t *testing.T) {
 	cfg := &costv1alpha1.CostManagementServiceConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: "cost-onprem"},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			ObjectStorage: costv1alpha1.ObjectStorageConfig{
+				SecretName: "user-s3-creds",
+			},
+		},
+	}
+	wantSecret := NameStorageSecret(cfg)
+	want := map[string]string{
+		"S3_ACCESS_KEY":         "access-key",
+		"S3_SECRET":             "secret-key",
+		"AWS_ACCESS_KEY_ID":     "access-key",
+		"AWS_SECRET_ACCESS_KEY": "secret-key",
 	}
 
-	containers := [][]corev1.Container{
-		KokuAPIDeployment(cfg).Spec.Template.Spec.Containers,
-		MasuDeployment(cfg).Spec.Template.Spec.Containers,
-		ListenerDeployment(cfg).Spec.Template.Spec.Containers,
-		CeleryBeatDeployment(cfg).Spec.Template.Spec.Containers,
-		CeleryWorkerDeployment(cfg, "celery", costv1alpha1.CeleryWorkerSpec{Replicas: 1}).Spec.Template.Spec.Containers,
-		MigrationJob(cfg, "latest").Spec.Template.Spec.Containers,
+	workloads := []struct {
+		name       string
+		containers []corev1.Container
+	}{
+		{"koku-api", KokuAPIDeployment(cfg).Spec.Template.Spec.Containers},
+		{"masu", MasuDeployment(cfg).Spec.Template.Spec.Containers},
+		{"listener", ListenerDeployment(cfg).Spec.Template.Spec.Containers},
+		{"celery-beat", CeleryBeatDeployment(cfg).Spec.Template.Spec.Containers},
+		{"celery-worker", CeleryWorkerDeployment(cfg, "celery", costv1alpha1.CeleryWorkerSpec{Replicas: 1}).Spec.Template.Spec.Containers},
+		{"migration", MigrationJob(cfg, "latest").Spec.Template.Spec.Containers},
 	}
-	for i, pods := range containers {
-		found := false
-		for _, c := range pods {
+	for _, wl := range workloads {
+		byName := map[string]corev1.EnvVar{}
+		for _, c := range wl.containers {
 			for _, e := range c.Env {
-				if e.Name == "S3_ACCESS_KEY" {
-					found = true
-					break
-				}
+				byName[e.Name] = e
 			}
 		}
-		if !found {
-			t.Errorf("workload %d missing S3_ACCESS_KEY in container env", i)
+		for name, wantKey := range want {
+			e, ok := byName[name]
+			if !ok {
+				t.Errorf("%s: missing env var %s", wl.name, name)
+				continue
+			}
+			if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil {
+				t.Errorf("%s: %s expected secretKeyRef, got %#v", wl.name, name, e)
+				continue
+			}
+			ref := e.ValueFrom.SecretKeyRef
+			if ref.Name != wantSecret {
+				t.Errorf("%s: %s secret name = %q, want %q", wl.name, name, ref.Name, wantSecret)
+			}
+			if ref.Key != wantKey {
+				t.Errorf("%s: %s secret key = %q, want %q", wl.name, name, ref.Key, wantKey)
+			}
 		}
 	}
 }
