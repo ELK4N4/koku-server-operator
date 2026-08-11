@@ -187,29 +187,3 @@ func dbContainerSC() *corev1.SecurityContext {
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 	}
 }
-
-// helpers used across multiple builders
-
-func nonRootPodSC() *corev1.PodSecurityContext {
-	nonRoot := true
-	return &corev1.PodSecurityContext{
-		RunAsNonRoot: &nonRoot,
-		SeccompProfile: &corev1.SeccompProfile{
-			Type: corev1.SeccompProfileTypeRuntimeDefault,
-		},
-	}
-}
-
-func pullPolicy(cfg *costv1alpha1.CostManagementServiceConfig) corev1.PullPolicy {
-	if cfg.Spec.Global.PullPolicy != "" {
-		return cfg.Spec.Global.PullPolicy
-	}
-	return corev1.PullIfNotPresent
-}
-
-// imagePullSecrets returns global.imagePullSecrets for Pod specs so private
-// registry credentials (e.g. registry.redhat.io pull secrets) are applied to
-// every workload the operator creates.
-func imagePullSecrets(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.LocalObjectReference {
-	return cfg.Spec.Global.ImagePullSecrets
-}
