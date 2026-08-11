@@ -138,3 +138,66 @@ func TestROSProcessorDeployment_Shape(t *testing.T) {
 		t.Fatalf("expected ≥3 init containers, got %d", len(d.Spec.Template.Spec.InitContainers))
 	}
 }
+
+func TestROSPollerDeployment_Shape(t *testing.T) {
+	cfg := rosCfg()
+	d := ROSPollerDeployment(cfg)
+	if d.Name != NameROSPoller(cfg) {
+		t.Errorf("Name = %q", d.Name)
+	}
+	c := d.Spec.Template.Spec.Containers[0]
+	if c.Name != "ros-rec-poller" {
+		t.Errorf("container = %q", c.Name)
+	}
+	env := map[string]string{}
+	for _, e := range c.Env {
+		if e.Value != "" {
+			env[e.Name] = e.Value
+		}
+	}
+	if env["SERVICE_NAME"] != "ros-recommendation-poller" {
+		t.Errorf("SERVICE_NAME = %q", env["SERVICE_NAME"])
+	}
+	if env["RECOMMENDATION_TOPIC"] != recommendationTopic {
+		t.Errorf("RECOMMENDATION_TOPIC = %q", env["RECOMMENDATION_TOPIC"])
+	}
+}
+
+func TestROSHousekeeperDeployment_WaitsForKoku(t *testing.T) {
+	cfg := rosCfg()
+	d := ROSHousekeeperDeployment(cfg)
+	if d.Name != NameROSHousekeeper(cfg) {
+		t.Errorf("Name = %q", d.Name)
+	}
+	if len(d.Spec.Template.Spec.InitContainers) < 4 {
+		t.Fatalf("expected DB+Kafka+Kruize+Koku inits, got %d", len(d.Spec.Template.Spec.InitContainers))
+	}
+	env := map[string]string{}
+	for _, e := range d.Spec.Template.Spec.Containers[0].Env {
+		if e.Value != "" {
+			env[e.Name] = e.Value
+		}
+	}
+	if env["SERVICE_NAME"] != "ros-housekeeper-sources" {
+		t.Errorf("SERVICE_NAME = %q", env["SERVICE_NAME"])
+	}
+	wantURL := "http://" + NameKokuAPI(cfg) + ":8000"
+	if env["SOURCES_API_BASE_URL"] != wantURL {
+		t.Errorf("SOURCES_API_BASE_URL = %q, want %q", env["SOURCES_API_BASE_URL"], wantURL)
+	}
+}
+
+func TestROSPartitionCleanerCronJob_DefaultSchedule(t *testing.T) {
+	cfg := rosCfg()
+	cj := ROSPartitionCleanerCronJob(cfg)
+	if cj.Name != cfg.Name+"-ros-partition-cleaner" {
+		t.Errorf("Name = %q", cj.Name)
+	}
+	if cj.Spec.Schedule != "0 0 */15 * *" {
+		t.Errorf("Schedule = %q", cj.Spec.Schedule)
+	}
+	c := cj.Spec.JobTemplate.Spec.Template.Spec.Containers[0]
+	if c.Name != "ros-partition-cleaner" {
+		t.Errorf("container = %q", c.Name)
+	}
+}
