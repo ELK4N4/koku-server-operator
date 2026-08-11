@@ -36,15 +36,15 @@ const (
 // -----------------------------------------------------------------------------
 
 // Profile selects a pre-defined resource sizing tier for all components.
-// +kubebuilder:validation:Enum=standard;ha
+// Only "standard" is accepted today; HA sizing maps are not implemented yet
+// (COST-7678 / COST-7693), so "ha" was removed from the enum to avoid a
+// silently no-op API.
+// +kubebuilder:validation:Enum=standard
 type Profile string
 
 const (
 	// ProfileStandard is suitable for single-node or small clusters.
 	ProfileStandard Profile = "standard"
-	// ProfileHA provides higher replica counts and resource requests for
-	// production multi-node deployments.
-	ProfileHA Profile = "ha"
 )
 
 // -----------------------------------------------------------------------------
@@ -580,6 +580,7 @@ type MonitoringConfig struct {
 
 type CostManagementServiceConfigSpec struct {
 	// Profile selects pre-defined resource sizing. Defaults to standard.
+	// Only "standard" is valid until profile sizing maps are implemented.
 	// +kubebuilder:default:=standard
 	Profile        Profile              `json:"profile,omitempty"`
 	Global         GlobalConfig         `json:"global,omitempty"`

@@ -1862,11 +1862,11 @@ spec:
                 type: object
               profile:
                 default: standard
-                description: Profile selects pre-defined resource sizing. Defaults
-                  to standard.
+                description: |-
+                  Profile selects pre-defined resource sizing. Defaults to standard.
+                  Only "standard" is valid until profile sizing maps are implemented.
                 enum:
                 - standard
-                - ha
                 type: string
               rbac:
                 properties:
