@@ -1,0 +1,613 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "service.costmanagement.openshift.io/v1alpha1",
+          "kind": "CostManagementServiceConfig",
+          "metadata": {
+            "name": "cost-management",
+            "namespace": "cost-onprem"
+          },
+          "spec": {
+            "auth": {
+              "envoy": {
+                "image": {
+                  "repository": "registry.redhat.io/openshift-service-mesh/proxyv2-rhel9",
+                  "tag": "2.6"
+                },
+                "replicas": 2
+              },
+              "keycloak": {
+                "audiences": [
+                  "cost-management-operator",
+                  "cost-management-ui"
+                ],
+                "realm": "kubernetes",
+                "url": "https://keycloak.keycloak.svc.cluster.local"
+              }
+            },
+            "cache": {
+              "deploy": true,
+              "image": {
+                "repository": "registry.redhat.io/rhel10/valkey-8",
+                "tag": "10.1"
+              },
+              "persistence": {
+                "size": "5Gi"
+              }
+            },
+            "costManagement": {
+              "api": {
+                "image": {
+                  "repository": "quay.io/martin_povolny/koku",
+                  "tag": "latest"
+                },
+                "replicas": 1
+              },
+              "celery": {
+                "workers": {
+                  "costModel": {
+                    "replicas": 1
+                  },
+                  "default": {
+                    "replicas": 1
+                  },
+                  "ocp": {
+                    "replicas": 2
+                  },
+                  "priority": {
+                    "replicas": 1
+                  },
+                  "summary": {
+                    "replicas": 2
+                  }
+                }
+              },
+              "listener": {
+                "replicas": 2
+              },
+              "masu": {
+                "image": {
+                  "repository": "quay.io/martin_povolny/koku",
+                  "tag": "latest"
+                },
+                "replicas": 1
+              }
+            },
+            "database": {
+              "deploy": true,
+              "image": {
+                "repository": "registry.redhat.io/rhel10/postgresql-16",
+                "tag": "10.1"
+              },
+              "storage": {
+                "size": "30Gi"
+              }
+            },
+            "global": {
+              "clusterDomain": "apps.cluster.local",
+              "storageClass": ""
+            },
+            "kafka": {
+              "bootstrapServers": "cost-onprem-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+            },
+            "kruize": {
+              "image": {
+                "repository": "quay.io/redhat-services-prod/kruize-autotune-tenant/autotune",
+                "tag": "d1f0140"
+              },
+              "replicas": 1
+            },
+            "monitoring": {
+              "enabled": true
+            },
+            "objectStorage": {
+              "endpoint": "s3.openshift-storage.svc.cluster.local",
+              "port": 443,
+              "useSSL": true
+            },
+            "rbac": {
+              "api": {
+                "replicas": 1
+              },
+              "image": {
+                "repository": "quay.io/redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac",
+                "tag": "73870d8"
+              },
+              "worker": {
+                "replicas": 1
+              }
+            },
+            "ros": {
+              "image": {
+                "repository": "quay.io/redhat-services-prod/insights-management-tenant/insights-ocp-resource-optimization/ros-ocp-backend",
+                "tag": "ae8c990"
+              },
+              "processor": {
+                "replicas": 1
+              }
+            },
+            "ui": {
+              "app": {
+                "image": {
+                  "repository": "quay.io/martin_povolny/koku-ui-mfe-onprem",
+                  "tag": "latest"
+                }
+              },
+              "oauthProxy": {
+                "image": {
+                  "repository": "registry.access.redhat.com/rhceph/oauth2-proxy-rhel9",
+                  "tag": "v7.6.0"
+                }
+              },
+              "replicaCount": 1
+            }
+          }
+        },
+        {
+          "apiVersion": "service.costmanagement.openshift.io/v1alpha1",
+          "kind": "CostManagementServiceConfig",
+          "metadata": {
+            "name": "cost-management-byoi",
+            "namespace": "cost-onprem"
+          },
+          "spec": {
+            "auth": {
+              "envoy": {
+                "image": {
+                  "repository": "registry.redhat.io/openshift-service-mesh/proxyv2-rhel9",
+                  "tag": "2.6"
+                },
+                "replicas": 2
+              },
+              "keycloak": {
+                "audiences": [
+                  "cost-management-operator",
+                  "cost-management-ui"
+                ],
+                "realm": "kubernetes",
+                "url": "https://keycloak.auth.svc.cluster.local"
+              }
+            },
+            "cache": {
+              "auth": {
+                "enabled": true,
+                "secretName": "my-cache-credentials"
+              },
+              "deploy": false,
+              "host": "redis.cache.svc.cluster.local",
+              "port": 6379,
+              "tls": {
+                "enabled": false
+              }
+            },
+            "costManagement": {
+              "api": {
+                "image": {
+                  "repository": "quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku",
+                  "tag": "d8055ac"
+                },
+                "replicas": 1
+              },
+              "celery": {
+                "workers": {
+                  "costModel": {
+                    "replicas": 1
+                  },
+                  "default": {
+                    "replicas": 1
+                  },
+                  "ocp": {
+                    "replicas": 2
+                  },
+                  "priority": {
+                    "replicas": 1
+                  },
+                  "summary": {
+                    "replicas": 2
+                  }
+                }
+              },
+              "listener": {
+                "replicas": 2
+              },
+              "masu": {
+                "image": {
+                  "repository": "quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku",
+                  "tag": "d8055ac"
+                },
+                "replicas": 1
+              }
+            },
+            "database": {
+              "deploy": false,
+              "host": "postgresql.databases.svc.cluster.local",
+              "port": 5432,
+              "secretName": "my-db-credentials",
+              "sslMode": "require"
+            },
+            "global": {
+              "clusterDomain": "apps.cluster.example.com"
+            },
+            "kafka": {
+              "bootstrapServers": "kafka-kafka-bootstrap.kafka.svc.cluster.local:9092",
+              "securityProtocol": "PLAINTEXT"
+            },
+            "kruize": {
+              "image": {
+                "repository": "quay.io/redhat-services-prod/kruize-autotune-tenant/autotune",
+                "tag": "d1f0140"
+              },
+              "replicas": 1
+            },
+            "monitoring": {
+              "enabled": true
+            },
+            "objectStorage": {
+              "endpoint": "s3.openshift-storage.svc.cluster.local",
+              "port": 443,
+              "s3": {
+                "addressingStyle": "path",
+                "region": "us-east-1"
+              },
+              "secretName": "my-s3-credentials",
+              "useSSL": true
+            },
+            "rbac": {
+              "api": {
+                "replicas": 1
+              },
+              "image": {
+                "repository": "quay.io/redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac",
+                "tag": "73870d8"
+              },
+              "worker": {
+                "replicas": 1
+              }
+            },
+            "ros": {
+              "enabled": false,
+              "image": {
+                "repository": "quay.io/redhat-services-prod/insights-management-tenant/insights-ocp-resource-optimization/ros-ocp-backend",
+                "tag": "ae8c990"
+              },
+              "processor": {
+                "replicas": 1
+              }
+            },
+            "ui": {
+              "app": {
+                "image": {
+                  "repository": "quay.io/insights-onprem/koku-ui-onprem",
+                  "tag": "2f23c646581028bd385856b6713e6bf367baf953"
+                }
+              },
+              "replicaCount": 1
+            }
+          }
+        }
+      ]
+    capabilities: Basic Install
+    createdAt: "2026-08-11T13:09:53Z"
+    operators.operatorframework.io/builder: operator-sdk-v1.42.3
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
+  name: koku-service-operator.v0.0.1
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: CostManagementServiceConfig is the schema for the on-premise Cost
+        Management deployment.
+      displayName: Cost Management Service Config
+      kind: CostManagementServiceConfig
+      name: costmanagementserviceconfigs.service.costmanagement.openshift.io
+      version: v1alpha1
+  description: |
+    Kubernetes operator for self-managed (on-premise) Cost Management on OpenShift.
+    Install via OLM, apply a CostManagementServiceConfig, and the operator deploys
+    and manages the Cost Management stack against external infrastructure
+    (PostgreSQL, Kafka, S3, OIDC). Beta channel — APIs and behavior may still change.
+  displayName: Cost Management Service Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          - persistentvolumeclaims
+          - secrets
+          - serviceaccounts
+          - services
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        - apiGroups:
+          - apps
+          resources:
+          - deployments
+          - statefulsets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - batch
+          resources:
+          - cronjobs
+          - jobs
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - config.openshift.io
+          resources:
+          - ingresses
+          verbs:
+          - get
+        - apiGroups:
+          - console.openshift.io
+          resources:
+          - consolelinks
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - monitoring.coreos.com
+          resources:
+          - prometheusrules
+          - servicemonitors
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - networking.k8s.io
+          resources:
+          - networkpolicies
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - rbac.authorization.k8s.io
+          resources:
+          - clusterrolebindings
+          - clusterroles
+          - rolebindings
+          - roles
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - route.openshift.io
+          resources:
+          - routes
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - route.openshift.io
+          resources:
+          - routes/custom-host
+          verbs:
+          - create
+        - apiGroups:
+          - service.costmanagement.openshift.io
+          resources:
+          - costmanagementserviceconfigs
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - service.costmanagement.openshift.io
+          resources:
+          - costmanagementserviceconfigs/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - service.costmanagement.openshift.io
+          resources:
+          - costmanagementserviceconfigs/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - storage.k8s.io
+          resources:
+          - storageclasses
+          verbs:
+          - get
+          - list
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
+        serviceAccountName: koku-service-operator-controller-manager
+      deployments:
+      - label:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/name: koku-service-operator
+          control-plane: controller-manager
+        name: koku-service-operator-controller-manager
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: koku-service-operator
+              control-plane: controller-manager
+          strategy: {}
+          template:
+            metadata:
+              annotations:
+                kubectl.kubernetes.io/default-container: manager
+              labels:
+                app.kubernetes.io/name: koku-service-operator
+                control-plane: controller-manager
+            spec:
+              containers:
+              - args:
+                - --metrics-bind-address=:8443
+                - --leader-elect
+                - --health-probe-bind-address=:8081
+                command:
+                - /manager
+                image: quay.io/project-koku/koku-service-operator:v0.0.1
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                name: manager
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                resources:
+                  limits:
+                    cpu: 500m
+                    memory: 128Mi
+                  requests:
+                    cpu: 10m
+                    memory: 64Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
+              serviceAccountName: koku-service-operator-controller-manager
+              terminationGracePeriodSeconds: 10
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        serviceAccountName: koku-service-operator-controller-manager
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - cost-management
+  - koku
+  - openshift
+  - on-prem
+  - koku-service-operator
+  links:
+  - name: Koku Service Operator
+    url: https://github.com/project-koku/koku-service-operator
+  maintainers:
+  - email: cost-mgmt-dev@redhat.com
+    name: Cost Management
+  maturity: beta
+  provider:
+    name: Red Hat
+    url: https://github.com/project-koku/koku-service-operator
+  version: 0.0.1

@@ -1,0 +1,57 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Basic Install
+  name: koku-service-operator.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: CostManagementServiceConfig is the schema for the on-premise Cost
+        Management deployment.
+      displayName: Cost Management Service Config
+      kind: CostManagementServiceConfig
+      name: costmanagementserviceconfigs.service.costmanagement.openshift.io
+      version: v1alpha1
+  description: |
+    Kubernetes operator for self-managed (on-premise) Cost Management on OpenShift.
+    Install via OLM, apply a CostManagementServiceConfig, and the operator deploys
+    and manages the Cost Management stack against external infrastructure
+    (PostgreSQL, Kafka, S3, OIDC). Beta channel — APIs and behavior may still change.
+  displayName: Cost Management Service Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - cost-management
+  - koku
+  - openshift
+  - on-prem
+  - koku-service-operator
+  links:
+  - name: Koku Service Operator
+    url: https://github.com/project-koku/koku-service-operator
+  maintainers:
+  - email: cost-mgmt-dev@redhat.com
+    name: Cost Management
+  maturity: beta
+  provider:
+    name: Red Hat, Inc.
+    url: https://github.com/project-koku/koku-service-operator
+  version: 0.0.0
