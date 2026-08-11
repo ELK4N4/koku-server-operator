@@ -156,6 +156,7 @@ func RBACAPIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.De
 				Spec: corev1.PodSpec{
 					AutomountServiceAccountToken: &falseVal,
 					SecurityContext:              nonRootPodSC(),
+					ImagePullSecrets:             imagePullSecrets(cfg),
 					InitContainers: []corev1.Container{
 						waitForRBACDB(cfg),
 						WaitForValkeyInitContainer(cfg),
@@ -245,6 +246,7 @@ func RBACWorkerDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1
 				Spec: corev1.PodSpec{
 					AutomountServiceAccountToken: &falseVal,
 					SecurityContext:              nonRootPodSC(),
+					ImagePullSecrets:             imagePullSecrets(cfg),
 					InitContainers: []corev1.Container{
 						waitForRBACDB(cfg),
 						WaitForValkeyInitContainer(cfg),

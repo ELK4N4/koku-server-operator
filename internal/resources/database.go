@@ -56,7 +56,8 @@ func DatabaseStatefulSet(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: allLabels},
 				Spec: corev1.PodSpec{
-					SecurityContext: dbPodSC(),
+					SecurityContext:  dbPodSC(),
+					ImagePullSecrets: imagePullSecrets(cfg),
 					Containers: []corev1.Container{
 						{
 							Name:            "postgres",
@@ -204,4 +205,11 @@ func pullPolicy(cfg *costv1alpha1.CostManagementServiceConfig) corev1.PullPolicy
 		return cfg.Spec.Global.PullPolicy
 	}
 	return corev1.PullIfNotPresent
+}
+
+// imagePullSecrets returns global.imagePullSecrets for Pod specs so private
+// registry credentials (e.g. registry.redhat.io pull secrets) are applied to
+// every workload the operator creates.
+func imagePullSecrets(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.LocalObjectReference {
+	return cfg.Spec.Global.ImagePullSecrets
 }

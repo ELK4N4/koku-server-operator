@@ -85,7 +85,9 @@ func BoolVal(b *bool, defaultVal bool) bool {
 
 type GlobalConfig struct {
 	// +kubebuilder:default:=IfNotPresent
-	PullPolicy       corev1.PullPolicy             `json:"pullPolicy,omitempty"`
+	PullPolicy corev1.PullPolicy `json:"pullPolicy,omitempty"`
+	// ImagePullSecrets are applied to every Pod the operator creates (Deployments,
+	// StatefulSets, Jobs, CronJobs) so workloads can pull from private registries.
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 	// Cluster base domain used for Route hostname generation.
 	// Auto-detected by the Discovery phase when empty.

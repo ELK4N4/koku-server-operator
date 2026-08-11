@@ -506,6 +506,7 @@ func migrationJob(
 					AutomountServiceAccountToken: boolPtr(false),
 					RestartPolicy:                corev1.RestartPolicyOnFailure,
 					SecurityContext:              nonRootPodSC(),
+					ImagePullSecrets:             imagePullSecrets(cfg),
 					InitContainers:               initContainers,
 					Containers: []corev1.Container{{
 						Name:            "migrate",
