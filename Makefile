@@ -6,19 +6,16 @@
 VERSION ?= 0.0.1
 
 # CHANNELS define the bundle channels used in the bundle.
-# Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
-# To re-generate a bundle for other specific channels without changing the standard setup, you can:
-# - use the CHANNELS as arg of the bundle target (e.g make bundle CHANNELS=candidate,fast,stable)
-# - use environment variables to overwrite this value (e.g export CHANNELS="candidate,fast,stable")
+# Beta is the pre-GA stream; add stable at GA (e.g. CHANNELS = "beta,stable").
+# Override per invocation: make bundle CHANNELS=beta,stable
+CHANNELS ?= beta
 ifneq ($(origin CHANNELS), undefined)
 BUNDLE_CHANNELS := --channels=$(CHANNELS)
 endif
 
 # DEFAULT_CHANNEL defines the default channel used in the bundle.
-# Add a new line here if you would like to change its default config. (E.g DEFAULT_CHANNEL = "stable")
-# To re-generate a bundle for any other default channel without changing the default setup, you can:
-# - use the DEFAULT_CHANNEL as arg of the bundle target (e.g make bundle DEFAULT_CHANNEL=stable)
-# - use environment variables to overwrite this value (e.g export DEFAULT_CHANNEL="stable")
+# Override per invocation: make bundle DEFAULT_CHANNEL=beta
+DEFAULT_CHANNEL ?= beta
 ifneq ($(origin DEFAULT_CHANNEL), undefined)
 BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
@@ -49,8 +46,9 @@ endif
 # Set the Operator SDK version to use. By default, what is installed on the system is used.
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
 OPERATOR_SDK_VERSION ?= v1.42.3
-# Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+# Image URL to use all building/pushing image targets.
+# Defaults to the versioned quay.io image so `make bundle` embeds a pullable IMG in the CSV.
+IMG ?= $(IMAGE_TAG_BASE):v$(VERSION)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -322,6 +320,15 @@ bundle-build: ## Build the bundle image.
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
+
+.PHONY: bundle-run
+bundle-run: operator-sdk ## Install the operator from BUNDLE_IMG via OLM (local/dev).
+	$(OPERATOR_SDK) run bundle $(BUNDLE_IMG)
+
+.PHONY: bundle-cleanup
+bundle-cleanup: operator-sdk ## Remove the operator installed by bundle-run.
+	$(OPERATOR_SDK) cleanup koku-service-operator
+
 
 .PHONY: opm
 OPM = $(LOCALBIN)/opm
