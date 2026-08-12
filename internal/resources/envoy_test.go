@@ -10,6 +10,89 @@ import (
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
+// assertValidYAMLWithStringAudiences unmarshals the full EnvoyYAML output,
+// walks the YAML to find the audiences list, and asserts every entry is a
+// plain string — not a map (which would indicate YAML injection turned a
+// list entry like "evil:" into {evil: nil}).
+func assertValidYAMLWithStringAudiences(t *testing.T, yamlStr string) {
+	t.Helper()
+
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(yamlStr), &doc); err != nil {
+		t.Fatalf("EnvoyYAML output is not valid YAML: %v", err)
+	}
+
+	// Walk: static_resources → listeners[0] → filter_chains[0] → filters[0]
+	//       → typed_config → http_filters → (jwt_authn) → typed_config
+	//       → providers → keycloak → audiences
+	audiences := yamlWalk(doc,
+		"static_resources", "listeners", 0, "filter_chains", 0,
+		"filters", 0, "typed_config", "http_filters",
+	)
+	if audiences == nil {
+		t.Fatal("could not walk YAML to http_filters")
+	}
+
+	filters, ok := audiences.([]any)
+	if !ok {
+		t.Fatalf("http_filters is %T, want []any", audiences)
+	}
+
+	for _, f := range filters {
+		fm, ok := f.(map[string]any)
+		if !ok {
+			continue
+		}
+		tc, ok := fm["typed_config"].(map[string]any)
+		if !ok {
+			continue
+		}
+		providers, ok := tc["providers"].(map[string]any)
+		if !ok {
+			continue
+		}
+		kc, ok := providers["keycloak"].(map[string]any)
+		if !ok {
+			continue
+		}
+		audList, ok := kc["audiences"].([]any)
+		if !ok {
+			t.Fatalf("audiences is %T, want []any", kc["audiences"])
+		}
+		for i, a := range audList {
+			if _, ok := a.(string); !ok {
+				t.Errorf("audiences[%d] is %T (%v), want string — YAML injection turned a list entry into a map", i, a, a)
+			}
+		}
+		return
+	}
+	t.Fatal("could not find keycloak provider with audiences in YAML")
+}
+
+// yamlWalk navigates a nested map/slice structure by keys (string) and
+// indices (int). Returns nil if any step fails.
+func yamlWalk(v any, path ...any) any {
+	for _, step := range path {
+		switch s := step.(type) {
+		case string:
+			m, ok := v.(map[string]any)
+			if !ok {
+				return nil
+			}
+			v = m[s]
+		case int:
+			sl, ok := v.([]any)
+			if !ok || s >= len(sl) {
+				return nil
+			}
+			v = sl[s]
+		default:
+			return nil
+		}
+	}
+	return v
+}
+
 func testCfg() *costv1alpha1.CostManagementServiceConfig {
 	return &costv1alpha1.CostManagementServiceConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: "cost-onprem"},
@@ -183,11 +266,8 @@ func TestEnvoyYAMLParsesForROSEnabledAndDisabled(t *testing.T) {
 		cfg := testCfg()
 		e := enabled
 		cfg.Spec.ROS.Enabled = &e
-		raw := EnvoyYAML(cfg)
-		var doc any
-		if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
-			t.Errorf("ros.enabled=%v: invalid YAML: %v", enabled, err)
-		}
+		out := EnvoyYAML(cfg)
+		assertValidYAMLWithStringAudiences(t, out)
 	}
 }
 
@@ -313,6 +393,7 @@ func TestEnvoyYAMLRejectsInjectedAudience(t *testing.T) {
 			if strings.Contains(out, tc.banned) {
 				t.Errorf("audience injection succeeded via %s: bare 'remote_jwks:' key in Envoy YAML", tc.name)
 			}
+			assertValidYAMLWithStringAudiences(t, out)
 		})
 	}
 }
@@ -328,6 +409,7 @@ func TestEnvoyYAMLRejectsInjectedIssuer(t *testing.T) {
 	if strings.Contains(out, "\nremote_jwks:") {
 		t.Error("issuer injection succeeded: bare 'remote_jwks:' key injected into Envoy YAML")
 	}
+	assertValidYAMLWithStringAudiences(t, out)
 }
 
 // TestEnvoyYAMLRejectsInjectedJWKSURI verifies the JWKS URI is YAML-escaped.
@@ -342,6 +424,7 @@ func TestEnvoyYAMLRejectsInjectedJWKSURI(t *testing.T) {
 	if strings.Contains(out, "\ncluster: attacker-controlled") {
 		t.Error("JWKS URI injection succeeded: bare YAML key injected via keycloak.url")
 	}
+	assertValidYAMLWithStringAudiences(t, out)
 }
 
 // TestEnvoyYAMLRejectsInjectedKCHost verifies the Keycloak cluster host is YAML-escaped.
@@ -360,6 +443,7 @@ func TestEnvoyYAMLRejectsInjectedKCHost(t *testing.T) {
 	if strings.Contains(out, "\ntype: LOGICAL_DNS") {
 		t.Error("KC_HOST injection succeeded: bare YAML key injected via keycloak.url hostname")
 	}
+	assertValidYAMLWithStringAudiences(t, out)
 }
 
 // TestEnvoyYAMLEscapesColonSpace verifies that a colon+space or trailing colon
@@ -393,6 +477,7 @@ func TestEnvoyYAMLEscapesColonSpace(t *testing.T) {
 			if strings.Contains(out, tc.banned) {
 				t.Errorf("audience %q appeared as unquoted plain scalar in YAML", tc.audience)
 			}
+			assertValidYAMLWithStringAudiences(t, out)
 		})
 	}
 }
