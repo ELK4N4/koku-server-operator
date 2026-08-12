@@ -52,6 +52,6 @@ spec:
     name: Cost Management
   maturity: beta
   provider:
-    name: Red Hat, Inc.
+    name: Red Hat
     url: https://github.com/project-koku/koku-service-operator
   version: 0.0.0
