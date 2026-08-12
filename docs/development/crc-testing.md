@@ -112,9 +112,21 @@ NAMESPACE=cost-onprem CR_NAME=cost-management \
   ./config/samples/byoi/mirror-ui-oauth-secret.sh
 ```
 
+Align RHBK redirect URIs with the UI host **before** expecting login to work:
+
+```bash
+export COST_MGMT_NAMESPACE=cost-onprem   # CR namespace
+export COST_MGMT_RELEASE_NAME=cost-management
+# or: export COST_MGMT_UI_BASE_URL=https://cost-management-ui-cost-onprem.apps.crc.testing
+```
+
 For RHBK Route TLS/OIDC, also set `spec.auth.keycloak.issuerURL` to the public
 issuer (`iss`) and either `spec.auth.keycloak.tls.caCertSecretName` or
 `insecureSkipVerify` as needed for JWKS fetch.
+
+Set `ui.app.image` and `ui.oauthProxy.image` (repository **and** tag). Empty
+values produce `InvalidImageName` (image `:`). See the BYOI sample CR and
+[pre-prod-install.md](pre-prod-install.md).
 
 ## Image note: arm64 vs amd64
 
@@ -134,6 +146,10 @@ costManagement:
 
 The bundled sample CR (`config/samples/..._costmanagementserviceconfig.yaml`)
 already uses this image.
+
+For **clusterbot / typical OpenShift** (amd64 nodes), do the opposite: build
+and push the operator with `--platform linux/amd64` and use amd64 app images
+from the BYOI sample. See [pre-prod-install.md](pre-prod-install.md).
 
 ## Storage class
 
@@ -155,3 +171,4 @@ global:
 | `No module named listener` | Wrong container command | Fixed — uses `python manage.py listener` |
 | `Unable to configure handler 'file'` | Django file log handler on read-only FS | Fixed — `kokuAppContainerSC()` does not set `readOnlyRootFilesystem` |
 | Migration segfault | amd64 image on arm64 node | Use arm64 image (see above) |
+| BYOI probes fail under `make run` | `*.svc` not resolvable from laptop | Use [pre-prod-install.md](pre-prod-install.md) / `deploy-incluster.sh` |

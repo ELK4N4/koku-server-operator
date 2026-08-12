@@ -11,8 +11,11 @@ existing external infrastructure (PostgreSQL, Kafka, S3, OIDC).
 
 | Document | Description |
 |----------|-------------|
+| [docs/development/pre-prod-install.md](docs/development/pre-prod-install.md) | Pre-prod BYOI → operator → UI install walkthrough |
+| [docs/development/ownnamespace.md](docs/development/ownnamespace.md) | OwnNamespace install/watch model and RBAC shape |
 | [docs/development/crc-testing.md](docs/development/crc-testing.md) | Local development and CRC testing guide |
 | [docs/development/olm-bundle-testing.md](docs/development/olm-bundle-testing.md) | Build/push/run OLM bundle via `operator-sdk run bundle` |
+| [config/samples/byoi/README.md](config/samples/byoi/README.md) | BYOI fixture (Postgres, Valkey, Kafka, MinIO, OAuth mirror) |
 | [docs/tasks.md](docs/tasks.md) | Implementation status per JIRA ticket |
 | [docs/design/design-vs-jira.md](docs/design/design-vs-jira.md) | Design decisions and Kubernetes best-practice analysis |
 | [docs/jira/](docs/jira/) | JIRA ticket source (COST-7678–7700) |
@@ -22,11 +25,12 @@ existing external infrastructure (PostgreSQL, Kafka, S3, OIDC).
 ```bash
 make generate manifests    # regenerate CRD and deep-copy code
 make build                 # compile to bin/manager
-make run                   # run locally against current kubeconfig
+NAMESPACE=<cr-ns> make run # run locally (OwnNamespace requires NAMESPACE)
 ```
 
-See [docs/development/crc-testing.md](docs/development/crc-testing.md) for
-running against a local CRC cluster.
+See [docs/development/crc-testing.md](docs/development/crc-testing.md) for CRC,
+or [docs/development/pre-prod-install.md](docs/development/pre-prod-install.md)
+for an in-cluster BYOI + UI smoke on a lab cluster.
 
 ## API / CRD naming
 

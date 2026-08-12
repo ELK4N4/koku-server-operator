@@ -71,9 +71,24 @@ spec:
         costModel:
           replicas: 1
 
-  # Beta: ROS (and Kruize) are optional. Set enabled: true to deploy them.
+  # Beta: ROS (and Kruize) are optional. Set enabled: true to deploy them
+  # (requires ROS/Kruize images + DB roles). Leave false for UI smoke.
   ros:
     enabled: false
+
+  rbac:
+    image:
+      repository: quay.io/redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac
+      tag: "73870d8"
+    api:
+      replicas: 1
+    worker:
+      replicas: 1
+
+  ingress:
+    image:
+      repository: quay.io/iop/ingress
+      tag: "master"
 
   # Envoy JWT gateway requires a reachable Keycloak/RHBK JWKS endpoint.
   # Placeholder URL — replace with a real Keycloak before exercising the /api Route.
@@ -83,6 +98,8 @@ spec:
       # hostname, tokens use that URL as iss — set issuerURL to match.
       url: "http://keycloak-service.keycloak.svc.cluster.local:8080"
       # issuerURL: "https://keycloak-keycloak.apps.example.com"
+      # tls:
+      #   insecureSkipVerify: true   # dev only when issuer uses a private CA
       realm: "kubernetes"
       audiences:
         - "cost-management-operator"
@@ -92,6 +109,19 @@ spec:
         repository: registry.redhat.io/openshift-service-mesh/proxyv2-rhel9
         tag: "2.6"
       replicas: 1
+
+  # Empty repository/tag produces InvalidImageName (image ":"). Set both.
+  ui:
+    replicaCount: 1
+    # Default Secret name: {metadata.name}-ui-oauth-client — see mirror-ui-oauth-secret.sh
+    app:
+      image:
+        repository: quay.io/insights-onprem/koku-ui-onprem
+        tag: "2f23c646581028bd385856b6713e6bf367baf953"
+    oauthProxy:
+      image:
+        repository: registry.redhat.io/rhceph/oauth2-proxy-rhel9
+        tag: "v7.6.0"
 
   monitoring:
     enabled: false

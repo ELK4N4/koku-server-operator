@@ -17,7 +17,8 @@ rules:
   verbs: [get]
 - apiGroups: [storage.k8s.io]
   resources: [storageclasses]
-  verbs: [get, list]
+  # watch required: controller-runtime caches List via informers
+  verbs: [get, list, watch]
 # UI Application Menu entry.
 - apiGroups: [console.openshift.io]
   resources: [consolelinks]

@@ -96,8 +96,11 @@ that require Strimzi; use AMQ Streams for those.
 
 ## UI OAuth Secret
 
-After Keycloak/RHBK is up (e.g. chart `scripts/deploy-rhbk.sh`), mirror the
-UI confidential client into the CR namespace before expecting `UIReady=True`:
+After Keycloak/RHBK is up (e.g. chart `scripts/deploy-rhbk.sh`), set
+`COST_MGMT_NAMESPACE` / `COST_MGMT_RELEASE_NAME` (or `COST_MGMT_UI_BASE_URL`)
+so the UI client redirect URI matches
+`https://{CR_NAME}-ui-{NAMESPACE}.<apps-domain>/oauth2/callback`, then mirror
+the UI confidential client into the CR namespace before expecting `UIReady=True`:
 
 ```bash
 # Defaults: KEYCLOAK_NAMESPACE=keycloak, NAMESPACE=cost-byoi, CR_NAME=cost-management
@@ -110,6 +113,10 @@ NAMESPACE=cost-tests CR_NAME=cost-onprem ./config/samples/byoi/mirror-ui-oauth-s
 
 Override the Secret name with `spec.ui.oauthClientSecretRef.name` if needed.
 Cookie session Secret (`{cr}-ui-cookie-secret`) is still created by the operator.
+
+Set `spec.ui.app.image` and `spec.ui.oauthProxy.image` (repository and tag).
+Empty values yield `InvalidImageName`. With `ros.enabled: false` (sample default),
+ROS/Kruize are skipped — suitable for UI smoke without ROS images.
 
 ## Apply
 
@@ -139,8 +146,12 @@ kubectl apply -f config/samples/byoi/app/costmanagementserviceconfig.yaml
 ```bash
 kubectl -n cost-byoi get cmsc cost-management -w
 kubectl -n cost-byoi describe cmsc cost-management
-kubectl -n op-sdk-scaffold-system logs deploy/op-sdk-scaffold-controller-manager -f
+# OwnNamespace: operator runs in the CR namespace (not a separate system NS)
+kubectl -n cost-byoi logs deploy/koku-service-operator -f
 ```
+
+End-to-end pre-prod path (deps → operator → UI):
+[docs/development/pre-prod-install.md](../../docs/development/pre-prod-install.md).
 
 ## Monitoring (optional)
 
