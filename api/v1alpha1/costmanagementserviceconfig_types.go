@@ -544,21 +544,9 @@ type UIAppSpec struct {
 
 type GatewayRouteConfig struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
-	Hosts       []RouteHostSpec   `json:"hosts,omitempty"`
-	TLS         RouteTLSSpec      `json:"tls,omitempty"`
-}
-
-type RouteHostSpec struct {
-	// Empty host uses the cluster's default ingress domain.
-	Host  string          `json:"host,omitempty"`
-	Paths []RoutePathSpec `json:"paths,omitempty"`
-}
-
-type RoutePathSpec struct {
-	// +kubebuilder:default:="/"
-	Path string `json:"path,omitempty"`
-	// +kubebuilder:default:=Prefix
-	PathType string `json:"pathType,omitempty"`
+	// Custom hostname for the OpenShift Route. Leave empty to derive from clusterDomain.
+	Host string       `json:"host,omitempty"`
+	TLS  RouteTLSSpec `json:"tls,omitempty"`
 }
 
 type RouteTLSSpec struct {
