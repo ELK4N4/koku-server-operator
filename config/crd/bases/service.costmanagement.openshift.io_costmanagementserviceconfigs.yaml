@@ -1457,26 +1457,10 @@ spec:
                     additionalProperties:
                       type: string
                     type: object
-                  hosts:
-                    items:
-                      properties:
-                        host:
-                          description: Empty host uses the cluster's default ingress
-                            domain.
-                          type: string
-                        paths:
-                          items:
-                            properties:
-                              path:
-                                default: /
-                                type: string
-                              pathType:
-                                default: Prefix
-                                type: string
-                            type: object
-                          type: array
-                      type: object
-                    type: array
+                  host:
+                    description: Custom hostname for the OpenShift Route. Leave empty
+                      to derive from clusterDomain.
+                    type: string
                   tls:
                     properties:
                       insecureEdgeTerminationPolicy:
