@@ -1325,8 +1325,15 @@ spec:
                     properties:
                       create:
                         default: true
+                        description: |-
+                          Create controls whether the operator creates and owns the ServiceAccount.
+                          When false, the operator references Name (or the default name) without
+                          applying or adopting the object — the SA must already exist.
                         type: boolean
                       name:
+                        description: |-
+                          Name is the ServiceAccount name used by pods. When empty, a default
+                          name derived from the CR is used.
                         type: string
                     type: object
                   storage:
@@ -2475,8 +2482,15 @@ spec:
                     properties:
                       create:
                         default: true
+                        description: |-
+                          Create controls whether the operator creates and owns the ServiceAccount.
+                          When false, the operator references Name (or the default name) without
+                          applying or adopting the object — the SA must already exist.
                         type: boolean
                       name:
+                        description: |-
+                          Name is the ServiceAccount name used by pods. When empty, a default
+                          name derived from the CR is used.
                         type: string
                     type: object
                 type: object

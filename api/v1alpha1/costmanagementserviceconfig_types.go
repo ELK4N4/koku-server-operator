@@ -59,9 +59,14 @@ type ImageSpec struct {
 }
 
 type ServiceAccountSpec struct {
+	// Create controls whether the operator creates and owns the ServiceAccount.
+	// When false, the operator references Name (or the default name) without
+	// applying or adopting the object — the SA must already exist.
 	// +kubebuilder:default:=true
-	Create *bool  `json:"create,omitempty"`
-	Name   string `json:"name,omitempty"`
+	Create *bool `json:"create,omitempty"`
+	// Name is the ServiceAccount name used by pods. When empty, a default
+	// name derived from the CR is used.
+	Name string `json:"name,omitempty"`
 }
 
 // SecretKeyRef points to a key inside a named Secret.
