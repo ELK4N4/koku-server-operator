@@ -36,15 +36,15 @@ const (
 // -----------------------------------------------------------------------------
 
 // Profile selects a pre-defined resource sizing tier for all components.
-// +kubebuilder:validation:Enum=standard;ha
+// Only "standard" is accepted today; HA sizing maps are not implemented yet
+// (COST-7678 / COST-7693), so "ha" was removed from the enum to avoid a
+// silently no-op API.
+// +kubebuilder:validation:Enum=standard
 type Profile string
 
 const (
 	// ProfileStandard is suitable for single-node or small clusters.
 	ProfileStandard Profile = "standard"
-	// ProfileHA provides higher replica counts and resource requests for
-	// production multi-node deployments.
-	ProfileHA Profile = "ha"
 )
 
 // -----------------------------------------------------------------------------
@@ -59,9 +59,14 @@ type ImageSpec struct {
 }
 
 type ServiceAccountSpec struct {
+	// Create controls whether the operator creates and owns the ServiceAccount.
+	// When false, the operator references Name (or the default name) without
+	// applying or adopting the object — the SA must already exist.
 	// +kubebuilder:default:=true
-	Create *bool  `json:"create,omitempty"`
-	Name   string `json:"name,omitempty"`
+	Create *bool `json:"create,omitempty"`
+	// Name is the ServiceAccount name used by pods. When empty, a default
+	// name derived from the CR is used.
+	Name string `json:"name,omitempty"`
 }
 
 // SecretKeyRef points to a key inside a named Secret.
@@ -539,21 +544,9 @@ type UIAppSpec struct {
 
 type GatewayRouteConfig struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
-	Hosts       []RouteHostSpec   `json:"hosts,omitempty"`
-	TLS         RouteTLSSpec      `json:"tls,omitempty"`
-}
-
-type RouteHostSpec struct {
-	// Empty host uses the cluster's default ingress domain.
-	Host  string          `json:"host,omitempty"`
-	Paths []RoutePathSpec `json:"paths,omitempty"`
-}
-
-type RoutePathSpec struct {
-	// +kubebuilder:default:="/"
-	Path string `json:"path,omitempty"`
-	// +kubebuilder:default:=Prefix
-	PathType string `json:"pathType,omitempty"`
+	// Custom hostname for the OpenShift Route. Leave empty to derive from clusterDomain.
+	Host string       `json:"host,omitempty"`
+	TLS  RouteTLSSpec `json:"tls,omitempty"`
 }
 
 type RouteTLSSpec struct {
@@ -580,6 +573,7 @@ type MonitoringConfig struct {
 
 type CostManagementServiceConfigSpec struct {
 	// Profile selects pre-defined resource sizing. Defaults to standard.
+	// Only "standard" is valid until profile sizing maps are implemented.
 	// +kubebuilder:default:=standard
 	Profile        Profile              `json:"profile,omitempty"`
 	Global         GlobalConfig         `json:"global,omitempty"`

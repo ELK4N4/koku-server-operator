@@ -1325,8 +1325,15 @@ spec:
                     properties:
                       create:
                         default: true
+                        description: |-
+                          Create controls whether the operator creates and owns the ServiceAccount.
+                          When false, the operator references Name (or the default name) without
+                          applying or adopting the object — the SA must already exist.
                         type: boolean
                       name:
+                        description: |-
+                          Name is the ServiceAccount name used by pods. When empty, a default
+                          name derived from the CR is used.
                         type: string
                     type: object
                   storage:
@@ -1457,26 +1464,10 @@ spec:
                     additionalProperties:
                       type: string
                     type: object
-                  hosts:
-                    items:
-                      properties:
-                        host:
-                          description: Empty host uses the cluster's default ingress
-                            domain.
-                          type: string
-                        paths:
-                          items:
-                            properties:
-                              path:
-                                default: /
-                                type: string
-                              pathType:
-                                default: Prefix
-                                type: string
-                            type: object
-                          type: array
-                      type: object
-                    type: array
+                  host:
+                    description: Custom hostname for the OpenShift Route. Leave empty
+                      to derive from clusterDomain.
+                    type: string
                   tls:
                     properties:
                       insecureEdgeTerminationPolicy:
@@ -1862,11 +1853,11 @@ spec:
                 type: object
               profile:
                 default: standard
-                description: Profile selects pre-defined resource sizing. Defaults
-                  to standard.
+                description: |-
+                  Profile selects pre-defined resource sizing. Defaults to standard.
+                  Only "standard" is valid until profile sizing maps are implemented.
                 enum:
                 - standard
-                - ha
                 type: string
               rbac:
                 properties:
@@ -2475,8 +2466,15 @@ spec:
                     properties:
                       create:
                         default: true
+                        description: |-
+                          Create controls whether the operator creates and owns the ServiceAccount.
+                          When false, the operator references Name (or the default name) without
+                          applying or adopting the object — the SA must already exist.
                         type: boolean
                       name:
+                        description: |-
+                          Name is the ServiceAccount name used by pods. When empty, a default
+                          name derived from the CR is used.
                         type: string
                     type: object
                 type: object

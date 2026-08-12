@@ -55,6 +55,7 @@ func TestCdappConfigMap_ContainsDBAndKafka(t *testing.T) {
 
 func TestROSAPIDeployment_Shape(t *testing.T) {
 	cfg := rosCfg()
+	cfg.Spec.ROS.API.LogLevel = "DEBUG"
 	d := ROSAPIDeployment(cfg)
 	if d.Name != NameROSAPI(cfg) {
 		t.Errorf("Name = %q", d.Name)
@@ -81,6 +82,9 @@ func TestROSAPIDeployment_Shape(t *testing.T) {
 	}
 	if env["SERVICE_NAME"] != "ros-api" {
 		t.Errorf("SERVICE_NAME = %q", env["SERVICE_NAME"])
+	}
+	if env["LOG_LEVEL"] != "DEBUG" {
+		t.Errorf("LOG_LEVEL = %q, want DEBUG from spec.ros.api.logLevel", env["LOG_LEVEL"])
 	}
 	if c.LivenessProbe == nil || c.LivenessProbe.HTTPGet == nil || c.LivenessProbe.HTTPGet.Path != "/status" {
 		t.Errorf("liveness probe = %+v", c.LivenessProbe)
