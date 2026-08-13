@@ -52,17 +52,11 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes/custom-host,verbs=create
 // Namespace-scoped RBAC objects (Role + RoleBinding) — granted via RoleBinding.
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
-// Cluster-scoped: Kruize ClusterRole/Binding. Bound via cluster_access_role
-// (ClusterRoleBinding). list/watch omitted — SSA Patch + Get for delete.
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;create;update;patch;delete
-// +kubebuilder:rbac:groups=config.openshift.io,resources=ingresses,verbs=get
-// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
-// +kubebuilder:rbac:groups=console.openshift.io,resources=consolelinks,verbs=get;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
-// NooBaa discovery: get only the named admin Secret (typically openshift-storage).
-// Bound via cluster_access_role (ClusterRoleBinding), not the namespaced RoleBinding.
-// +kubebuilder:rbac:groups="",resources=secrets,resourceNames=noobaa-admin,verbs=get
+// Cluster-scoped resources (ingresses, storageclasses, consolelinks, clusterroles,
+// clusterrolebindings, noobaa-admin secret) live in cluster_access_role.yaml
+// (hand-maintained, bound via ClusterRoleBinding) — not here.
 
 func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
