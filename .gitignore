@@ -30,3 +30,9 @@ go.work
 .worktrees/
 .claude/
 docs/.markdown-viewer-temp.html
+
+# pytest
+test/pytest/.venv/
+test/pytest/reports/
+test/pytest/.pytest_cache/
+test/pytest/**/__pycache__/

@@ -54,11 +54,17 @@ STORAGE_CLASS=gp3-csi LOG_LEVEL=INFO ./config/samples/byoi/deploy-kafka.sh
 ```
 
 Point `spec.kafka.bootstrapServers` at that bootstrap address (the sample CR
-already uses the default). For chart pytest against an operator deploy:
+already uses the default). For the operator pytest harness:
 
 ```bash
 export KAFKA_NAMESPACE=kafka
+export NAMESPACE=cost-onprem
+export CR_NAME=cost-management
+./scripts/run-pytest.sh --no-ui
+# Or full path: ./scripts/deploy-test.sh --namespace cost-onprem
 ```
+
+See `test/pytest/README.md`.
 
 Tear down Kafka separately when finished:
 
@@ -99,8 +105,8 @@ UI confidential client into the CR namespace before expecting `UIReady=True`:
 # Target Secret: {CR_NAME}-ui-oauth-client (keys client-id / client-secret)
 ./config/samples/byoi/mirror-ui-oauth-secret.sh
 
-# Chart pytest / hybrid CR example:
-NAMESPACE=cost-tests CR_NAME=cost-onprem ./config/samples/byoi/mirror-ui-oauth-secret.sh
+# Chart pytest / hybrid CR example (operator harness defaults):
+NAMESPACE=cost-onprem CR_NAME=cost-management ./config/samples/byoi/mirror-ui-oauth-secret.sh
 ```
 
 Override the Secret name with `spec.ui.oauthClientSecretRef.name` if needed.

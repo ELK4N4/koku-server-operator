@@ -58,7 +58,7 @@ Last audited: 2026-08-09 against implementation in `internal/controller/` and `i
 |--------|---------|--------|-------|
 | [COST-7695](https://redhat.atlassian.net/browse/COST-7695) | Create OLM bundle | 🔄 | `make bundle` target wired, `PROJECT` file and `config/manifests/` kustomize bases present. Bundle not yet generated; CSV not written; `operator-sdk bundle validate` not yet run. |
 | [COST-7696](https://redhat.atlassian.net/browse/COST-7696) | Build CI pipeline for bundle | ❌ | GitHub Actions CI with lint/build/test/check-generated/container-build ✅. Missing: bundle validation, scorecard tests, CatalogSource, OLM install verification. |
-| [COST-7697](https://redhat.atlassian.net/browse/COST-7697) | Adapt existing E2E suite for operator | ❌ | |
+| [COST-7697](https://redhat.atlassian.net/browse/COST-7697) | Adapt existing E2E suite for operator | 🔄 | Pytest harness ported to `test/pytest/` + `scripts/deploy-test.sh` (CR lifecycle, no Helm). Cluster run + failure classification pending in COST-7697.md. |
 | [COST-7698](https://redhat.atlassian.net/browse/COST-7698) | Implement operator-specific E2E scenarios | ❌ | Unit tests for discovery, ownership, migration pipeline present. Full operator E2E not written. |
 | [COST-7699](https://redhat.atlassian.net/browse/COST-7699) | Set up OpenShift CI integration | ❌ | |
 | [COST-7700](https://redhat.atlassian.net/browse/COST-7700) | Write installation and configuration guides | ❌ | README, CLAUDE.md, CRC dev guide, design docs present. Formal installation/configuration/quickstart guides not written. |
