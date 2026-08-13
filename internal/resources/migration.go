@@ -321,7 +321,7 @@ func AdminBootstrapJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag s
 	env := append(rbacEnv(cfg),
 		EnvFromSecret("SYNC_ORG_ID", secretName, "org-id"),
 		EnvFromSecret("SYNC_ACCOUNT_NUMBER", secretName, "account-number"),
-		EnvFromSecretOptional("SYNC_USERNAME", secretName, "username"),
+		EnvFromSecret("SYNC_USERNAME", secretName, "username"),
 	)
 	script := rbacAdminBootstrapScript()
 	vols := []corev1.Volume{{
