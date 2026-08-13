@@ -91,15 +91,7 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 	// Finalizer registration and deletion above still run while paused.
 	if isPaused(cfg) {
 		original := cfg.DeepCopy()
-		r.setCondition(cfg, costv1alpha1.ConditionPaused, metav1.ConditionTrue,
-			"AnnotationSet", fmt.Sprintf("reconciliation paused (%s=true)", pauseAnnotation))
-		r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse,
-			"Paused", "reconciliation paused via annotation")
-		cfg.Status.ObservedGeneration = cfg.Generation
-		if r.Recorder != nil {
-			r.Recorder.Event(cfg, corev1.EventTypeNormal, "Paused",
-				"Reconciliation paused; remove the pause annotation to resume")
-		}
+		r.markPaused(cfg)
 		if patchErr := r.patchStatus(ctx, original, cfg); patchErr != nil {
 			logger.Error(patchErr, "failed to patch status while paused")
 			return ctrl.Result{}, patchErr
@@ -108,14 +100,11 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 	}
 
 	original := cfg.DeepCopy()
+	// Clear stale Paused before phases so resume is recorded even when
+	// reconcile returns an error (status is still patched below).
+	r.clearPaused(cfg)
 
 	result, reconcileErr := r.reconcile(ctx, cfg)
-
-	// Clear stale Paused condition once reconciliation is active again.
-	if apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionPaused) {
-		r.setCondition(cfg, costv1alpha1.ConditionPaused, metav1.ConditionFalse,
-			"Resumed", "pause annotation cleared; reconciliation active")
-	}
 
 	if patchErr := r.patchStatus(ctx, original, cfg); patchErr != nil {
 		logger.Error(patchErr, "failed to patch status")
@@ -125,6 +114,29 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 	}
 
 	return result, reconcileErr
+}
+
+// markPaused sets Paused/Progressing conditions and emits a Paused event.
+func (r *CostManagementServiceConfigReconciler) markPaused(cfg *costv1alpha1.CostManagementServiceConfig) {
+	r.setCondition(cfg, costv1alpha1.ConditionPaused, metav1.ConditionTrue,
+		"AnnotationSet", fmt.Sprintf("reconciliation paused (%s=%s)", pauseAnnotation, annotationTrue))
+	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse,
+		"Paused", "reconciliation paused via annotation")
+	cfg.Status.ObservedGeneration = cfg.Generation
+	if r.Recorder != nil {
+		r.Recorder.Event(cfg, corev1.EventTypeNormal, "Paused",
+			"Reconciliation paused; remove the pause annotation to resume")
+	}
+}
+
+// clearPaused flips a stale Paused=True condition to False (Resumed).
+// No-op when Paused is absent or already False.
+func (r *CostManagementServiceConfigReconciler) clearPaused(cfg *costv1alpha1.CostManagementServiceConfig) {
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionPaused) {
+		return
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionPaused, metav1.ConditionFalse,
+		"Resumed", "pause annotation cleared; reconciliation active")
 }
 
 // isPaused reports whether the CR pause annotation is set to annotationTrue
