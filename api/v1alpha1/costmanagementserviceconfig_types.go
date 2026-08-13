@@ -260,7 +260,7 @@ type EnvoySpec struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
-// +kubebuilder:validation:XValidation:rule="!has(self.issuerURL) || self.issuerURL == '' || self.issuerURL.startsWith('https://')",message="issuerURL must use https when set"
+// +kubebuilder:validation:XValidation:rule="!has(self.issuerURL) || size(self.issuerURL) == 0 || self.issuerURL.startsWith('https://')",message="issuerURL must use https when set"
 // +kubebuilder:validation:XValidation:rule="!has(self.audiences) || size(self.audiences) > 0",message="audiences must not be empty when set"
 type KeycloakSpec struct {
 	// Full URL of the Keycloak instance used for JWKS fetch (and issuer when

@@ -185,7 +185,8 @@ spec:
                     type: object
                     x-kubernetes-validations:
                     - message: issuerURL must use https when set
-                      rule: '!has(self.issuerURL) || self.issuerURL == ” || self.issuerURL.startsWith(''https://'')'
+                      rule: '!has(self.issuerURL) || size(self.issuerURL) == 0 ||
+                        self.issuerURL.startsWith(''https://'')'
                     - message: audiences must not be empty when set
                       rule: '!has(self.audiences) || size(self.audiences) > 0'
                 type: object
