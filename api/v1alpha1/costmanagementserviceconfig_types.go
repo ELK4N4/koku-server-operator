@@ -112,6 +112,7 @@ type GlobalConfig struct {
 // DatabaseConfig
 // -----------------------------------------------------------------------------
 
+// +kubebuilder:validation:XValidation:rule="self.deploy != false || (size(self.host) > 0 && size(self.secretName) > 0)",message="host and secretName are required when database.deploy is false"
 type DatabaseConfig struct {
 	// Deploy the bundled PostgreSQL StatefulSet (dev/CI only — not for production).
 	// Set false to connect to an external database.
@@ -148,6 +149,7 @@ type DatabaseStorageSpec struct {
 // CacheConfig (Valkey / Redis)
 // -----------------------------------------------------------------------------
 
+// +kubebuilder:validation:XValidation:rule="self.deploy != false || (size(self.host) > 0 && has(self.auth.secretName) && size(self.auth.secretName) > 0)",message="host and auth.secretName are required when cache.deploy is false"
 type CacheConfig struct {
 	// Deploy the bundled Valkey instance (dev/CI only — not for production).
 	// Set false to connect to an external Redis/Valkey endpoint.
@@ -258,6 +260,8 @@ type EnvoySpec struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="!has(self.issuerURL) || self.issuerURL == ” || self.issuerURL.startsWith('https://')",message="issuerURL must use https when set"
+// +kubebuilder:validation:XValidation:rule="!has(self.audiences) || size(self.audiences) > 0",message="audiences must not be empty when set"
 type KeycloakSpec struct {
 	// Full URL of the Keycloak instance used for JWKS fetch (and issuer when
 	// issuerURL is unset). Prefer an in-cluster http(s) Service URL so Envoy
