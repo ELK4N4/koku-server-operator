@@ -27,6 +27,11 @@ spec:
   kafka:
     bootstrapServers: "cost-onprem-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
 
+  ingress:
+    image:
+      repository: quay.io/iop/ingress
+      tag: "master"
+
   objectStorage:
     endpoint: "s3.openshift-storage.svc.cluster.local"
     port: 443
@@ -35,13 +40,13 @@ spec:
   costManagement:
     api:
       image:
-        repository: quay.io/martin_povolny/koku
-        tag: "latest"
+        repository: quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku
+        tag: "d8055ac"
       replicas: 1
     masu:
       image:
-        repository: quay.io/martin_povolny/koku
-        tag: "latest"
+        repository: quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku
+        tag: "d8055ac"
       replicas: 1
     listener:
       replicas: 2
@@ -91,12 +96,14 @@ spec:
     keycloak:
       # JWKS fetch URL (prefer in-cluster Service). When RHBK sets a public
       # hostname, tokens use that URL as iss — set issuerURL to match.
-      url: "https://keycloak.keycloak.svc.cluster.local"
+      url: "https://keycloak-service.keycloak.svc.cluster.local:8443"
       # issuerURL: "https://keycloak-keycloak.apps.example.com"
       realm: kubernetes
       audiences:
         - "cost-management-operator"
         - "cost-management-ui"
+      tls:
+        insecureSkipVerify: true
 
   ui:
     replicaCount: 1
@@ -107,14 +114,12 @@ spec:
     #   name: cost-management-ui-oauth-client
     oauthProxy:
       image:
-        repository: registry.access.redhat.com/rhceph/oauth2-proxy-rhel9
+        repository: registry.redhat.io/rhceph/oauth2-proxy-rhel9
         tag: "v7.6.0"
     app:
       image:
-        # arm64 build of koku-ui-mfe-onprem for CRC testing.
-        # For amd64 use: quay.io/insights-onprem/koku-ui-onprem:2f23c646581028bd385856b6713e6bf367baf953
-        repository: quay.io/martin_povolny/koku-ui-mfe-onprem
-        tag: "latest"
+        repository: quay.io/insights-onprem/koku-ui-onprem
+        tag: "2f23c646581028bd385856b6713e6bf367baf953"
 
   monitoring:
     enabled: true

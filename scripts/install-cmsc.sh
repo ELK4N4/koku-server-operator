@@ -1122,6 +1122,81 @@ preflight_validate() {
 deploy_helm_chart() {
     echo_info "Deploying Cost Management On Premise Helm chart..."
 
+    local project_root
+    project_root="$(cd "${SCRIPT_DIR}/.." && pwd)"
+    local crd_name="costmanagementserviceconfigs.service.costmanagement.openshift.io"
+    local sample="${project_root}/config/samples/service.costmanagement_v1alpha1_costmanagementserviceconfig.yaml"
+
+    local operator_ns="koku-service-operator-system"
+    local pull_img="${IMG:-image-registry.openshift-image-registry.svc:5000/${operator_ns}/koku-service-operator:latest}"
+    local registry_host
+    registry_host="$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}' 2>/dev/null || true)"
+    if [ -z "$registry_host" ]; then
+        echo_info "Enabling OpenShift registry default-route"
+        oc patch configs.imageregistry.operator.openshift.io/cluster --type merge -p '{"spec":{"defaultRoute":true}}' >/dev/null
+        local _i
+        for _i in $(seq 1 60); do
+            registry_host="$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}' 2>/dev/null || true)"
+            [ -n "$registry_host" ] && break
+            sleep 2
+        done
+    fi
+    if [ -z "$registry_host" ]; then
+        echo_error "OpenShift registry default-route not available"
+        return 1
+    fi
+    local build_img="${registry_host}/${operator_ns}/koku-service-operator:latest"
+    kubectl get ns "$operator_ns" >/dev/null 2>&1 || kubectl create ns "$operator_ns"
+    echo_info "Building and pushing operator image: $build_img"
+    if ! (cd "$project_root" && make docker-build IMG="$build_img" && { oc registry login --registry="$registry_host" 2>/dev/null || true; } && oc whoami -t | docker login -u "$(oc whoami)" --password-stdin "$registry_host" && make docker-push IMG="$build_img"); then
+        echo_error "Failed to build/push operator image"
+        return 1
+    fi
+    echo_info "CMSC CRD not found — deploying operator (make deploy)"
+    if ! (cd "$project_root" && make deploy IMG="$pull_img"); then
+        echo_error "Failed to deploy operator/CRDs via make deploy"
+        return 1
+    fi
+    # TODO: drop once wait-for init images are not pulled from the operator ImageStream across namespaces
+    echo_info "Granting image-puller so ${NAMESPACE} SAs can pull wait-for init image from ${operator_ns}"
+    oc adm policy add-role-to-group system:image-puller "system:serviceaccounts:${NAMESPACE}" -n "$operator_ns" || true
+    echo_success "Operator/CRDs deployed"
+
+    if [ ! -f "$sample" ]; then
+        echo_error "CMSC sample not found: $sample"
+        return 1
+    fi
+
+    # TODO: remove anyuid SCC grant after operator sets compatible securityContext for bundled DB/cache (fsGroup 26 / PodSecurity)
+    echo_info "Granting anyuid SCC for bundled DB/cache pods"
+    oc adm policy add-scc-to-user anyuid -z default -n "${NAMESPACE:-cost-onprem}" 2>/dev/null || true
+
+    echo_info "Applying CMSC sample: $sample"
+    if ! kubectl apply -f "$sample"; then
+        echo_error "Failed to apply CMSC"
+        return 1
+    fi
+
+    # RHBK advertises the public Route as OIDC issuer even when JWKS uses the
+    # in-cluster Service URL. Patch issuerURL from the detected Keycloak hostname
+    # so oauth2-proxy / Envoy match tokens without hardcoding a cluster URL in the sample.
+    local cr_name="${CR_NAME:-cost-management}"
+    if [ -z "${KEYCLOAK_URL:-}" ]; then
+        detect_keycloak || true
+    fi
+    if [ -n "${KEYCLOAK_URL:-}" ]; then
+        echo_info "Patching CMSC ${cr_name} spec.auth.keycloak.issuerURL=${KEYCLOAK_URL}"
+        if ! kubectl patch cmsc "$cr_name" -n "$NAMESPACE" --type merge \
+            -p "{\"spec\":{\"auth\":{\"keycloak\":{\"issuerURL\":\"${KEYCLOAK_URL}\"}}}}"; then
+            echo_warning "Failed to patch issuerURL; UI OIDC discovery may fail until set manually"
+        fi
+    else
+        echo_warning "KEYCLOAK_URL unset — skipping issuerURL patch (set auth.keycloak.issuerURL if UI OIDC fails)"
+    fi
+
+    echo_success "Helm chart deployed successfully"
+    return 0
+
     local chart_source=""
 
     # Determine chart source
@@ -1347,6 +1422,26 @@ deploy_helm_chart() {
 # Function to wait for pods to be ready
 wait_for_pods() {
     echo_info "Waiting for pods to be ready..."
+
+    # Wait for CMSC Ready (replaces Helm release pod wait)
+    local cr_name="cost-management"
+    local cr_ns="cost-onprem"
+    local timeout_s="${HELM_TIMEOUT:-900}"
+    timeout_s="${timeout_s%s}"
+    local end=$((SECONDS + timeout_s))
+    while (( SECONDS < end )); do
+        local phase
+        phase="$(kubectl get cmsc "$cr_name" -n "$cr_ns" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+        if [ "$phase" = "Ready" ]; then
+            echo_success "All pods are ready"
+            return 0
+        fi
+        echo_info "CMSC phase=${phase:-<empty>} (waiting for Ready)"
+        sleep 10
+    done
+    echo_error "CMSC did not become Ready within ${timeout_s}s"
+    kubectl get cmsc "$cr_name" -n "$cr_ns" -o yaml 2>/dev/null || true
+    return 1
 
     # Wait for all pods to be ready (excluding jobs) with extended timeout for full deployment
     kubectl wait --for=condition=ready pod -l "app.kubernetes.io/instance=$HELM_RELEASE_NAME" \
@@ -1599,9 +1694,16 @@ cleanup() {
         return 0
     fi
 
-    # Delete Helm release first
+    # Delete CMSC first so the operator finalizer can clean cluster-scoped resources
+    local cr_name="${CR_NAME:-cost-management}"
+    if kubectl get cmsc "$cr_name" -n "$NAMESPACE" >/dev/null 2>&1; then
+        echo_info "Deleting CMSC $cr_name..."
+        kubectl delete cmsc "$cr_name" -n "$NAMESPACE" --timeout=300s --ignore-not-found || true
+    fi
+
+    # Delete Helm release first (legacy chart path; no-op when only CMSC was used)
     echo_info "Deleting Helm release..."
-    if helm list -n "$NAMESPACE" | grep -q "$HELM_RELEASE_NAME"; then
+    if helm list -n "$NAMESPACE" 2>/dev/null | grep -q "$HELM_RELEASE_NAME"; then
         helm uninstall "$HELM_RELEASE_NAME" -n "$NAMESPACE" || true
         echo_info "Waiting for Helm release deletion to complete..."
         sleep 5
@@ -1703,7 +1805,11 @@ detect_keycloak() {
         local keycloak_cr=$(kubectl get keycloaks.k8s.keycloak.org -A -o jsonpath='{.items[0]}' 2>/dev/null)
         if [ -n "$keycloak_cr" ]; then
             keycloak_namespace=$(echo "$keycloak_cr" | jq -r '.metadata.namespace' 2>/dev/null)
-            keycloak_url=$(echo "$keycloak_cr" | jq -r '.status.hostname // empty' 2>/dev/null)
+            # RHBK status.hostname is often an object {hostname, strict, ...}; fall back to string form.
+            keycloak_url=$(echo "$keycloak_cr" | jq -r '
+              .status.hostname.hostname // .spec.hostname.hostname //
+              (select(.status.hostname|type=="string") | .status.hostname) // empty
+            ' 2>/dev/null)
             keycloak_found=true
             echo_success "Found RHBK Keycloak CR in namespace: $keycloak_namespace"
             if [ -n "$keycloak_url" ]; then
@@ -1817,7 +1923,9 @@ verify_keycloak_ui_client_secret() {
 create_ui_secrets() {
     echo_info "Creating UI secrets for oauth2-proxy..."
 
-    local release_name="${RELEASE_NAME:-cost-onprem}"
+    # Operator expects {cmsc.metadata.name}-ui-oauth-client / -ui-cookie-secret
+    # (sample CR name is cost-management; HELM_RELEASE_NAME is the namespace/release label).
+    local release_name="${CR_NAME:-cost-management}"
 
     # 1. Create cookie secret (random session encryption key)
     local cookie_secret_name="${release_name}-ui-cookie-secret"

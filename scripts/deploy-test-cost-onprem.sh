@@ -175,7 +175,7 @@ LOCAL_SCRIPTS_DIR="${SCRIPT_DIR}"
 SCRIPT_DEPLOY_RHBK="deploy-rhbk.sh"  # Red Hat Build of Keycloak (RHBK)
 SCRIPT_DEPLOY_KAFKA="deploy-kafka.sh"
 SCRIPT_DEPLOY_S4="deploy-s4-test.sh"  # S4 (Super Simple Storage Service)
-SCRIPT_INSTALL_HELM="install-helm-chart.sh"
+SCRIPT_INSTALL_HELM="install-cmsc.sh"
 SCRIPT_SETUP_TLS="setup-cost-mgmt-tls.sh"
 OPENSHIFT_VALUES_FILE="${OPENSHIFT_VALUES_FILE:-openshift-values.yaml}"
 SIZING_PROFILE="${SIZING_PROFILE:-}"
@@ -706,9 +706,8 @@ download_openshift_values() {
     log_info "Using local OpenShift values file from repository"
     log_verbose "Path: ${values_file}"
     if [[ ! -f "${values_file}" ]]; then
-        log_error "OpenShift values file not found at: ${values_file}"
-        log_error "Ensure ${OPENSHIFT_VALUES_FILE} exists at the repository root"
-        return 1
+        log_warning "OpenShift values file not found at: ${values_file} (skipping; CMSC sample apply does not require it)"
+        return 0
     fi
 
     if [[ "${VERBOSE}" == "true" ]]; then
@@ -1287,15 +1286,6 @@ main() {
     local _user_s3_use_ssl="${S3_USE_SSL:-}"
 
     deploy_s4
-
-    # Run Helm sanity test before deploying complex chart
-    if [[ "${SKIP_HELM}" == "false" ]] && [[ "${DRY_RUN}" == "false" ]]; then
-        log_info "Running Helm sanity test to verify basic functionality..."
-        if ! bash "${SCRIPT_DIR}/helm-sanity-test.sh"; then
-            log_error "Helm sanity test failed - aborting deployment"
-            exit 1
-        fi
-    fi
 
     deploy_helm_chart
     setup_tls
