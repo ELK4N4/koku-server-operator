@@ -24,6 +24,8 @@ make install
 echo "[2/4] Applying RBAC..."
 oc apply -f config/rbac/role.yaml
 oc apply -f config/rbac/cluster_access_role.yaml
+# Leader-election Role is namespaced — apply into the watch NS and bind default SA.
+oc apply -n "$NS" -f config/rbac/leader_election_role.yaml
 
 # Namespaced manage rights (Secrets, Jobs, …) — RoleBinding in $NS only.
 oc delete clusterrolebinding koku-operator-dev 2>/dev/null || true
@@ -32,6 +34,12 @@ oc create rolebinding koku-operator-dev \
   --serviceaccount="$NS:default" \
   -n "$NS" \
   2>/dev/null || echo "  (rolebinding koku-operator-dev already exists)"
+
+oc create rolebinding koku-operator-dev-leader-election \
+  --role=leader-election-role \
+  --serviceaccount="$NS:default" \
+  -n "$NS" \
+  2>/dev/null || echo "  (rolebinding koku-operator-dev-leader-election already exists)"
 
 # Cluster-scoped + NooBaa admin Secret get.
 oc create clusterrolebinding koku-operator-dev-cluster \

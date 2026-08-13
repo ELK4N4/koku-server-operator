@@ -18,15 +18,16 @@ The worked example uses the checked-in BYOI sample names. Override as needed
 |----------|----------------|---------|
 | `NAMESPACE` | `cost-byoi` | CR **and** operator namespace |
 | `CR_NAME` | `cost-management` | `CostManagementServiceConfig` metadata.name |
-| Infra NS | `cost-byoi-infra` | Postgres, Valkey, MinIO |
-| Kafka NS | `kafka` | AMQ Streams cluster |
-| Keycloak NS | `keycloak` | RHBK (external; never owned by this operator) |
+| `INFRA_NAMESPACE` | `cost-byoi-infra` | Postgres, Valkey, MinIO (`./hack/deploy-byoi.sh`) |
+| `KAFKA_NAMESPACE` | `kafka` | AMQ Streams cluster |
+| `KEYCLOAK_NAMESPACE` | `keycloak` | RHBK (external; never owned by this operator) |
 
 ```bash
 export NAMESPACE=cost-byoi
 export CR_NAME=cost-management
-# Chart-style alternative:
-# export NAMESPACE=cost-tests CR_NAME=cost-onprem
+export INFRA_NAMESPACE=cost-byoi-infra
+# Chart-style / lab alternative:
+# export NAMESPACE=cost-gold CR_NAME=cost-onprem INFRA_NAMESPACE=cost-gold-infra
 ```
 
 UI Route host pattern:
@@ -48,10 +49,43 @@ Clone this repo and work from the root.
 
 ## Part A — Optional dependencies (BYOI)
 
-Skip any subsection if you already have equivalent customer-managed services.
-Point the CR at those endpoints instead of the fixture hostnames.
+Skip this part if you already have equivalent customer-managed services and can
+point the CR at those endpoints.
 
-### A1. Kafka (AMQ Streams) — recommended
+### One-shot (recommended)
+
+From the operator repo root (Keycloak script comes from the sibling
+`cost-onprem-chart` checkout — override with `CHART_ROOT` / `RHBK_SCRIPT`):
+
+```bash
+export NAMESPACE=cost-byoi
+export CR_NAME=cost-management
+export INFRA_NAMESPACE=cost-byoi-infra
+# Optional overrides: KAFKA_NAMESPACE, KEYCLOAK_NAMESPACE, STORAGE_CLASS, CHART_ROOT
+
+./hack/deploy-byoi.sh
+```
+
+This runs A1–A4 plus app Secrets in `$NAMESPACE`:
+
+1. AMQ Streams Kafka (`config/samples/byoi/deploy-kafka.sh`)
+2. Postgres / Valkey / MinIO (`config/samples/byoi/infra`, namespace-overridable)
+3. Keycloak / RHBK (`cost-onprem-chart` `scripts/deploy-rhbk.sh`) with
+   `COST_MGMT_NAMESPACE` / `COST_MGMT_RELEASE_NAME` / UI redirect URL aligned
+4. Mirror UI OAuth client Secret → `${NAMESPACE}/${CR_NAME}-ui-oauth-client`
+5. Apply `byoi-*-credentials` Secrets into `$NAMESPACE`
+
+Skip individual steps with `SKIP_KAFKA=1`, `SKIP_INFRA=1`, `SKIP_KEYCLOAK=1`,
+or `SKIP_OAUTH_MIRROR=1`.
+
+Credentials in the fixture YAMLs are **fixed test values — not for production**.
+
+### Manual steps (same as the script)
+
+<details>
+<summary>Expand for A1–A4 run by hand</summary>
+
+#### A1. Kafka (AMQ Streams)
 
 ```bash
 STORAGE_CLASS=<your-sc> LOG_LEVEL=INFO ./config/samples/byoi/deploy-kafka.sh
@@ -61,7 +95,7 @@ STORAGE_CLASS=<your-sc> LOG_LEVEL=INFO ./config/samples/byoi/deploy-kafka.sh
 
 Lightweight Redpanda alternative: see [config/samples/byoi/README.md](../../config/samples/byoi/README.md).
 
-### A2. Postgres, Valkey, MinIO
+#### A2. Postgres, Valkey, MinIO
 
 ```bash
 oc adm policy add-scc-to-user anyuid -z byoi-infra -n cost-byoi-infra 2>/dev/null || true
@@ -73,17 +107,11 @@ kubectl -n cost-byoi-infra rollout status deploy/minio --timeout=120s
 kubectl -n cost-byoi-infra wait --for=condition=complete job/minio-init --timeout=120s
 ```
 
-Credentials in these YAMLs are **fixed test values — not for production**.
+#### A3. Keycloak / RHBK (required for UI login)
 
-### A3. Keycloak / RHBK (required for UI login)
-
-The operator never deploys Keycloak. Use the chart script (sibling repo) or any
-OIDC provider that can issue the UI client.
-
-From the **cost-onprem-chart** checkout:
+The operator never deploys Keycloak. From the **cost-onprem-chart** checkout:
 
 ```bash
-# Align redirect URI construction with this install:
 export COST_MGMT_NAMESPACE="$NAMESPACE"
 export COST_MGMT_RELEASE_NAME="$CR_NAME"
 # Optional explicit override:
@@ -92,25 +120,24 @@ export COST_MGMT_RELEASE_NAME="$CR_NAME"
 LOG_LEVEL=INFO ./scripts/deploy-rhbk.sh
 ```
 
-The script creates realm user **`admin` / `admin`** by default and writes Secret
-`keycloak-client-secret-cost-management-ui` in the Keycloak namespace.
+Default realm user: **`admin` / `admin`**. Secret
+`keycloak-client-secret-cost-management-ui` is created in the Keycloak namespace.
 
-If Keycloak was installed before the UI Route existed, re-run with
-`COST_MGMT_UI_BASE_URL` set (or patch the UI client redirect URI to
-`https://<ui-host>/oauth2/callback`).
-
-### A4. Mirror UI OAuth client Secret into the CR namespace
+#### A4. Mirror UI OAuth client Secret
 
 ```bash
 kubectl get ns "$NAMESPACE" >/dev/null 2>&1 || kubectl create ns "$NAMESPACE"
 
 NAMESPACE="$NAMESPACE" CR_NAME="$CR_NAME" \
   ./config/samples/byoi/mirror-ui-oauth-secret.sh
-# Creates Secret ${CR_NAME}-ui-oauth-client (keys: client-id, client-secret)
 ```
 
-Without this Secret, condition `UIReady` stays False and the UI Deployment is
-not applied.
+Without this Secret, `UIReady` stays False and the UI Deployment is not applied.
+
+</details>
+
+When `$INFRA_NAMESPACE` is not `cost-byoi-infra`, set matching hosts in the CR
+(`postgresql.${INFRA_NAMESPACE}.svc…`, etc.) before Part B.
 
 ---
 
@@ -145,15 +172,28 @@ Watch logs:
 kubectl -n "$NAMESPACE" logs -f deploy/koku-service-operator
 ```
 
+`hack/deploy-incluster.sh` / `hack/deploy-crc.sh` bind `default` SA to
+`manager-role`, `manager-cluster-role`, and the namespaced
+`leader-election-role` (leases). The Deployment passes
+`--operator-image=$IMG` (required on gold for wait-for init containers).
+
 ### B3. App Secrets, then the CR
 
-```bash
-# Sample secrets assume namespace cost-byoi — edit metadata.namespace if needed.
-kubectl apply -f config/samples/byoi/app/secrets.yaml
+If you used `./hack/deploy-byoi.sh`, app Secrets are already in `$NAMESPACE`.
+Otherwise apply them first (retarget `metadata.namespace` if needed):
 
+```bash
+kubectl apply -f config/samples/byoi/app/secrets.yaml
+```
+
+Then apply the CR (edit hosts / domain / Keycloak issuer to match Part A):
+
+```bash
 # Edit before apply:
 #   - metadata.namespace / metadata.name  → $NAMESPACE / $CR_NAME
 #   - spec.global.clusterDomain           → apps.<your-cluster>
+#   - database/cache/objectStorage hosts  → *.${INFRA_NAMESPACE}.svc…
+#   - kafka.bootstrapServers              → bootstrap in $KAFKA_NAMESPACE
 #   - spec.auth.keycloak.issuerURL        → public Keycloak issuer (iss)
 #   - spec.auth.keycloak.tls              → caCertSecretName or insecureSkipVerify (dev)
 kubectl apply -f config/samples/byoi/app/costmanagementserviceconfig.yaml

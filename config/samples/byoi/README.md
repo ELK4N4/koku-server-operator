@@ -121,10 +121,14 @@ ROS/Kruize are skipped — suitable for UI smoke without ROS images.
 ## Apply
 
 ```bash
-# 0. Kafka — AMQ Streams (recommended) or Redpanda (lightweight); see above
-# 0b. Keycloak (external) + mirror UI OAuth Secret — see UI OAuth Secret above
+# 0. Optional one-shot BYOI (Kafka + infra + Keycloak + OAuth mirror + Secrets):
+#    NAMESPACE=cost-byoi CR_NAME=cost-management ./hack/deploy-byoi.sh
+#    Or step through config/samples/byoi pieces manually — see
+#    docs/development/pre-prod-install.md
 
-# 1. Infrastructure (Postgres, Valkey, MinIO)
+# 0b. If you did not use deploy-byoi.sh: Kafka, infra, Keycloak, OAuth mirror
+
+# 1. Infrastructure (Postgres, Valkey, MinIO) — skip if deploy-byoi.sh already ran
 kubectl apply -k config/samples/byoi/infra
 
 # Wait until pods are Ready (adjust timeout as needed)

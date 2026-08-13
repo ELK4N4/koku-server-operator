@@ -68,6 +68,7 @@ spec:
         args:
         - --leader-elect
         - --health-probe-bind-address=:8081
+        - --operator-image=${IMG}
         env:
         - name: NAMESPACE
           valueFrom:
