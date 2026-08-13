@@ -36,14 +36,20 @@ const (
 // -----------------------------------------------------------------------------
 
 // Profile selects a pre-defined resource sizing tier for all components.
-// Only "standard" is accepted today; HA sizing maps are not implemented yet
-// (COST-7678 / COST-7693), so "ha" was removed from the enum to avoid a
-// silently no-op API.
+//
+// NOT YET IMPLEMENTED — the field is accepted but not read by the reconciler.
+// Profile-based sizing (mapping profile values to per-component resource
+// defaults) is tracked in COST-7678. The Helm chart ships four sizing
+// overlays (small/medium/large/xlarge in values-*.yaml); the operator
+// equivalent will apply similar defaults when this field is wired.
+//
+// Until then, use per-component spec.*.resources fields directly.
+// Only "standard" is accepted; "ha" was removed to avoid a no-op API.
 // +kubebuilder:validation:Enum=standard
 type Profile string
 
 const (
-	// ProfileStandard is suitable for single-node or small clusters.
+	// ProfileStandard is the default sizing tier. No sizing map is applied yet.
 	ProfileStandard Profile = "standard"
 )
 
@@ -573,7 +579,8 @@ type MonitoringConfig struct {
 
 type CostManagementServiceConfigSpec struct {
 	// Profile selects pre-defined resource sizing. Defaults to standard.
-	// Only "standard" is valid until profile sizing maps are implemented.
+	// NOT YET IMPLEMENTED — accepted but not read by the reconciler (COST-7678).
+	// Use per-component resources fields until profile sizing is wired.
 	// +kubebuilder:default:=standard
 	Profile        Profile              `json:"profile,omitempty"`
 	Global         GlobalConfig         `json:"global,omitempty"`

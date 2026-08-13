@@ -1855,7 +1855,8 @@ spec:
                 default: standard
                 description: |-
                   Profile selects pre-defined resource sizing. Defaults to standard.
-                  Only "standard" is valid until profile sizing maps are implemented.
+                  NOT YET IMPLEMENTED — accepted but not read by the reconciler (COST-7678).
+                  Use per-component resources fields until profile sizing is wired.
                 enum:
                 - standard
                 type: string
