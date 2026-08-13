@@ -258,6 +258,8 @@ spec:
                   port:
                     default: 6379
                     format: int32
+                    maximum: 65535
+                    minimum: 1
                     type: integer
                   resources:
                     description: ResourceRequirements describes the compute resource
@@ -1376,6 +1378,8 @@ spec:
                   port:
                     default: 5432
                     format: int32
+                    maximum: 65535
+                    minimum: 1
                     type: integer
                   resources:
                     description: ResourceRequirements describes the compute resource
@@ -1446,6 +1450,11 @@ spec:
                     type: string
                   sslMode:
                     default: disable
+                    enum:
+                    - disable
+                    - require
+                    - verify-ca
+                    - verify-full
                     type: string
                   storage:
                     properties:
@@ -1828,6 +1837,8 @@ spec:
                   port:
                     default: 443
                     format: int32
+                    maximum: 65535
+                    minimum: 1
                     type: integer
                   s3:
                     properties:

@@ -123,8 +123,11 @@ type DatabaseConfig struct {
 	// Host for an external PostgreSQL instance (only used when Deploy is false).
 	Host string `json:"host,omitempty"`
 	// +kubebuilder:default:=5432
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
 	Port int32 `json:"port,omitempty"`
 	// +kubebuilder:default:=disable
+	// +kubebuilder:validation:Enum=disable;require;verify-ca;verify-full
 	SSLMode string `json:"sslMode,omitempty"`
 
 	// Name of an existing Secret containing DB credentials.
@@ -155,6 +158,8 @@ type CacheConfig struct {
 	// Host for an external cache (only used when Deploy is false).
 	Host string `json:"host,omitempty"`
 	// +kubebuilder:default:=6379
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
 	Port int32 `json:"port,omitempty"`
 
 	Auth        CacheAuthSpec               `json:"auth,omitempty"`
@@ -218,6 +223,8 @@ type ObjectStorageConfig struct {
 	// +kubebuilder:default:="s3.openshift-storage.svc.cluster.local"
 	Endpoint string `json:"endpoint,omitempty"`
 	// +kubebuilder:default:=443
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
 	Port int32 `json:"port,omitempty"`
 	// +kubebuilder:default:=true
 	UseSSL *bool `json:"useSSL,omitempty"`
