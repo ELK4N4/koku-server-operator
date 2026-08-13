@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -27,9 +28,12 @@ import (
 const (
 	fieldOwner    = "koku-service-operator"
 	finalizerName = "costmanagementserviceconfigs.service.costmanagement.openshift.io/cleanup"
-	requeueFast   = 10 * time.Second
-	requeueSlow   = 30 * time.Second
-	requeueDrift  = 5 * time.Minute
+	// pauseAnnotation halts phased reconciliation when set to "true".
+	// Deletion (finalizer cleanup) still runs while paused.
+	pauseAnnotation = "costmanagementserviceconfigs.service.costmanagement.openshift.io/pause"
+	requeueFast     = 10 * time.Second
+	requeueSlow     = 30 * time.Second
+	requeueDrift    = 5 * time.Minute
 )
 
 type CostManagementServiceConfigReconciler struct {
@@ -80,9 +84,35 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 		return ctrl.Result{}, nil // requeue triggered by the Update
 	}
 
+	// Pause/resume (COST-7680): annotation short-circuits the phase pipeline.
+	// Finalizer registration and deletion above still run while paused.
+	if isPaused(cfg) {
+		original := cfg.DeepCopy()
+		r.setCondition(cfg, costv1alpha1.ConditionPaused, metav1.ConditionTrue,
+			"AnnotationSet", fmt.Sprintf("reconciliation paused (%s=true)", pauseAnnotation))
+		r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse,
+			"Paused", "reconciliation paused via annotation")
+		cfg.Status.ObservedGeneration = cfg.Generation
+		if r.Recorder != nil {
+			r.Recorder.Event(cfg, corev1.EventTypeNormal, "Paused",
+				"Reconciliation paused; remove the pause annotation to resume")
+		}
+		if patchErr := r.patchStatus(ctx, original, cfg); patchErr != nil {
+			logger.Error(patchErr, "failed to patch status while paused")
+			return ctrl.Result{}, patchErr
+		}
+		return ctrl.Result{}, nil
+	}
+
 	original := cfg.DeepCopy()
 
 	result, reconcileErr := r.reconcile(ctx, cfg)
+
+	// Clear stale Paused condition once reconciliation is active again.
+	if apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionPaused) {
+		r.setCondition(cfg, costv1alpha1.ConditionPaused, metav1.ConditionFalse,
+			"Resumed", "pause annotation cleared; reconciliation active")
+	}
 
 	if patchErr := r.patchStatus(ctx, original, cfg); patchErr != nil {
 		logger.Error(patchErr, "failed to patch status")
@@ -92,6 +122,19 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 	}
 
 	return result, reconcileErr
+}
+
+// isPaused reports whether the CR pause annotation is set to "true"
+// (case-insensitive). Missing or any other value means not paused.
+func isPaused(cfg *costv1alpha1.CostManagementServiceConfig) bool {
+	if cfg.Annotations == nil {
+		return false
+	}
+	v, ok := cfg.Annotations[pauseAnnotation]
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(v), "true")
 }
 
 // reconcileDelete removes cluster-scoped resources that cannot be cleaned up via
