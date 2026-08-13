@@ -1,6 +1,8 @@
 package v1alpha1
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
@@ -19,7 +21,7 @@ func validateResourceRequirements(path *field.Path, res corev1.ResourceRequireme
 			allErrs = append(allErrs, field.Invalid(
 				path.Child("requests").Key(string(name)),
 				reqQty.String(),
-				"must be less than or equal to limits["+string(name)+"]",
+				fmt.Sprintf("%s must be less than or equal to %s", reqQty.String(), limitQty.String()),
 			))
 		}
 	}

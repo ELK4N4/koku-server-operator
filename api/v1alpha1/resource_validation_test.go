@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -43,6 +44,9 @@ func TestValidateResourceRequirements(t *testing.T) {
 		errs := validateResourceRequirements(path, res)
 		if len(errs) != 1 {
 			t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+		}
+		if got := errs[0].Error(); !strings.Contains(got, "2 must be less than or equal to 500m") {
+			t.Fatalf("unexpected error message: %q", got)
 		}
 	})
 
