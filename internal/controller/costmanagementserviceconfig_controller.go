@@ -28,12 +28,15 @@ import (
 const (
 	fieldOwner    = "koku-service-operator"
 	finalizerName = "costmanagementserviceconfigs.service.costmanagement.openshift.io/cleanup"
-	// pauseAnnotation halts phased reconciliation when set to "true".
+	// pauseAnnotation halts phased reconciliation when set to annotationTrue.
 	// Deletion (finalizer cleanup) still runs while paused.
 	pauseAnnotation = "costmanagementserviceconfigs.service.costmanagement.openshift.io/pause"
-	requeueFast     = 10 * time.Second
-	requeueSlow     = 30 * time.Second
-	requeueDrift    = 5 * time.Minute
+	// annotationTrue is the canonical truthy value for Kubernetes-style annotations
+	// (pause, default StorageClass, etc.). Shared to satisfy goconst.
+	annotationTrue = "true"
+	requeueFast    = 10 * time.Second
+	requeueSlow    = 30 * time.Second
+	requeueDrift   = 5 * time.Minute
 )
 
 type CostManagementServiceConfigReconciler struct {
@@ -124,7 +127,7 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 	return result, reconcileErr
 }
 
-// isPaused reports whether the CR pause annotation is set to "true"
+// isPaused reports whether the CR pause annotation is set to annotationTrue
 // (case-insensitive). Missing or any other value means not paused.
 func isPaused(cfg *costv1alpha1.CostManagementServiceConfig) bool {
 	if cfg.Annotations == nil {
@@ -134,7 +137,7 @@ func isPaused(cfg *costv1alpha1.CostManagementServiceConfig) bool {
 	if !ok {
 		return false
 	}
-	return strings.EqualFold(strings.TrimSpace(v), "true")
+	return strings.EqualFold(strings.TrimSpace(v), annotationTrue)
 }
 
 // reconcileDelete removes cluster-scoped resources that cannot be cleaned up via

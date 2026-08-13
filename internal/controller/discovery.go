@@ -121,7 +121,7 @@ func discoverDefaultStorageClass(ctx context.Context, c client.Client) (string, 
 	}
 	for i := range list.Items {
 		sc := &list.Items[i]
-		if sc.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" {
+		if sc.Annotations["storageclass.kubernetes.io/is-default-class"] == annotationTrue {
 			return sc.Name, nil
 		}
 	}

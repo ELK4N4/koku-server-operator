@@ -23,7 +23,7 @@ func TestIsPaused(t *testing.T) {
 	}{
 		{name: "nil annotations", want: false},
 		{name: "missing key", annotations: map[string]string{}, want: false},
-		{name: "true", annotations: map[string]string{pauseAnnotation: "true"}, want: true},
+		{name: "true", annotations: map[string]string{pauseAnnotation: annotationTrue}, want: true},
 		{name: "TRUE case-insensitive", annotations: map[string]string{pauseAnnotation: "TRUE"}, want: true},
 		{name: "true with spaces", annotations: map[string]string{pauseAnnotation: " true "}, want: true},
 		{name: "false", annotations: map[string]string{pauseAnnotation: "false"}, want: false},
@@ -44,7 +44,7 @@ func TestIsPaused(t *testing.T) {
 func TestReconcile_PausedSkipsPhases(t *testing.T) {
 	cr := minimalCR(testCRName, testNamespace)
 	controllerutil.AddFinalizer(cr, finalizerName)
-	cr.Annotations = map[string]string{pauseAnnotation: "true"}
+	cr.Annotations = map[string]string{pauseAnnotation: annotationTrue}
 	// Seed a Ready-ish status so we can assert pause does not wipe Available.
 	cr.Status.Phase = costv1alpha1.PhaseReady
 	apimeta.SetStatusCondition(&cr.Status.Conditions, metav1.Condition{
