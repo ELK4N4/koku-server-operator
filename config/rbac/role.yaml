@@ -23,29 +23,10 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - endpoints
-  - nodes
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - events
   verbs:
   - create
   - patch
-- apiGroups:
-  - apps
-  resources:
-  - daemonsets
-  - replicasets
-  verbs:
-  - get
-  - list
-  - watch
 - apiGroups:
   - apps
   resources:
@@ -72,39 +53,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - config.openshift.io
-  resources:
-  - ingresses
-  verbs:
-  - get
-- apiGroups:
-  - console.openshift.io
-  resources:
-  - consolelinks
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - custom.metrics.k8s.io
-  resources:
-  - '*'
-  verbs:
-  - get
-  - list
-- apiGroups:
-  - metrics.k8s.io
-  resources:
-  - nodes
-  - pods
-  verbs:
-  - get
-  - list
 - apiGroups:
   - monitoring.coreos.com
   resources:
@@ -133,8 +81,6 @@ rules:
 - apiGroups:
   - rbac.authorization.k8s.io
   resources:
-  - clusterrolebindings
-  - clusterroles
   - rolebindings
   - roles
   verbs:
@@ -189,10 +135,3 @@ rules:
   - get
   - patch
   - update
-- apiGroups:
-  - storage.k8s.io
-  resources:
-  - storageclasses
-  verbs:
-  - get
-  - list

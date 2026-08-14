@@ -34,8 +34,11 @@ const (
 
 type CostManagementServiceConfigReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	// APIReader is an uncached client for cross-namespace reads (e.g. NooBaa
+	// admin Secret in openshift-storage) that are outside Cache.DefaultNamespaces.
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
+	Recorder  record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=service.costmanagement.openshift.io,resources=costmanagementserviceconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -47,18 +50,13 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors;prometheusrules,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes/custom-host,verbs=create
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings;roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=config.openshift.io,resources=ingresses,verbs=get
-// +kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;list
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=console.openshift.io,resources=consolelinks,verbs=get;list;watch;create;update;patch;delete
+// Namespace-scoped RBAC objects (Role + RoleBinding) — granted via RoleBinding.
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
-// TODO: review these Kruize escalation rules vs KruizeClusterRole() — operator must hold them to create that ClusterRole.
-// +kubebuilder:rbac:groups=core,resources=pods;nodes;endpoints,verbs=get;list;watch
-// +kubebuilder:rbac:groups=apps,resources=daemonsets;replicasets,verbs=get;list;watch
-// +kubebuilder:rbac:groups=metrics.k8s.io,resources=nodes;pods,verbs=get;list
-// +kubebuilder:rbac:groups=custom.metrics.k8s.io,resources=*,verbs=get;list
+// Cluster-scoped resources (ingresses, storageclasses, consolelinks, clusterroles,
+// clusterrolebindings, noobaa-admin secret) live in cluster_access_role.yaml
+// (hand-maintained, bound via ClusterRoleBinding) — not here.
 
 func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -317,6 +315,9 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 			imageTag: resources.RBACSeedJobTag(cfg.Spec.RBAC.Image.Tag),
 			build:    func() *batchv1.Job { return resources.AdminBootstrapJob(cfg, cfg.Spec.RBAC.Image.Tag) },
 		})
+	} else if cfg.Spec.RBAC.BootstrapAdmin.Enabled {
+		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "BootstrapAdminSkipped",
+			"bootstrapAdmin.enabled is true but secretRef.name is empty — admin bootstrap will not run; set spec.rbac.bootstrapAdmin.secretRef to a Secret with keys org-id, account-number, username")
 	}
 
 	for i, step := range steps {

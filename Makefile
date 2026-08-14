@@ -94,7 +94,8 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook \
 	  "paths=./api/...;./internal/...;./cmd/...;./test/..." \
-	  output:crd:artifacts:config=config/crd/bases
+	  output:crd:artifacts:config=config/crd/bases \
+	  output:webhook:artifacts:config=config/webhook
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -161,8 +162,13 @@ build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
 .PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go --operator-image=$(IMG)
+run: manifests generate fmt vet ## Run a controller from your host (OwnNamespace).
+	@if [ -z "$${NAMESPACE}" ]; then \
+		echo "NAMESPACE is required for out-of-cluster runs (OwnNamespace)."; \
+		echo "Example: NAMESPACE=cost-onprem make run"; \
+		exit 1; \
+	fi
+	NAMESPACE=$(NAMESPACE) go run ./cmd/main.go --operator-image=$(IMG)
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
