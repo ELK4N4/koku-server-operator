@@ -180,6 +180,18 @@ func TestKeycloakDefaults(t *testing.T) {
 	}
 }
 
+// envoyROSMarkers are Envoy YAML fragments present only when ROS is enabled.
+// Keep the omit-ROS tests in sync with these so Cost-only configs cannot leak
+// partial ROS routes/clusters.
+var envoyROSMarkers = []string{
+	"name: ros-api-backend",
+	"cluster: ros-api-backend",
+	"cluster_name: ros-api-backend",
+	"/api/cost-management/v1/recommendations/openshift",
+	"__ROS_ROUTE__",
+	"__ROS_CLUSTER__",
+}
+
 func TestEnvoyYAMLContainsIssuerAudiencesAndKokuCluster(t *testing.T) {
 	cfg := testCfg()
 	enabled := true
@@ -204,6 +216,14 @@ func TestEnvoyYAMLContainsIssuerAudiencesAndKokuCluster(t *testing.T) {
 			t.Errorf("EnvoyYAML missing %q", want)
 		}
 	}
+	for _, marker := range envoyROSMarkers {
+		if strings.HasPrefix(marker, "__") {
+			continue // unsubstituted tokens must not appear when ROS is on
+		}
+		if !strings.Contains(yaml, marker) {
+			t.Errorf("EnvoyYAML (ROS enabled) missing ROS marker %q", marker)
+		}
+	}
 	// Backend ports must match ROS Service (8000) and RBAC Service (8080).
 	rosIdx := strings.Index(yaml, "name: ros-api-backend")
 	rbacIdx := strings.Index(yaml, "name: rbac-api-backend")
@@ -223,7 +243,7 @@ func TestEnvoyYAMLContainsIssuerAudiencesAndKokuCluster(t *testing.T) {
 	if !strings.Contains(rbacBlock, "port_value: 8080") {
 		t.Error("rbac-api-backend should use port 8080")
 	}
-	for _, tok := range []string{"__HTTP_PORT__", "__ISSUER__", "__LUA__", "__KOKU_HOST__", "__KC_TLS__"} {
+	for _, tok := range []string{"__HTTP_PORT__", "__ISSUER__", "__LUA__", "__KOKU_HOST__", "__KC_TLS__", "__ROS_ROUTE__", "__ROS_CLUSTER__"} {
 		if strings.Contains(yaml, tok) {
 			t.Errorf("EnvoyYAML left unsubstituted token %q", tok)
 		}
@@ -242,32 +262,27 @@ func TestEnvoyYAMLHTTPKeycloakOmitsTLS(t *testing.T) {
 	}
 }
 
+func assertEnvoyYAMLOmitsROS(t *testing.T, yaml string, path string) {
+	t.Helper()
+	for _, marker := range envoyROSMarkers {
+		if strings.Contains(yaml, marker) {
+			t.Errorf("EnvoyYAML should omit ROS marker %q when ros.enabled is %s", marker, path)
+		}
+	}
+	if !strings.Contains(yaml, "name: koku-api-backend") {
+		t.Errorf("koku-api-backend must still be present when ros.enabled is %s", path)
+	}
+}
+
 func TestEnvoyYAMLOmitsROSWhenDisabled(t *testing.T) {
 	cfg := testCfg()
 	// nil / omitted Enabled also means off (beta default); exercise explicit false.
 	disabled := false
 	cfg.Spec.ROS.Enabled = &disabled
-	yaml := EnvoyYAML(cfg)
-	if strings.Contains(yaml, "ros-api-backend") {
-		t.Error("EnvoyYAML should omit ros-api-backend when ros.enabled=false")
-	}
-	if strings.Contains(yaml, "/api/cost-management/v1/recommendations/openshift") {
-		t.Error("EnvoyYAML should omit ROS recommendations route when ros.enabled=false")
-	}
-	if !strings.Contains(yaml, "name: koku-api-backend") {
-		t.Error("koku-api-backend must still be present")
-	}
-	for _, tok := range []string{"__ROS_ROUTE__", "__ROS_CLUSTER__"} {
-		if strings.Contains(yaml, tok) {
-			t.Errorf("EnvoyYAML left unsubstituted token %q", tok)
-		}
-	}
+	assertEnvoyYAMLOmitsROS(t, EnvoyYAML(cfg), "explicitly false")
 
 	cfgNil := testCfg()
-	yamlNil := EnvoyYAML(cfgNil)
-	if strings.Contains(yamlNil, "ros-api-backend") {
-		t.Error("EnvoyYAML should omit ros-api-backend when ros.enabled is omitted (default false)")
-	}
+	assertEnvoyYAMLOmitsROS(t, EnvoyYAML(cfgNil), "omitted (default false)")
 }
 
 func TestEnvoyYAMLParsesForROSEnabledAndDisabled(t *testing.T) {

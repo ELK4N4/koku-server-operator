@@ -208,8 +208,8 @@ Track separately; do not conflate the two components. **Partial progress already
 | Skip `ROSMigrationJob` when `ros.enabled=false` | Done (`reconcileMigration` + `ROSEnabled()`) |
 | Skip ROS/Kruize Deployments, CronJobs, Envoy ROS routes, Kruize NP/SM | Done (gated apply + `reconcileROSFeature` cleanup) |
 | `ROSEnabled` condition | Done |
-| BYOI samples + CRD default `ros.enabled: false` | Done |
-| Default when unset | Still **enabled** (`+kubebuilder:default:=true`) |
+| BYOI samples + CRD / `ROSEnabled()` default `ros.enabled: false` | Done |
+| Default when unset | **Disabled** (`+kubebuilder:default:=false`, `BoolVal(..., false)`) |
 
 **Still owned by [COST-8054](../jira/COST-8054.md):**
 
