@@ -164,7 +164,15 @@ That script:
 
 1. Applies CRDs + `manager-role` / `manager-cluster-role`
 2. Creates RoleBinding + ClusterRoleBinding for `$NAMESPACE:default`
-3. Deploys `koku-service-operator` in `$NAMESPACE` with `NAMESPACE` from the pod
+3. Creates a lab-only TLS Secret (`koku-webhook-server-cert`) and mounts it at
+   `/tmp/k8s-webhook-server/serving-certs` (required — the manager registers
+   webhooks and CrashLoops without `tls.crt` / `tls.key`)
+4. Deploys `koku-service-operator` in `$NAMESPACE` with `NAMESPACE` from the pod
+   and `--operator-image=$IMG` (required for wait-for init containers)
+
+This path does **not** install `ValidatingWebhookConfiguration` /
+`MutatingWebhookConfiguration` (OLM + cert-manager do that for packaged
+installs). The mount only lets the webhook *server* start so reconcile can run.
 
 Watch logs:
 
@@ -174,8 +182,8 @@ kubectl -n "$NAMESPACE" logs -f deploy/koku-service-operator
 
 `hack/deploy-incluster.sh` / `hack/deploy-crc.sh` bind `default` SA to
 `manager-role`, `manager-cluster-role`, and the namespaced
-`leader-election-role` (leases). The Deployment passes
-`--operator-image=$IMG` (required on gold for wait-for init containers).
+`leader-election-role` (leases). Requires `openssl` on the machine running the
+script (for the lab webhook cert).
 
 ### B3. App Secrets, then the CR
 
@@ -259,6 +267,7 @@ curl -skI "https://$(oc -n "$NAMESPACE" get route "${CR_NAME}-ui" -o jsonpath='{
 | Login redirect_uri mismatch | Keycloak client built for wrong UI host | Re-run RHBK with `COST_MGMT_NAMESPACE` / `COST_MGMT_RELEASE_NAME` / `COST_MGMT_UI_BASE_URL` |
 | ImagePullBackOff on amd64 node | arm64-only image | Rebuild with `--platform linux/amd64` |
 | StorageClass list/watch forbidden | Stale cluster role | Re-apply `config/rbac/cluster_access_role.yaml` (`get;list;watch`) |
+| CrashLoop: `open …/serving-certs/tls.crt: no such file` | Webhook server has no TLS mount | Re-run `./hack/deploy-incluster.sh` (creates/mounts `koku-webhook-server-cert`), or mount a Secret with `tls.crt`/`tls.key` at `/tmp/k8s-webhook-server/serving-certs` |
 
 ## Related docs
 

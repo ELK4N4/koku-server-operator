@@ -12,6 +12,13 @@
 # Build an amd64 image for typical OpenShift nodes:
 #   docker buildx build --platform linux/amd64 -t "$IMG" --push .
 #
+# The manager always registers admission webhooks and expects TLS material at
+# /tmp/k8s-webhook-server/serving-certs. This script creates a lab-only
+# self-signed Secret and mounts it so the pod can start. It does NOT install
+# ValidatingWebhookConfiguration / MutatingWebhookConfiguration — CR apply is
+# not admission-gated in this path (OLM/cert-manager covers that for real
+# installs).
+#
 set -euo pipefail
 
 NS="${1:-cost-byoi}"
@@ -19,8 +26,14 @@ IMG="${IMG:?IMG is required (e.g. quay.io/<org>/koku-service-operator:<tag>)}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+WEBHOOK_SECRET="${WEBHOOK_SECRET:-koku-webhook-server-cert}"
+
 if ! command -v oc >/dev/null 2>&1; then
   echo "error: oc is required" >&2
+  exit 1
+fi
+if ! command -v openssl >/dev/null 2>&1; then
+  echo "error: openssl is required to generate lab webhook serving certs" >&2
   exit 1
 fi
 
@@ -32,6 +45,19 @@ echo ""
 
 # CRDs + RoleBinding (default SA) + ClusterRoleBinding + anyuid SCC.
 ./hack/deploy-crc.sh "$NS"
+
+echo "[in-cluster] Ensuring webhook serving-cert Secret (${WEBHOOK_SECRET})..."
+# controller-runtime defaults to tls.crt / tls.key under this mount path.
+CERT_DIR="$(mktemp -d)"
+cleanup_certs() { rm -rf "$CERT_DIR"; }
+trap cleanup_certs EXIT
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout "${CERT_DIR}/tls.key" -out "${CERT_DIR}/tls.crt" -days 365 \
+  -subj "/CN=koku-service-operator.${NS}.svc" \
+  >/dev/null 2>&1
+oc -n "$NS" create secret tls "$WEBHOOK_SECRET" \
+  --cert="${CERT_DIR}/tls.crt" --key="${CERT_DIR}/tls.key" \
+  --dry-run=client -o yaml | oc apply -f -
 
 echo "[in-cluster] Applying manager Deployment (SA=default)..."
 oc apply -f - <<EOF
@@ -94,6 +120,14 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
+        volumeMounts:
+        - name: webhook-certs
+          mountPath: /tmp/k8s-webhook-server/serving-certs
+          readOnly: true
+      volumes:
+      - name: webhook-certs
+        secret:
+          secretName: ${WEBHOOK_SECRET}
 EOF
 
 oc -n "$NS" rollout status deploy/koku-service-operator --timeout=180s
