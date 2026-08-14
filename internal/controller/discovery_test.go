@@ -52,7 +52,7 @@ func defaultStorageClass(name string) *storagev1.StorageClass {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Annotations: map[string]string{
-				"storageclass.kubernetes.io/is-default-class": "true",
+				"storageclass.kubernetes.io/is-default-class": annotationTrue,
 			},
 		},
 	}
