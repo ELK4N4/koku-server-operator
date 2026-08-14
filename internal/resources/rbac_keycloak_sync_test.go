@@ -86,8 +86,8 @@ func TestKeycloakSyncCronJobContainer(t *testing.T) {
 	if c.WorkingDir != "/opt/rbac/rbac" {
 		t.Errorf("WorkingDir = %q", c.WorkingDir)
 	}
-	if len(pod.InitContainers) < 1 || pod.InitContainers[0].Name != "wait-for-db" {
-		t.Error("expected wait-for-db init container")
+	if len(pod.InitContainers) < 1 || pod.InitContainers[0].Name != "wait-for-postgres" {
+		t.Error("expected wait-for-postgres init container")
 	}
 }
 
