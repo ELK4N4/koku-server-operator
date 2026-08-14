@@ -136,6 +136,23 @@ func TestKeycloakSyncCronJobSecretRef(t *testing.T) {
 	t.Error("KEYCLOAK_CLIENT_SECRET should be a secretKeyRef")
 }
 
+func TestKeycloakSyncCronJobSecretRefDefaultsKey(t *testing.T) {
+	cfg := keycloakSyncCfg()
+	cfg.Spec.RBAC.KeycloakSync.ClientSecretRef.Key = ""
+	cj := KeycloakSyncCronJob(cfg)
+	c := cj.Spec.JobTemplate.Spec.Template.Spec.Containers[0]
+
+	for _, e := range c.Env {
+		if e.Name == "KEYCLOAK_CLIENT_SECRET" && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+			if e.ValueFrom.SecretKeyRef.Key != "CLIENT_SECRET" {
+				t.Errorf("empty key should default to CLIENT_SECRET, got %q", e.ValueFrom.SecretKeyRef.Key)
+			}
+			return
+		}
+	}
+	t.Error("KEYCLOAK_CLIENT_SECRET should be a secretKeyRef")
+}
+
 func TestKeycloakSyncCronJobVolumes(t *testing.T) {
 	cfg := keycloakSyncCfg()
 	cj := KeycloakSyncCronJob(cfg)

@@ -55,7 +55,7 @@ func KeycloakSyncCronJob(cfg *costv1alpha1.CostManagementServiceConfig) *batchv1
 		EnvVal("KEYCLOAK_URL", KeycloakURL(cfg)),
 		EnvVal("KEYCLOAK_REALM", KeycloakRealm(cfg)),
 		EnvVal("KEYCLOAK_CLIENT_ID", spec.ClientID),
-		EnvFromSecret("KEYCLOAK_CLIENT_SECRET", spec.ClientSecretRef.Name, spec.ClientSecretRef.Key),
+		EnvFromSecret("KEYCLOAK_CLIENT_SECRET", spec.ClientSecretRef.Name, clientSecretKey(spec.ClientSecretRef.Key)),
 		EnvVal("KEYCLOAK_TLS_VERIFY", keycloakTLSVerifyStr(cfg)),
 		EnvVal("SYNC_ORG_GROUP_PREFIX", orgGroupPrefix),
 		EnvVal("SYNC_ORG_ADMIN_SUBGROUP", orgAdminSubgroup),
@@ -138,4 +138,11 @@ func boolEnvStr(b bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func clientSecretKey(key string) string {
+	if key == "" {
+		return "CLIENT_SECRET"
+	}
+	return key
 }
