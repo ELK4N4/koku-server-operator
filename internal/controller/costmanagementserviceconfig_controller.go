@@ -332,6 +332,10 @@ func (r *CostManagementServiceConfigReconciler) reconcileInfrastructure(ctx cont
 		r.setCondition(cfg, costv1alpha1.ConditionCacheReady, metav1.ConditionTrue, "ExternalCache", "")
 	}
 
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionDatabaseReady) ||
+		!apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionCacheReady) {
+		r.Recorder.Event(cfg, corev1.EventTypeNormal, "InfrastructureReady", "Database and cache are available")
+	}
 	return Result{}, nil
 }
 
@@ -530,6 +534,9 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 	if !ready {
 		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "WaitingForAPI", "waiting for Koku API")
 		return Result{RequeueAfter: requeueSlow}, nil
+	}
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionAvailable) {
+		r.Recorder.Event(cfg, corev1.EventTypeNormal, "CoreServicesAvailable", "Koku API is ready")
 	}
 	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "KokuAvailable", "")
 	return Result{}, nil
