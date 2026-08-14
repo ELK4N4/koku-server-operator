@@ -288,6 +288,9 @@ func (r *CostManagementServiceConfigReconciler) reconcileSharedConfig(ctx contex
 // -----------------------------------------------------------------------------
 
 func (r *CostManagementServiceConfigReconciler) reconcileInfrastructure(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	alreadyReady := apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionDatabaseReady) &&
+		apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionCacheReady)
+
 	if costv1alpha1.BoolVal(cfg.Spec.Database.Deploy, true) {
 		if err := r.apply(ctx, cfg, resources.DatabaseService(cfg)); err != nil {
 			return Result{}, fmt.Errorf("database service: %w", err)
@@ -332,8 +335,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileInfrastructure(ctx cont
 		r.setCondition(cfg, costv1alpha1.ConditionCacheReady, metav1.ConditionTrue, "ExternalCache", "")
 	}
 
-	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionDatabaseReady) ||
-		!apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionCacheReady) {
+	if !alreadyReady {
 		r.Recorder.Event(cfg, corev1.EventTypeNormal, "InfrastructureReady", "Database and cache are available")
 	}
 	return Result{}, nil
