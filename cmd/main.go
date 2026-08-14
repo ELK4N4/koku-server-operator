@@ -69,7 +69,7 @@ func main() {
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Address for health probes.")
 	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election for controller manager.")
 	flag.StringVar(&leaderElectionID, "leader-election-id", "costmanagementserviceconfigs.service.costmanagement.openshift.io", "Leader election resource ID.")
-	flag.BoolVar(&developmentMode, "dev", false, "Development mode: verbose logging; skip registering admission webhooks (no TLS certs required).")
+	flag.BoolVar(&developmentMode, "dev", false, "Development mode: skip registering admission webhooks (no TLS certs required) and enable zap development logging. Do not pass on in-cluster Deployments.")
 	// --operator-image is the fully-qualified image reference for this operator pod.
 	// It is used as the image for wait-for init containers so no separate image is needed.
 	// Set it to match the registry and tag in your environment:
@@ -77,9 +77,11 @@ func main() {
 	// In OLM deployments the CSV injects this via the Deployment args.
 	// Local: IMG=... make run  (Makefile passes --operator-image=$(IMG) and --dev).
 	flag.StringVar(&operatorImage, "operator-image", "", "operator image used for init containers (registry/name:tag)")
-	opts := zap.Options{Development: developmentMode}
+	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+	// DevelopmentMode must be set after Parse — flag defaults are false until then.
+	opts.Development = developmentMode
 
 	if operatorImage == "" {
 		_, _ = fmt.Fprintln(os.Stderr, "error: --operator-image is required")

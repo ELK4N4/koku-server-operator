@@ -28,7 +28,7 @@ export NAMESPACE=cost-byoi
 ./hack/clusterbot-smoke.sh
 ```
 
-Then build/push an **linux/amd64** operator image and run it in-cluster:
+Then build/push a **linux/amd64** operator image and run it in-cluster:
 
 ```bash
 export IMG=quay.io/<you>/koku-service-operator:clusterbot
@@ -81,17 +81,24 @@ If you already have AMQ Streams Kafka, point
 
 ## Stage checklist
 
+**Day-one success (no Keycloak):** `SchemaUpToDate=True`, `Available=True`
+(reason `KokuAvailable`), and core Deployments healthy. Expect
+`status.phase` to stay **`Progressing`** — `reconcileEdge` requeues while
+`UIReady=False` (`OAuthClientSecretMissing`), so you will **not** reach
+`Phase=Ready` / `AllComponentsReady` until Keycloak +
+`mirror-ui-oauth-secret.sh` ([pre-prod-install.md](pre-prod-install.md)).
+
 | Stage | How to verify | OK if still False? |
 |-------|---------------|--------------------|
 | **Infra Ready** | `oc -n cost-byoi-infra get deploy` — postgresql, valkey, minio, kafka (Redpanda) Ready; minio-init Job Complete | — |
 | **CR applied** | `oc -n cost-byoi get cmsc` shows the CR | — |
-| **Operator reconciling** | `deploy/koku-service-operator` 1/1; logs show reconcile; `status.phase` Progressing or Ready | — |
+| **Operator reconciling** | `deploy/koku-service-operator` 1/1; logs show reconcile; phase usually Progressing | — |
 | **Discovery / storage** | `DiscoveryComplete`, `StorageReady` True | Rarely OK False — fix S3 secret / endpoint |
 | **DB / cache / kafka** | `DatabaseReady`, `CacheReady`, `KafkaReady` True | Must be True for migrations |
 | **Schema** | `SchemaUpToDate` True | Must become True for app Deployments |
-| **Auth / UI without Keycloak** | `AuthenticationReady`, `UIReady` may stay False | **Yes** for day-one core smoke — deploy Keycloak + mirror OAuth secret for UI login ([pre-prod-install.md](pre-prod-install.md)) |
+| **Available (day-one goal)** | `Available=True` (`KokuAvailable`) + core Deployments Ready | Goal without Keycloak |
+| **Auth / UI** | `AuthenticationReady`, `UIReady` | **Yes** False without Keycloak + OAuth mirror — needed for `Phase=Ready` / UI login |
 | **ROS** | `ROSEnabled=False` when `ros.enabled: false` | Expected — no ROS/Kruize objects |
-| **Available** | `Available=True` when core stack is up | Goal for day-one once schema + core Deployments are healthy |
 
 Reading conditions:
 
@@ -99,7 +106,7 @@ Reading conditions:
 oc -n cost-byoi get cmsc cost-management -o jsonpath='{range .status.conditions[*]}{.type}={.status} ({.reason}){"\n"}{end}'
 ```
 
-Phase is human-readable only — prefer conditions.
+Prefer conditions over `Phase` (Phase stays Progressing until UIReady).
 
 ## Local-run DX (CRC / laptop)
 

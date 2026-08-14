@@ -43,7 +43,7 @@ UI Route host pattern:
 - Default StorageClass
 - Ability to pull Red Hat registry images (`registry.redhat.io/…`) via the
   cluster pull secret
-- A place to push an **linux/amd64** operator image (typical OCP nodes are amd64;
+- A place to push a **linux/amd64** operator image (typical OCP nodes are amd64;
   Apple Silicon CRC is the opposite case — see [crc-testing.md](crc-testing.md))
 
 Clone this repo and work from the root.

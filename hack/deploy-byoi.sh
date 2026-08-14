@@ -178,12 +178,21 @@ awk '
 "$KUBECTL" apply -f "$TMP_SECRETS"
 rm -f "$TMP_SECRETS"
 
-BOOTSTRAP="${KAFKA_NAMESPACE}/cost-onprem-kafka-kafka-bootstrap.${KAFKA_NAMESPACE}.svc.cluster.local:9092"
-if [[ -f /tmp/kafka-bootstrap-servers.env ]]; then
+BOOTSTRAP="cost-onprem-kafka-kafka-bootstrap.${KAFKA_NAMESPACE}.svc.cluster.local:9092"
+# Prefer an explicit env var from this shell. Only use deploy-kafka's
+# /tmp/kafka-bootstrap-servers.env when it mentions the current KAFKA_NAMESPACE
+# (avoids printing a stale bootstrap from a previous cluster).
+if [[ -n "${KAFKA_BOOTSTRAP_SERVERS:-}" ]]; then
+  BOOTSTRAP="$KAFKA_BOOTSTRAP_SERVERS"
+elif [[ -f /tmp/kafka-bootstrap-servers.env ]]; then
   # shellcheck disable=SC1091
+  # shellcheck disable=SC1090
   source /tmp/kafka-bootstrap-servers.env 2>/dev/null || true
-  if [[ -n "${KAFKA_BOOTSTRAP_SERVERS:-}" ]]; then
+  if [[ -n "${KAFKA_BOOTSTRAP_SERVERS:-}" && "${KAFKA_BOOTSTRAP_SERVERS}" == *"${KAFKA_NAMESPACE}"* ]]; then
     BOOTSTRAP="$KAFKA_BOOTSTRAP_SERVERS"
+  elif [[ -n "${KAFKA_BOOTSTRAP_SERVERS:-}" ]]; then
+    echo "warning: ignoring stale /tmp/kafka-bootstrap-servers.env (not for ${KAFKA_NAMESPACE}); using ${BOOTSTRAP}" >&2
+    unset KAFKA_BOOTSTRAP_SERVERS
   fi
 fi
 
