@@ -4,6 +4,9 @@ Short path to get a `CostManagementServiceConfig` reconciling on a **Cluster Bot
 (or any remote OpenShift) lab cluster. OwnNamespace: operator install namespace
 **equals** CR namespace.
 
+**Beta:** ROS/Kruize are off by default (`spec.ros.enabled` defaults to `false`).
+Day-one success does not require ROS images or migrate Jobs.
+
 For a fuller BYOI → UI walkthrough (AMQ Streams + Keycloak), see
 [pre-prod-install.md](pre-prod-install.md). For laptop **CRC** with bundled DB,
 see [crc-testing.md](crc-testing.md).
@@ -98,7 +101,7 @@ If you already have AMQ Streams Kafka, point
 | **Schema** | `SchemaUpToDate` True | Must become True for app Deployments |
 | **Available (day-one goal)** | `Available=True` (`KokuAvailable`) + core Deployments Ready | Goal without Keycloak |
 | **Auth / UI** | `AuthenticationReady`, `UIReady` | **Yes** False without Keycloak + OAuth mirror — needed for `Phase=Ready` / UI login |
-| **ROS** | `ROSEnabled=False` when `ros.enabled: false` | Expected — no ROS/Kruize objects |
+| **ROS** | `ROSEnabled=False` (CRD default / sample `ros.enabled: false`) | Expected for beta — no ROS/Kruize objects |
 
 Reading conditions:
 

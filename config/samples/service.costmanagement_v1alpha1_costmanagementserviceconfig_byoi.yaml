@@ -119,7 +119,8 @@ spec:
         costModel:
           replicas: 1
 
-  # Beta: ROS (and Kruize) are optional. Omit or set enabled: true to deploy.
+  # Beta: ROS and Kruize are out of scope. Keep enabled: false (CRD default).
+  # Set enabled: true and fill images only when opting in.
   ros:
     enabled: false
     image:

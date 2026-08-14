@@ -385,10 +385,12 @@ type KruizePartitionsSpec struct {
 // -----------------------------------------------------------------------------
 
 type ROSConfig struct {
-	// When false, the operator skips ROS and Kruize (ROS-only dependency):
-	// migrations, Deployments/Services, CronJobs, NetworkPolicies, Envoy routes,
-	// and cluster-scoped Kruize RBAC. Defaults to true.
-	// +kubebuilder:default:=true
+	// When false (the default), the operator skips ROS and Kruize (ROS-only
+	// dependency): migrations, Deployments/Services, CronJobs, NetworkPolicies,
+	// Envoy routes, and cluster-scoped Kruize RBAC.
+	// Beta ships Cost Management without ROS/Kruize — set enabled: true only when
+	// you intentionally opt in (and provide ROS/Kruize images).
+	// +kubebuilder:default:=false
 	Enabled *bool `json:"enabled,omitempty"`
 
 	Image                ImageSpec          `json:"image,omitempty"`
@@ -400,8 +402,9 @@ type ROSConfig struct {
 }
 
 // ROSEnabled reports whether ROS (and Kruize) should be deployed for this CR.
+// Omitted / nil defaults to false (beta: Cost-only).
 func ROSEnabled(cfg *CostManagementServiceConfig) bool {
-	return BoolVal(cfg.Spec.ROS.Enabled, true)
+	return BoolVal(cfg.Spec.ROS.Enabled, false)
 }
 
 type ROSAPISpec struct {

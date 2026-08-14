@@ -79,6 +79,7 @@ spec:
         costModel:
           replicas: 1
 
+  # Beta: ROS/Kruize out of scope — CRD default is false.
   ros:
     enabled: false
 

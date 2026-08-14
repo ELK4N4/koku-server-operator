@@ -182,6 +182,8 @@ func TestKeycloakDefaults(t *testing.T) {
 
 func TestEnvoyYAMLContainsIssuerAudiencesAndKokuCluster(t *testing.T) {
 	cfg := testCfg()
+	enabled := true
+	cfg.Spec.ROS.Enabled = &enabled
 	yaml := EnvoyYAML(cfg)
 
 	checks := []string{
@@ -242,6 +244,7 @@ func TestEnvoyYAMLHTTPKeycloakOmitsTLS(t *testing.T) {
 
 func TestEnvoyYAMLOmitsROSWhenDisabled(t *testing.T) {
 	cfg := testCfg()
+	// nil / omitted Enabled also means off (beta default); exercise explicit false.
 	disabled := false
 	cfg.Spec.ROS.Enabled = &disabled
 	yaml := EnvoyYAML(cfg)
@@ -258,6 +261,12 @@ func TestEnvoyYAMLOmitsROSWhenDisabled(t *testing.T) {
 		if strings.Contains(yaml, tok) {
 			t.Errorf("EnvoyYAML left unsubstituted token %q", tok)
 		}
+	}
+
+	cfgNil := testCfg()
+	yamlNil := EnvoyYAML(cfgNil)
+	if strings.Contains(yamlNil, "ros-api-backend") {
+		t.Error("EnvoyYAML should omit ros-api-backend when ros.enabled is omitted (default false)")
 	}
 }
 

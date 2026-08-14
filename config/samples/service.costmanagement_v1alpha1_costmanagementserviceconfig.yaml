@@ -63,7 +63,10 @@ spec:
         costModel:
           replicas: 1
 
+  # Beta: ROS and Kruize are out of scope — omit or keep enabled: false (CRD default).
+  # Set enabled: true and fill ros.image / kruize.image only when opting in.
   ros:
+    enabled: false
     image:
       repository: quay.io/redhat-services-prod/insights-management-tenant/insights-ocp-resource-optimization/ros-ocp-backend
       tag: "ae8c990"
@@ -79,6 +82,7 @@ spec:
     worker:
       replicas: 1
 
+  # Only applied when ros.enabled: true
   kruize:
     replicas: 1
     image:
