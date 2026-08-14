@@ -66,8 +66,33 @@ func TestKeycloakSyncCronJobMeta(t *testing.T) {
 	if cj.Spec.Schedule != "*/10 * * * *" {
 		t.Errorf("Schedule = %q, want */10 * * * *", cj.Spec.Schedule)
 	}
-	if cj.Spec.ConcurrencyPolicy != "Forbid" {
-		t.Errorf("ConcurrencyPolicy = %q, want Forbid", cj.Spec.ConcurrencyPolicy)
+	if cj.Spec.ConcurrencyPolicy != CronJobConcurrencyForbid {
+		t.Errorf("ConcurrencyPolicy = %q, want %q", cj.Spec.ConcurrencyPolicy, CronJobConcurrencyForbid)
+	}
+	if cj.Spec.StartingDeadlineSeconds == nil || *cj.Spec.StartingDeadlineSeconds != CronJobStartingDeadlineSeconds {
+		t.Errorf("StartingDeadlineSeconds = %v, want %d", cj.Spec.StartingDeadlineSeconds, CronJobStartingDeadlineSeconds)
+	}
+	if cj.Spec.SuccessfulJobsHistoryLimit == nil || *cj.Spec.SuccessfulJobsHistoryLimit != CronJobSuccessHistoryLimit {
+		t.Errorf("SuccessfulJobsHistoryLimit = %v, want %d", cj.Spec.SuccessfulJobsHistoryLimit, CronJobSuccessHistoryLimit)
+	}
+	if cj.Spec.FailedJobsHistoryLimit == nil || *cj.Spec.FailedJobsHistoryLimit != CronJobFailedHistoryLimit {
+		t.Errorf("FailedJobsHistoryLimit = %v, want %d", cj.Spec.FailedJobsHistoryLimit, CronJobFailedHistoryLimit)
+	}
+
+	jobSpec := cj.Spec.JobTemplate.Spec
+	if jobSpec.ActiveDeadlineSeconds == nil || *jobSpec.ActiveDeadlineSeconds != CronJobActiveDeadlineSeconds {
+		t.Errorf("ActiveDeadlineSeconds = %v, want %d", jobSpec.ActiveDeadlineSeconds, CronJobActiveDeadlineSeconds)
+	}
+	if jobSpec.BackoffLimit == nil || *jobSpec.BackoffLimit != CronJobBackoffLimit {
+		t.Errorf("BackoffLimit = %v, want %d", jobSpec.BackoffLimit, CronJobBackoffLimit)
+	}
+
+	podSpec := jobSpec.Template.Spec
+	if podSpec.RestartPolicy != CronJobRestartOnFailure {
+		t.Errorf("RestartPolicy = %q, want %q", podSpec.RestartPolicy, CronJobRestartOnFailure)
+	}
+	if podSpec.AutomountServiceAccountToken == nil || *podSpec.AutomountServiceAccountToken {
+		t.Errorf("AutomountServiceAccountToken = %v, want false", podSpec.AutomountServiceAccountToken)
 	}
 }
 
@@ -164,6 +189,36 @@ func TestKeycloakSyncCronJobVolumes(t *testing.T) {
 		}
 	}
 	t.Error("missing sync-script volume mount")
+}
+
+func TestKeycloakSyncCronJobPruneOrphansDefault(t *testing.T) {
+	cfg := keycloakSyncCfg()
+	cfg.Spec.RBAC.KeycloakSync.PruneOrphans = nil
+
+	cj := KeycloakSyncCronJob(cfg)
+	envMap := map[string]string{}
+	for _, e := range cj.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Env {
+		if e.Value != "" {
+			envMap[e.Name] = e.Value
+		}
+	}
+	if got := envMap["SYNC_PRUNE_ORPHANS"]; got != "true" {
+		t.Errorf("nil PruneOrphans should default to true, got %q", got)
+	}
+}
+
+func TestKeycloakSyncCronJobPruneOrphansFalse(t *testing.T) {
+	cfg := keycloakSyncCfg()
+	cfg.Spec.RBAC.KeycloakSync.PruneOrphans = boolPtr(false)
+
+	cj := KeycloakSyncCronJob(cfg)
+	envMap := map[string]string{}
+	for _, e := range cj.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Env {
+		envMap[e.Name] = e.Value
+	}
+	if got := envMap["SYNC_PRUNE_ORPHANS"]; got != "false" {
+		t.Errorf("explicit false PruneOrphans = %q, want false", got)
+	}
 }
 
 func TestKeycloakSyncCronJobDefaults(t *testing.T) {
