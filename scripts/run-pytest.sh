@@ -82,7 +82,7 @@ set -e
 # Script configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-TESTS_DIR="${PROJECT_ROOT}/tests"
+TESTS_DIR="${PROJECT_ROOT}/test/pytest"
 VENV_DIR="${TESTS_DIR}/.venv"
 REPORTS_DIR="${TESTS_DIR}/reports"
 
@@ -250,6 +250,17 @@ run_pytest() {
     export NAMESPACE="${NAMESPACE:-cost-onprem}"
     export HELM_RELEASE_NAME="${HELM_RELEASE_NAME:-cost-onprem}"
     export KEYCLOAK_NAMESPACE="${KEYCLOAK_NAMESPACE:-keycloak}"
+
+    if command -v kubectl >/dev/null 2>&1; then
+        log_info "Waiting for pods ready (instance=${HELM_RELEASE_NAME})..."
+        if ! kubectl wait --for=condition=ready pod \
+            -l "app.kubernetes.io/instance=${HELM_RELEASE_NAME}" \
+            -n "${NAMESPACE}" \
+            --timeout=300s \
+            --field-selector=status.phase!=Succeeded; then
+            log_warning "Pod ready wait timed out; continuing (fixtures may fail if pods still initializing)"
+        fi
+    fi
 
     # Change to tests directory
     cd "$TESTS_DIR"
@@ -512,11 +523,11 @@ main() {
         fi
     elif [[ "$exclude_ui" == "true" ]]; then
         # Exclude UI tests and performance tests when --no-ui is specified
-        pytest_args+=("-m" "not ui and not performance")
+        pytest_args+=("-m" "not ui and not performance and not helm")
     else
         # Default: run all tests EXCEPT performance tests
         # Performance tests must be explicitly requested via --performance flags
-        pytest_args+=("-m" "not performance")
+        pytest_args+=("-m" "not performance and not helm")
     fi
 
     # For performance tests with unified output structure, redirect reports to PERF_OUTPUT_DIR

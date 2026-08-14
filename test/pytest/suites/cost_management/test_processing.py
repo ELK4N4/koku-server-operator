@@ -61,14 +61,21 @@ class TestMASUHealth:
         # Check for any worker pods
         result = run_oc_command([
             "get", "pods", "-n", cluster_config.namespace,
-            "-l", "app.kubernetes.io/component=cost-worker",
-            "-o", "jsonpath={.items[*].status.phase}"
+            "-l", f"app.kubernetes.io/instance={cluster_config.helm_release_name}",
+            "-o", "jsonpath={range .items[*]}{.metadata.labels.app\\.kubernetes\\.io/component}={.status.phase}{'\\n'}{end}"
         ], check=False)
         
         if result.returncode != 0 or not result.stdout.strip():
             pytest.skip("No Celery worker pods found")
         
-        phases = result.stdout.strip().split()
+        phases = [
+            line.split("=", 1)[1]
+            for line in result.stdout.strip().splitlines()
+            if "=" in line and line.split("=", 1)[0].startswith("cost-worker")
+        ]
+        if not phases:
+            pytest.skip("No Celery worker pods found")
+        
         running_count = sum(1 for p in phases if p == "Running")
         
         assert running_count > 0, "No Celery workers are running"

@@ -1180,7 +1180,7 @@ deploy_helm_chart() {
     # RHBK advertises the public Route as OIDC issuer even when JWKS uses the
     # in-cluster Service URL. Patch issuerURL from the detected Keycloak hostname
     # so oauth2-proxy / Envoy match tokens without hardcoding a cluster URL in the sample.
-    local cr_name="${CR_NAME:-cost-management}"
+    local cr_name="${CR_NAME:-cost-onprem}"
     if [ -z "${KEYCLOAK_URL:-}" ]; then
         detect_keycloak || true
     fi
@@ -1424,28 +1424,29 @@ wait_for_pods() {
     echo_info "Waiting for pods to be ready..."
 
     # Wait for CMSC Ready (replaces Helm release pod wait)
-    local cr_name="cost-management"
-    local cr_ns="cost-onprem"
+    local cr_name="${CR_NAME:-cost-onprem}"
+    local cr_ns="${NAMESPACE:-cost-onprem}"
     local timeout_s="${HELM_TIMEOUT:-900}"
     timeout_s="${timeout_s%s}"
     local end=$((SECONDS + timeout_s))
+    local phase=""
     while (( SECONDS < end )); do
-        local phase
         phase="$(kubectl get cmsc "$cr_name" -n "$cr_ns" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
         if [ "$phase" = "Ready" ]; then
-            echo_success "All pods are ready"
-            return 0
+            break
         fi
         echo_info "CMSC phase=${phase:-<empty>} (waiting for Ready)"
         sleep 10
     done
-    echo_error "CMSC did not become Ready within ${timeout_s}s"
-    kubectl get cmsc "$cr_name" -n "$cr_ns" -o yaml 2>/dev/null || true
-    return 1
+    if [ "$phase" != "Ready" ]; then
+        echo_error "CMSC did not become Ready within ${timeout_s}s"
+        kubectl get cmsc "$cr_name" -n "$cr_ns" -o yaml 2>/dev/null || true
+        return 1
+    fi
 
     # Wait for all pods to be ready (excluding jobs) with extended timeout for full deployment
-    kubectl wait --for=condition=ready pod -l "app.kubernetes.io/instance=$HELM_RELEASE_NAME" \
-        --namespace "$NAMESPACE" \
+    kubectl wait --for=condition=ready pod -l "app.kubernetes.io/instance=$cr_name" \
+        --namespace "$cr_ns" \
         --timeout=900s \
         --field-selector=status.phase!=Succeeded
 
@@ -1695,11 +1696,13 @@ cleanup() {
     fi
 
     # Delete CMSC first so the operator finalizer can clean cluster-scoped resources
-    local cr_name="${CR_NAME:-cost-management}"
-    if kubectl get cmsc "$cr_name" -n "$NAMESPACE" >/dev/null 2>&1; then
-        echo_info "Deleting CMSC $cr_name..."
-        kubectl delete cmsc "$cr_name" -n "$NAMESPACE" --timeout=300s --ignore-not-found || true
-    fi
+    local cr_name="${CR_NAME:-cost-onprem}"
+    for _cmsc in "$cr_name" cost-management; do
+        if kubectl get cmsc "$_cmsc" -n "$NAMESPACE" >/dev/null 2>&1; then
+            echo_info "Deleting CMSC $_cmsc..."
+            kubectl delete cmsc "$_cmsc" -n "$NAMESPACE" --timeout=300s --ignore-not-found || true
+        fi
+    done
 
     # Delete Helm release first (legacy chart path; no-op when only CMSC was used)
     echo_info "Deleting Helm release..."
@@ -1925,7 +1928,7 @@ create_ui_secrets() {
 
     # Operator expects {cmsc.metadata.name}-ui-oauth-client / -ui-cookie-secret
     # (sample CR name is cost-management; HELM_RELEASE_NAME is the namespace/release label).
-    local release_name="${CR_NAME:-cost-management}"
+    local release_name="${CR_NAME:-cost-onprem}"
 
     # 1. Create cookie secret (random session encryption key)
     local cookie_secret_name="${release_name}-ui-cookie-secret"

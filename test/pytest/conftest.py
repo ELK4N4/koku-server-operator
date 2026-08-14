@@ -38,7 +38,6 @@ from rbac_bootstrap_scripts import (
 
 # Import shared fixtures from test suites
 # These fixtures are available to all test suites
-pytest_plugins = ["suites.cost_management.conftest", "suites.sources.conftest"]
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)

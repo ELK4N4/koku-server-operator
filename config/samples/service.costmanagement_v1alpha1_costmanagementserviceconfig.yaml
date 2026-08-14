@@ -1,7 +1,7 @@
 apiVersion: service.costmanagement.openshift.io/v1alpha1
 kind: CostManagementServiceConfig
 metadata:
-  name: cost-management
+  name: cost-onprem
   namespace: cost-onprem
 spec:
   global:
