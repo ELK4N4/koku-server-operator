@@ -168,7 +168,9 @@ run: manifests generate fmt vet ## Run a controller from your host (OwnNamespace
 		echo "Example: NAMESPACE=cost-onprem make run"; \
 		exit 1; \
 	fi
-	NAMESPACE=$(NAMESPACE) go run ./cmd/main.go --operator-image=$(IMG)
+	# IMG always has a Makefile default (IMAGE_TAG_BASE:vVERSION); override for your registry.
+	# --dev skips admission webhook registration (no TLS certs on the laptop).
+	NAMESPACE=$(NAMESPACE) go run ./cmd/main.go --dev --operator-image=$(IMG)
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.

@@ -1,5 +1,13 @@
-# Separate BYOI CostManagementServiceConfig — deploy:false for DB/cache.
-# Point clusterDomain at your cluster's apps domain before relying on Routes.
+# Separate BYOI CostManagementServiceConfig for Cluster Bot / day-one smoke.
+# Uses lightweight Redpanda in cost-byoi-infra (no AMQ Streams OLM install).
+#
+# Happy path:
+#   ./hack/clusterbot-smoke.sh
+#   IMG=… ./hack/deploy-incluster.sh cost-byoi
+#
+# Or manually: apply infra + kafka.yaml, copy secrets, then this CR.
+# Patch spec.global.clusterDomain to your apps.* domain before relying on Routes.
+# Without Keycloak, gateway/UI auth conditions stay False — core BYOI still progresses.
 apiVersion: service.costmanagement.openshift.io/v1alpha1
 kind: CostManagementServiceConfig
 metadata:
@@ -28,8 +36,9 @@ spec:
       enabled: false
 
   kafka:
-    # AMQ Streams from ./config/samples/byoi/deploy-kafka.sh (default names).
-    bootstrapServers: "cost-onprem-kafka-kafka-bootstrap.kafka.svc.cluster.local:9092"
+    # Redpanda stand-in — config/samples/byoi/infra/kafka.yaml
+    # For AMQ Streams instead, use the default sample CR + deploy-kafka.sh / deploy-byoi.sh.
+    bootstrapServers: "kafka.cost-byoi-infra.svc.cluster.local:9092"
     securityProtocol: "PLAINTEXT"
 
   objectStorage:
@@ -47,7 +56,6 @@ spec:
       rosBucketName: "ros-data"
     api:
       image:
-        # amd64 — suitable for clusterbot / typical OpenShift nodes
         repository: quay.io/redhat-services-prod/cost-mgmt-dev-tenant/koku
         tag: "d8055ac"
       replicas: 1
@@ -71,8 +79,6 @@ spec:
         costModel:
           replicas: 1
 
-  # Beta: ROS (and Kruize) are optional. Set enabled: true to deploy them
-  # (requires ROS/Kruize images + DB roles). Leave false for UI smoke.
   ros:
     enabled: false
 
@@ -90,16 +96,10 @@ spec:
       repository: quay.io/iop/ingress
       tag: "master"
 
-  # Envoy JWT gateway requires a reachable Keycloak/RHBK JWKS endpoint.
-  # Placeholder URL — replace with a real Keycloak before exercising the /api Route.
   auth:
     keycloak:
-      # JWKS fetch URL (prefer in-cluster Service). When RHBK sets a public
-      # hostname, tokens use that URL as iss — set issuerURL to match.
+      # Placeholder — set a real Keycloak Service URL + issuerURL for UI / gateway auth.
       url: "http://keycloak-service.keycloak.svc.cluster.local:8080"
-      # issuerURL: "https://keycloak-keycloak.apps.example.com"
-      # tls:
-      #   insecureSkipVerify: true   # dev only when issuer uses a private CA
       realm: "kubernetes"
       audiences:
         - "cost-management-operator"
@@ -110,10 +110,8 @@ spec:
         tag: "2.6"
       replicas: 1
 
-  # Empty repository/tag produces InvalidImageName (image ":"). Set both.
   ui:
     replicaCount: 1
-    # Default Secret name: {metadata.name}-ui-oauth-client — see mirror-ui-oauth-secret.sh
     app:
       image:
         repository: quay.io/insights-onprem/koku-ui-onprem

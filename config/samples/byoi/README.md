@@ -74,7 +74,17 @@ Tear down Kafka separately when finished:
 ### Lightweight alternative (Redpanda)
 
 Single-node Redpanda in `cost-byoi-infra` — optional, not part of
-`kubectl apply -k config/samples/byoi/infra`:
+`kubectl apply -k config/samples/byoi/infra`. Prefer this for **Cluster Bot
+day-one** so Kafka is not a second OLM project:
+
+```bash
+# One-shot: infra + Redpanda + secrets + smoke CR
+./hack/clusterbot-smoke.sh
+# Then: IMG=… ./hack/deploy-incluster.sh cost-byoi
+# Docs: docs/development/clusterbot.md
+```
+
+Manual:
 
 ```bash
 # Needs anyuid on byoi-infra (same as postgres/minio)
@@ -82,7 +92,7 @@ kubectl apply -f config/samples/byoi/infra/kafka.yaml
 kubectl -n cost-byoi-infra rollout status deploy/kafka --timeout=180s
 ```
 
-Point the CR at Redpanda instead of AMQ Streams:
+Point the CR at Redpanda (smoke sample already does):
 
 ```yaml
 spec:
@@ -91,13 +101,18 @@ spec:
     securityProtocol: "PLAINTEXT"
 ```
 
+Sample: `config/samples/byoi/app/costmanagementserviceconfig-smoke.yaml`.
+
 Do **not** use `KAFKA_NAMESPACE=cost-byoi-infra` for chart kafka suite expectations
 that require Strimzi; use AMQ Streams for those.
 
 ## UI OAuth Secret
 
-After Keycloak/RHBK is up (e.g. chart `scripts/deploy-rhbk.sh`), mirror the
-UI confidential client into the CR namespace before expecting `UIReady=True`:
+After Keycloak/RHBK is up (e.g. chart `scripts/deploy-rhbk.sh`), set
+`COST_MGMT_NAMESPACE` / `COST_MGMT_RELEASE_NAME` (or `COST_MGMT_UI_BASE_URL`)
+so the UI client redirect URI matches
+`https://{CR_NAME}-ui-{NAMESPACE}.<apps-domain>/oauth2/callback`, then mirror
+the UI confidential client into the CR namespace before expecting `UIReady=True`:
 
 ```bash
 # Defaults: KEYCLOAK_NAMESPACE=keycloak, NAMESPACE=cost-byoi, CR_NAME=cost-management
@@ -111,13 +126,21 @@ NAMESPACE=cost-tests CR_NAME=cost-onprem ./config/samples/byoi/mirror-ui-oauth-s
 Override the Secret name with `spec.ui.oauthClientSecretRef.name` if needed.
 Cookie session Secret (`{cr}-ui-cookie-secret`) is still created by the operator.
 
+Set `spec.ui.app.image` and `spec.ui.oauthProxy.image` (repository and tag).
+Empty values yield `InvalidImageName`. With `ros.enabled: false` (sample default),
+ROS/Kruize are skipped — suitable for UI smoke without ROS images.
+
 ## Apply
 
 ```bash
-# 0. Kafka — AMQ Streams (recommended) or Redpanda (lightweight); see above
-# 0b. Keycloak (external) + mirror UI OAuth Secret — see UI OAuth Secret above
+# 0. Optional one-shot BYOI (Kafka + infra + Keycloak + OAuth mirror + Secrets):
+#    NAMESPACE=cost-byoi CR_NAME=cost-management ./hack/deploy-byoi.sh
+#    Or step through config/samples/byoi pieces manually — see
+#    docs/development/pre-prod-install.md
 
-# 1. Infrastructure (Postgres, Valkey, MinIO)
+# 0b. If you did not use deploy-byoi.sh: Kafka, infra, Keycloak, OAuth mirror
+
+# 1. Infrastructure (Postgres, Valkey, MinIO) — skip if deploy-byoi.sh already ran
 kubectl apply -k config/samples/byoi/infra
 
 # Wait until pods are Ready (adjust timeout as needed)
@@ -139,8 +162,12 @@ kubectl apply -f config/samples/byoi/app/costmanagementserviceconfig.yaml
 ```bash
 kubectl -n cost-byoi get cmsc cost-management -w
 kubectl -n cost-byoi describe cmsc cost-management
-kubectl -n op-sdk-scaffold-system logs deploy/op-sdk-scaffold-controller-manager -f
+# OwnNamespace: operator runs in the CR namespace (not a separate system NS)
+kubectl -n cost-byoi logs deploy/koku-service-operator -f
 ```
+
+End-to-end pre-prod path (deps → operator → UI):
+[docs/development/pre-prod-install.md](../../docs/development/pre-prod-install.md).
 
 ## Monitoring (optional)
 
