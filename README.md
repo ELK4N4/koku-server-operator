@@ -11,6 +11,7 @@ existing external infrastructure (PostgreSQL, Kafka, S3, OIDC).
 
 | Document | Description |
 |----------|-------------|
+| [docs/development/clusterbot.md](docs/development/clusterbot.md) | Cluster Bot day-one: Redpanda BYOI → in-cluster operator |
 | [docs/development/pre-prod-install.md](docs/development/pre-prod-install.md) | Pre-prod BYOI → operator → UI install walkthrough |
 | [docs/development/ownnamespace.md](docs/development/ownnamespace.md) | OwnNamespace install/watch model and RBAC shape |
 | [docs/development/crc-testing.md](docs/development/crc-testing.md) | Local development and CRC testing guide |
@@ -25,12 +26,13 @@ existing external infrastructure (PostgreSQL, Kafka, S3, OIDC).
 ```bash
 make generate manifests    # regenerate CRD and deep-copy code
 make build                 # compile to bin/manager
-NAMESPACE=<cr-ns> make run # run locally (OwnNamespace requires NAMESPACE)
+NAMESPACE=<cr-ns> IMG=<operator-image> make run # local (OwnNamespace; requires IMG)
 ```
 
-See [docs/development/crc-testing.md](docs/development/crc-testing.md) for CRC,
-or [docs/development/pre-prod-install.md](docs/development/pre-prod-install.md)
-for an in-cluster BYOI + UI smoke on a lab cluster.
+See [docs/development/clusterbot.md](docs/development/clusterbot.md) for Cluster Bot,
+[docs/development/crc-testing.md](docs/development/crc-testing.md) for CRC, or
+[docs/development/pre-prod-install.md](docs/development/pre-prod-install.md)
+for a full in-cluster BYOI + UI smoke.
 
 ## API / CRD naming
 

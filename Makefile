@@ -168,7 +168,12 @@ run: manifests generate fmt vet ## Run a controller from your host (OwnNamespace
 		echo "Example: NAMESPACE=cost-onprem make run"; \
 		exit 1; \
 	fi
-	NAMESPACE=$(NAMESPACE) go run ./cmd/main.go --operator-image=$(IMG)
+	@if [ -z "$(IMG)" ]; then \
+		echo "IMG is required (passed as --operator-image for wait-for init containers)."; \
+		echo "Example: NAMESPACE=cost-onprem IMG=quay.io/project-koku/koku-service-operator:v0.0.1 make run"; \
+		exit 1; \
+	fi
+	NAMESPACE=$(NAMESPACE) go run ./cmd/main.go --dev --operator-image=$(IMG)
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.

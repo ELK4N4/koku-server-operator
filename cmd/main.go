@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"strings"
 
@@ -68,19 +69,25 @@ func main() {
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "Address for health probes.")
 	flag.BoolVar(&leaderElect, "leader-elect", false, "Enable leader election for controller manager.")
 	flag.StringVar(&leaderElectionID, "leader-election-id", "costmanagementserviceconfigs.service.costmanagement.openshift.io", "Leader election resource ID.")
-	flag.BoolVar(&developmentMode, "dev", false, "Enable development mode (verbose logging).")
+	flag.BoolVar(&developmentMode, "dev", false, "Development mode: verbose logging; skip registering admission webhooks (no TLS certs required).")
 	// --operator-image is the fully-qualified image reference for this operator pod.
 	// It is used as the image for wait-for init containers so no separate image is needed.
 	// Set it to match the registry and tag in your environment:
 	//   --operator-image=quay.io/my-org/koku-service-operator:v1.2.3
 	// In OLM deployments the CSV injects this via the Deployment args.
+	// Local: IMG=... make run  (Makefile passes --operator-image=$(IMG) and --dev).
 	flag.StringVar(&operatorImage, "operator-image", "", "operator image used for init containers (registry/name:tag)")
 	opts := zap.Options{Development: developmentMode}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	if operatorImage == "" {
-		setupLog.Error(nil, "--operator-image is required: set it to the fully-qualified image reference of this operator pod (e.g. quay.io/project-koku/koku-service-operator:v1.0.0)")
+		_, _ = fmt.Fprintln(os.Stderr, "error: --operator-image is required")
+		_, _ = fmt.Fprintln(os.Stderr, "  Used as the image for wait-for init containers on Jobs.")
+		_, _ = fmt.Fprintln(os.Stderr, "  Examples:")
+		_, _ = fmt.Fprintln(os.Stderr, "    IMG=quay.io/project-koku/koku-service-operator:v0.0.1 make run")
+		_, _ = fmt.Fprintln(os.Stderr, "    go run ./cmd/main.go --dev --operator-image=quay.io/.../koku-service-operator:tag")
+		_, _ = fmt.Fprintln(os.Stderr, "  In-cluster lab: IMG=... ./hack/deploy-incluster.sh <ns> (passes the flag for you).")
 		os.Exit(1)
 	}
 	resources.OperatorImage = operatorImage
@@ -124,7 +131,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&costv1alpha1.CostManagementServiceConfig{}).SetupWebhookWithManager(mgr); err != nil {
+	if developmentMode {
+		setupLog.Info("dev mode: skipping admission webhook registration (no TLS serving certs required)")
+	} else if err = (&costv1alpha1.CostManagementServiceConfig{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "CostManagementServiceConfig")
 		os.Exit(1)
 	}

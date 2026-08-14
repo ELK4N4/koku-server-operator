@@ -44,7 +44,7 @@ echo "Cluster:   $(oc whoami --show-server)"
 echo ""
 
 # CRDs + RoleBinding (default SA) + ClusterRoleBinding + anyuid SCC.
-./hack/deploy-crc.sh "$NS"
+./hack/deploy-dev.sh "$NS"
 
 echo "[in-cluster] Ensuring webhook serving-cert Secret (${WEBHOOK_SECRET})..."
 # controller-runtime defaults to tls.crt / tls.key under this mount path.

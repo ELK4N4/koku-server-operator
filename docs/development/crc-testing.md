@@ -43,7 +43,8 @@ oc login -u kubeadmin -p <password> https://api.crc.testing:6443 \
 ## Install CRDs and RBAC
 
 ```bash
-./hack/deploy-crc.sh cost-onprem
+./hack/deploy-dev.sh cost-onprem
+# Alias (same script): ./hack/deploy-crc.sh cost-onprem
 ```
 
 This script installs the CRD and OwnNamespace RBAC: `manager-role` via a
@@ -70,17 +71,28 @@ oc adm policy add-scc-to-user anyuid -z default -n cost-onprem
 
 ## Run the operator
 
-OwnNamespace requires a watch namespace. Prefer `NAMESPACE=… make run`, or:
+OwnNamespace requires a watch namespace. Prefer `NAMESPACE=… IMG=… make run`
+(`make run` passes `--dev` and `--operator-image=$(IMG)`):
 
 ```bash
+NAMESPACE=cost-onprem IMG=quay.io/project-koku/koku-service-operator:v0.0.1 make run
+# or:
 NAMESPACE=cost-onprem go run ./cmd/main.go --dev \
+  --operator-image=quay.io/project-koku/koku-service-operator:v0.0.1 \
   --health-probe-bind-address=:8082 \
   --metrics-bind-address=:8083
 ```
 
+`--dev` skips admission webhook registration (no TLS certs needed on the
+laptop). `--operator-image` is **required** for wait-for init containers.
+
 The operator reads `~/.kube/config` (set by `eval "$(crc oc-env)"`) and
 restricts its informer cache to the `cost-onprem` namespace. See
 [ownnamespace.md](ownnamespace.md).
+
+**Cluster Bot / remote OpenShift:** do not use `make run` with BYOI
+`*.svc.cluster.local` hosts — use [clusterbot.md](clusterbot.md) /
+`./hack/deploy-incluster.sh` instead.
 
 ## Apply a sample CR
 
@@ -167,7 +179,7 @@ global:
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `TLS handshake timeout` | CRC cluster hung under load | Restart CRC |
-| `Permission denied` on PVC mount | fsGroup not set | `anyuid` SCC already granted by deploy-crc.sh; check `fsGroup` in pod SC |
+| `Permission denied` on PVC mount | fsGroup not set | `anyuid` SCC already granted by deploy-dev.sh; check `fsGroup` in pod SC |
 | `No module named listener` | Wrong container command | Fixed — uses `python manage.py listener` |
 | `Unable to configure handler 'file'` | Django file log handler on read-only FS | Fixed — `kokuAppContainerSC()` does not set `readOnlyRootFilesystem` |
 | Migration segfault | amd64 image on arm64 node | Use arm64 image (see above) |

@@ -9,6 +9,9 @@ the OwnNamespace model: **operator install namespace == CR namespace**. BYOI
 infra may live elsewhere and is referenced only via CR connection fields.
 See [ownnamespace.md](ownnamespace.md).
 
+For a shorter **Cluster Bot day-one** path (Redpanda, no AMQ Streams / Keycloak),
+see [clusterbot.md](clusterbot.md).
+
 ## Conventions (parameterized)
 
 The worked example uses the checked-in BYOI sample names. Override as needed
@@ -154,7 +157,7 @@ docker buildx build --platform linux/amd64 -t "$IMG" --push .
 
 `make run` / out-of-cluster controllers **cannot** resolve `*.svc.cluster.local`
 BYOI hosts from a laptop. Use the in-cluster helper (binds `default` SA in
-`$NAMESPACE`, same as `./hack/deploy-crc.sh`):
+`$NAMESPACE`, same as `./hack/deploy-dev.sh` / `./hack/deploy-crc.sh`):
 
 ```bash
 IMG="$IMG" ./hack/deploy-incluster.sh "$NAMESPACE"
@@ -162,7 +165,7 @@ IMG="$IMG" ./hack/deploy-incluster.sh "$NAMESPACE"
 
 That script:
 
-1. Applies CRDs + `manager-role` / `manager-cluster-role`
+1. Applies CRDs + `manager-role` / `manager-cluster-role` via `deploy-dev.sh`
 2. Creates RoleBinding + ClusterRoleBinding for `$NAMESPACE:default`
 3. Creates a lab-only TLS Secret (`koku-webhook-server-cert`) and mounts it at
    `/tmp/k8s-webhook-server/serving-certs` (required — the manager registers
@@ -180,10 +183,12 @@ Watch logs:
 kubectl -n "$NAMESPACE" logs -f deploy/koku-service-operator
 ```
 
-`hack/deploy-incluster.sh` / `hack/deploy-crc.sh` bind `default` SA to
+`hack/deploy-incluster.sh` / `hack/deploy-dev.sh` bind `default` SA to
 `manager-role`, `manager-cluster-role`, and the namespaced
 `leader-election-role` (leases). Requires `openssl` on the machine running the
 script (for the lab webhook cert).
+
+Day-one Cluster Bot (Redpanda, no Keycloak): [clusterbot.md](clusterbot.md).
 
 ### B3. App Secrets, then the CR
 

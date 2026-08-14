@@ -74,7 +74,17 @@ Tear down Kafka separately when finished:
 ### Lightweight alternative (Redpanda)
 
 Single-node Redpanda in `cost-byoi-infra` — optional, not part of
-`kubectl apply -k config/samples/byoi/infra`:
+`kubectl apply -k config/samples/byoi/infra`. Prefer this for **Cluster Bot
+day-one** so Kafka is not a second OLM project:
+
+```bash
+# One-shot: infra + Redpanda + secrets + smoke CR
+./hack/clusterbot-smoke.sh
+# Then: IMG=… ./hack/deploy-incluster.sh cost-byoi
+# Docs: docs/development/clusterbot.md
+```
+
+Manual:
 
 ```bash
 # Needs anyuid on byoi-infra (same as postgres/minio)
@@ -82,7 +92,7 @@ kubectl apply -f config/samples/byoi/infra/kafka.yaml
 kubectl -n cost-byoi-infra rollout status deploy/kafka --timeout=180s
 ```
 
-Point the CR at Redpanda instead of AMQ Streams:
+Point the CR at Redpanda (smoke sample already does):
 
 ```yaml
 spec:
@@ -90,6 +100,8 @@ spec:
     bootstrapServers: "kafka.cost-byoi-infra.svc.cluster.local:9092"
     securityProtocol: "PLAINTEXT"
 ```
+
+Sample: `config/samples/byoi/app/costmanagementserviceconfig-smoke.yaml`.
 
 Do **not** use `KAFKA_NAMESPACE=cost-byoi-infra` for chart kafka suite expectations
 that require Strimzi; use AMQ Streams for those.
