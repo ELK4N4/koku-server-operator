@@ -4,8 +4,8 @@ import "testing"
 
 func TestROSEnabled(t *testing.T) {
 	cfg := &CostManagementServiceConfig{}
-	if !ROSEnabled(cfg) {
-		t.Fatal("nil Enabled should default to true")
+	if ROSEnabled(cfg) {
+		t.Fatal("nil Enabled should default to false (beta: Cost-only)")
 	}
 	enabled := true
 	cfg.Spec.ROS.Enabled = &enabled

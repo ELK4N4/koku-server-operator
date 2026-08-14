@@ -127,8 +127,9 @@ Override the Secret name with `spec.ui.oauthClientSecretRef.name` if needed.
 Cookie session Secret (`{cr}-ui-cookie-secret`) is still created by the operator.
 
 Set `spec.ui.app.image` and `spec.ui.oauthProxy.image` (repository and tag).
-Empty values yield `InvalidImageName`. With `ros.enabled: false` (sample default),
-ROS/Kruize are skipped — suitable for UI smoke without ROS images.
+Empty values yield `InvalidImageName`. **`ros.enabled` defaults to `false`**
+(beta: Cost-only); samples keep it false so ROS/Kruize are skipped — suitable
+for UI smoke without ROS images. Set `enabled: true` only when opting in.
 
 ## Apply
 

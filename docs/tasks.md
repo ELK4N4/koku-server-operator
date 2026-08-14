@@ -67,11 +67,11 @@ Last audited: 2026-08-09 against implementation in `internal/controller/` and `i
 
 ## Beta scope
 
-**ROS is not required for Beta.** `spec.ros.enabled` (default `true`) can be set to
-`false` to skip ROS and its Kruize dependency (migrations, Deployments, CronJobs,
-Envoy recommendation routes, NetworkPolicies, ServiceMonitors, cluster-scoped
-Kruize RBAC). BYOI samples default this to `false`. Full ROS/Kruize delivery
-remains tracked under COST-7686 / COST-7687 for post-Beta.
+**ROS is not required for Beta.** `spec.ros.enabled` defaults to **`false`**
+(Cost-only). Set it to `true` only to opt in to ROS and its Kruize dependency
+(migrations, Deployments, CronJobs, Envoy recommendation routes, NetworkPolicies,
+ServiceMonitors, cluster-scoped Kruize RBAC). Samples keep `enabled: false`
+explicitly. Full ROS/Kruize delivery remains tracked under COST-8054 / post-Beta.
 
 ## Intentional Deviations and Known Gaps
 

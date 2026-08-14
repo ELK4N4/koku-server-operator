@@ -6,7 +6,7 @@
 
 **Scope note (2026-08-10):** ROS and Kruize are **out of beta**. Name them separately in gaps (different secrets, migrate, readiness). Optional install, independent Kruize enablement, and day-2 enablement are owned by **[COST-8054](../jira/COST-8054.md)** — not by COST-7678–7692 closure.
 
-**Code progress since first draft:** `spec.ros.enabled` (`*bool`, default `true`) + `ROSEnabled()` gate Deployments/CronJobs/migrate/Envoy ROS routes/NPs/SMs; `reconcileROSFeature` sets condition `ROSEnabled` and cleans up when flipped off. BYOI samples set `ros.enabled: false`. **Still open for Cost-only honesty:** Validation **always** requires `ros-user` / `ros-password` (not conditional; not Kruize keys); Kruize is not independently toggleable (tied to ROS today); default remains enabled unless the CR sets `false`. “Out of beta scope” means *do not treat ROS or Kruize readiness/hardening as Cost beta blockers*.
+**Code progress since first draft:** `spec.ros.enabled` (`*bool`, **default `false`** for Cost-only beta) + `ROSEnabled()` gate Deployments/CronJobs/migrate/Envoy ROS routes/NPs/SMs; `reconcileROSFeature` sets condition `ROSEnabled` and cleans up when flipped off. Samples keep `ros.enabled: false`. **Still open for Cost-only honesty:** Validation **always** requires `ros-user` / `ros-password` (not conditional; not Kruize keys); Kruize is not independently toggleable (tied to ROS today). Opt in with `ros.enabled: true` + images. “Out of beta scope” means *do not treat ROS or Kruize readiness/hardening as Cost beta blockers*.
 
 Per-ticket detail stays in the linked audits. This doc is the cross-cut ranking.
 
@@ -208,8 +208,8 @@ Track separately; do not conflate the two components. **Partial progress already
 | Skip `ROSMigrationJob` when `ros.enabled=false` | Done (`reconcileMigration` + `ROSEnabled()`) |
 | Skip ROS/Kruize Deployments, CronJobs, Envoy ROS routes, Kruize NP/SM | Done (gated apply + `reconcileROSFeature` cleanup) |
 | `ROSEnabled` condition | Done |
-| BYOI samples default `ros.enabled: false` | Done |
-| Default when unset | Still **enabled** (`+kubebuilder:default:=true`) |
+| BYOI samples + CRD / `ROSEnabled()` default `ros.enabled: false` | Done |
+| Default when unset | **Disabled** (`+kubebuilder:default:=false`, `BoolVal(..., false)`) |
 
 **Still owned by [COST-8054](../jira/COST-8054.md):**
 
@@ -220,7 +220,7 @@ Track separately; do not conflate the two components. **Partial progress already
 | Day-2 enable polish / docs | Full AC of 8054 |
 | Hardening (SA, NP, SM, profile rows, bucket discovery) | Post-beta ROS/Kruize quality |
 
-**Beta posture today:** document and sample `ros.enabled: false`; do not gate Available on ROS/Kruize; treat unused `ros-*` secret keys as a known COST-8054 footgun until Validation is conditional.
+**Beta posture today:** CRD and samples default `ros.enabled: false`; do not gate Available on ROS/Kruize; treat unused `ros-*` secret keys as a known COST-8054 footgun until Validation is conditional.
 
 S3/OBC items stay relevant either way — Ingress/uploads still need object storage; only the default OBC name `ros-data-ceph` is ROS-flavored.
 

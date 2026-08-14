@@ -36,10 +36,13 @@ func cronJobScheme(t *testing.T) *runtime.Scheme {
 func TestKruizeCronJobDeletedWhenDisabled(t *testing.T) {
 	const ns = "test"
 	falseVal := false
+	rosOn := true
 
 	cfg := &costv1alpha1.CostManagementServiceConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: ns},
 		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			// Kruize CronJobs only reconcile when ROS is enabled.
+			ROS: costv1alpha1.ROSConfig{Enabled: &rosOn},
 			Kruize: costv1alpha1.KruizeConfig{
 				Partitions: costv1alpha1.KruizePartitionsSpec{
 					DeleteEnabled: &falseVal, // disabled

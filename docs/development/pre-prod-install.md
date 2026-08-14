@@ -223,10 +223,13 @@ Required image fields (empty `repository`/`tag` → `InvalidImageName` / image `
 | `ui.app.image` | UI |
 | `ui.oauthProxy.image` | oauth2-proxy sidecar |
 
-The sample CR sets `ros.enabled: false`. That skips ROS schema migrate, Kruize,
-and ROS workers so a UI smoke does not need ROS/Kruize images or ClusterRole
-escalation rights beyond what `manager-cluster-role` already grants for cleanup.
-Set `ros.enabled: true` (and fill ROS/Kruize images) only when you need ROS.
+**CRD default and samples:** `spec.ros.enabled` defaults to **`false`** (beta is
+Cost-only — no ROS/Kruize). Samples set `enabled: false` explicitly. That skips
+ROS schema migrate, Kruize, and ROS workers so install paths do not need
+ROS/Kruize images or ClusterRole escalation rights beyond what
+`manager-cluster-role` already grants for cleanup.
+Set `ros.enabled: true` (and fill ROS/Kruize images) only when you intentionally
+opt in.
 
 ### B4. Wait for reconcile
 
