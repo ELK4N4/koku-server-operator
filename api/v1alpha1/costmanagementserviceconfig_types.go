@@ -343,8 +343,7 @@ type KeycloakSyncSpec struct {
 	// PruneOrphans deletes RBAC Principals that no longer exist in the
 	// org's Keycloak group. Matches the Helm chart default (true).
 	// +kubebuilder:default:=true
-	PruneOrphans *bool `json:"pruneOrphans,omitempty"`
-	// +kubebuilder:default:="rbac-keycloak-sync"
+	PruneOrphans    *bool                       `json:"pruneOrphans,omitempty"`
 	ClientID        string                      `json:"clientId,omitempty"`
 	ClientSecretRef SecretKeyRef                `json:"clientSecretRef,omitempty"`
 	Resources       corev1.ResourceRequirements `json:"resources,omitempty"`
