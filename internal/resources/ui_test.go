@@ -193,6 +193,21 @@ func TestUIDeploymentHonorsResourceOverrides(t *testing.T) {
 	assertQuantity(t, "app cpu limit", app.Resources.Limits[corev1.ResourceCPU], "20m")
 }
 
+func TestUIDeploymentHonorsRequestsOnlyOverride(t *testing.T) {
+	cfg := uiTestCfg()
+	cfg.Spec.Profile = costv1alpha1.ProfileHA
+	cfg.Spec.UI.OAuthProxy.Resources = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m"), corev1.ResourceMemory: resource.MustParse("256Mi")},
+	}
+	dep := UIDeployment(cfg)
+	proxy := containerByName(t, dep.Spec.Template.Spec.Containers, "oauth-proxy")
+	assertQuantity(t, "oauth-proxy cpu request", proxy.Resources.Requests[corev1.ResourceCPU], "200m")
+	assertQuantity(t, "oauth-proxy memory request", proxy.Resources.Requests[corev1.ResourceMemory], "256Mi")
+	if len(proxy.Resources.Limits) != 0 {
+		t.Errorf("oauth-proxy limits = %v, want empty (do not fill profile limits)", proxy.Resources.Limits)
+	}
+}
+
 func assertQuantity(t *testing.T, label string, got resource.Quantity, want string) {
 	t.Helper()
 	if got.Cmp(resource.MustParse(want)) != 0 {

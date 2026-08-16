@@ -181,11 +181,11 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 	appImage := spec.App.Image.Repository + ":" + spec.App.Image.Tag
 
 	proxyResources := spec.OAuthProxy.Resources
-	if proxyResources.Limits == nil {
+	if len(proxyResources.Requests) == 0 && len(proxyResources.Limits) == 0 {
 		proxyResources = uiProfileResources(cfg.Spec.Profile)
 	}
 	appResources := spec.App.Resources
-	if appResources.Limits == nil {
+	if len(appResources.Requests) == 0 && len(appResources.Limits) == 0 {
 		appResources = uiProfileResources(cfg.Spec.Profile)
 	}
 
