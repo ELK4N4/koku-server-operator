@@ -1,6 +1,6 @@
 # Helm Chart vs Operator Comparison Report
 
-Updated: 2026-08-15 (validated against `gold` branch)
+Updated: 2026-08-16 (validated against `main`)
 
 Systematic comparison of `cost-onprem-chart/cost-onprem/` (Helm chart) against
 `koku-service-operator` (operator) — identifying deviations, missing pieces,

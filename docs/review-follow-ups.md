@@ -129,7 +129,7 @@ contains resources like `consolelinks`, `clusterroles`,
 
 **Source:** Code review finding.
 
-**Problem:** The Keycloak sync CronJob (now implemented in PR #53) verifies
+**Problem:** The Keycloak sync CronJob (now implemented in [PR #53](https://github.com/project-koku/koku-service-operator/pull/53)) verifies
 TLS against Keycloak. If Keycloak uses a private CA (common on-prem),
 `ssl.create_default_context()` won't trust it. `KEYCLOAK_TLS_VERIFY` follows
 `auth.keycloak.tls.insecureSkipVerify`, but `auth.keycloak.tls.caCertSecretName`
@@ -152,7 +152,7 @@ Follow the same pattern used by the Envoy gateway and oauth2-proxy.
 
 **Source:** Code review finding.
 
-**Problem:** The Keycloak sync CronJob (now implemented in PR #53) needs a
+**Problem:** The Keycloak sync CronJob (now implemented in [PR #53](https://github.com/project-koku/koku-service-operator/pull/53)) needs a
 fake-client test covering the enable → apply → disable → delete lifecycle
 (same pattern as `TestKruizeCronJobDeletedWhenDisabled`). Without it,
 disabling the sync could leave orphaned CronJobs running.

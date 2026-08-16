@@ -1,5 +1,10 @@
 # Code Review — Open Issues (2026-08-15)
 
+Stable IDs in brackets (`[D1]`, `[F1]`, `[I7]`) come from the 2026-08-09/10
+reviews this file replaces. **D** = defect, **F** = finding, **I** =
+improvement. This list is **open items only**; closed IDs still appear in
+gap-analysis notes (for example D11, D18, D20, F3, F4).
+
 ### P1 — Status / lifecycle
 
 #### 1. Ready ignores most workload health [D1]
