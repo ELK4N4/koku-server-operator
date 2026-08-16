@@ -197,13 +197,17 @@ func DatabaseNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *netwo
 	return netpol(cfg, cfg.Name+"-database", "database", ingressFromPods(cfg, dbPort, []string{
 		"cost-management-api",
 		"cost-processor",
+		"cost-management-migration",
 		"rbac-api",
 		"rbac-worker",
+		"rbac-migration",
+		"rbac-admin-bootstrap",
 		"ros-api",
 		"ros-processor",
 		"ros-recommendation-poller",
 		"ros-housekeeper",
 		"ros-optimization",
+		"ros-migration",
 	}))
 }
 

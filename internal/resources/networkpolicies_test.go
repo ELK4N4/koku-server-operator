@@ -120,6 +120,68 @@ func TestROSAPINetworkPolicy_GatewayOnly(t *testing.T) {
 	}
 }
 
+func TestCacheNetworkPolicy(t *testing.T) {
+	cfg := testCfg()
+	np := CacheNetworkPolicy(cfg)
+	assertIngressOnly(t, np)
+	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "cache" {
+		t.Errorf("podSelector component = %q, want cache", got)
+	}
+	wantFrom := []string{
+		"cost-management-api", "cost-processor", "listener", "cost-scheduler",
+		"cost-worker-celery", "cost-worker-priority", "cost-worker-summary",
+		"cost-worker-ocp", "cost-worker-cost-model", "cost-worker-refresh",
+		"cost-worker-hcs", "cost-worker-download",
+		"cost-worker-subs-extraction", "cost-worker-subs-transmission",
+		"rbac-api", "rbac-worker",
+	}
+	for _, comp := range wantFrom {
+		found := false
+		for _, rule := range np.Spec.Ingress {
+			if peerHasComponent(rule, comp) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing peer component %q", comp)
+		}
+	}
+	if !ruleAllowsPort(np.Spec.Ingress, 6379) {
+		t.Error("missing default cache port 6379")
+	}
+}
+
+func TestDatabaseNetworkPolicy(t *testing.T) {
+	cfg := testCfg()
+	np := DatabaseNetworkPolicy(cfg)
+	assertIngressOnly(t, np)
+	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "database" {
+		t.Errorf("podSelector component = %q, want database", got)
+	}
+	wantFrom := []string{
+		"cost-management-api", "cost-processor", "cost-management-migration",
+		"rbac-api", "rbac-worker", "rbac-migration", "rbac-admin-bootstrap",
+		"ros-api", "ros-processor", "ros-recommendation-poller",
+		"ros-housekeeper", "ros-optimization", "ros-migration",
+	}
+	for _, comp := range wantFrom {
+		found := false
+		for _, rule := range np.Spec.Ingress {
+			if peerHasComponent(rule, comp) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing peer component %q", comp)
+		}
+	}
+	if !ruleAllowsPort(np.Spec.Ingress, 5432) {
+		t.Error("missing default database port 5432")
+	}
+}
+
 func assertIngressOnly(t *testing.T, np *networkingv1.NetworkPolicy) {
 	t.Helper()
 	if len(np.Spec.PolicyTypes) != 1 || np.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress {
