@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
@@ -140,6 +141,62 @@ func TestValidateUIOAuthClientSecret(t *testing.T) {
 	}
 	if err := ValidateUIOAuthClientSecret(ok); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUIDeploymentProfileResources(t *testing.T) {
+	tests := []struct {
+		name       string
+		profile    costv1alpha1.Profile
+		wantCPUReq string
+		wantMemReq string
+		wantCPULim string
+		wantMemLim string
+	}{
+		{"unset", "", "50m", "64Mi", "100m", "128Mi"},
+		{"standard", costv1alpha1.ProfileStandard, "50m", "64Mi", "100m", "128Mi"},
+		{"ha", costv1alpha1.ProfileHA, "100m", "128Mi", "200m", "256Mi"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := uiTestCfg()
+			cfg.Spec.Profile = tt.profile
+			dep := UIDeployment(cfg)
+			for _, name := range []string{"oauth-proxy", "app"} {
+				c := containerByName(t, dep.Spec.Template.Spec.Containers, name)
+				assertQuantity(t, name+" cpu request", c.Resources.Requests[corev1.ResourceCPU], tt.wantCPUReq)
+				assertQuantity(t, name+" memory request", c.Resources.Requests[corev1.ResourceMemory], tt.wantMemReq)
+				assertQuantity(t, name+" cpu limit", c.Resources.Limits[corev1.ResourceCPU], tt.wantCPULim)
+				assertQuantity(t, name+" memory limit", c.Resources.Limits[corev1.ResourceMemory], tt.wantMemLim)
+			}
+		})
+	}
+}
+
+func TestUIDeploymentHonorsResourceOverrides(t *testing.T) {
+	cfg := uiTestCfg()
+	cfg.Spec.Profile = costv1alpha1.ProfileHA
+	cfg.Spec.UI.OAuthProxy.Resources = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m"), corev1.ResourceMemory: resource.MustParse("256Mi")},
+		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("300m"), corev1.ResourceMemory: resource.MustParse("512Mi")},
+	}
+	cfg.Spec.UI.App.Resources = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m"), corev1.ResourceMemory: resource.MustParse("32Mi")},
+		Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
+	}
+	dep := UIDeployment(cfg)
+	proxy := containerByName(t, dep.Spec.Template.Spec.Containers, "oauth-proxy")
+	assertQuantity(t, "oauth-proxy cpu request", proxy.Resources.Requests[corev1.ResourceCPU], "200m")
+	assertQuantity(t, "oauth-proxy cpu limit", proxy.Resources.Limits[corev1.ResourceCPU], "300m")
+	app := containerByName(t, dep.Spec.Template.Spec.Containers, "app")
+	assertQuantity(t, "app cpu request", app.Resources.Requests[corev1.ResourceCPU], "10m")
+	assertQuantity(t, "app cpu limit", app.Resources.Limits[corev1.ResourceCPU], "20m")
+}
+
+func assertQuantity(t *testing.T, label string, got resource.Quantity, want string) {
+	t.Helper()
+	if got.Cmp(resource.MustParse(want)) != 0 {
+		t.Errorf("%s = %s, want %s", label, got.String(), want)
 	}
 }
 

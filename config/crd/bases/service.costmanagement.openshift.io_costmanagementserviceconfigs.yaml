@@ -1863,12 +1863,11 @@ spec:
                 type: object
               profile:
                 default: standard
-                description: |-
-                  Profile selects pre-defined resource sizing. Defaults to standard.
-                  NOT YET IMPLEMENTED — accepted but not read by the reconciler (COST-7678).
-                  Use per-component resources fields until profile sizing is wired.
+                description: Profile selects pre-defined resource sizing. Defaults
+                  to standard.
                 enum:
                 - standard
+                - ha
                 type: string
               rbac:
                 properties:
