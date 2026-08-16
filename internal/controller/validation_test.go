@@ -329,63 +329,46 @@ func TestReconcileValidation_KafkaUnreachableNonBlocking(t *testing.T) {
 	}
 }
 
-func TestReconcileValidation_OIDCValidJWKS(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"keys":[{"kty":"RSA","kid":"1"}]}`))
-	}))
-	t.Cleanup(srv.Close)
+func TestReconcileValidation_OIDCJWKS(t *testing.T) {
+	tests := []struct {
+		name   string
+		body   string
+		status metav1.ConditionStatus
+		reason string
+	}{
+		{"valid JWKS", `{"keys":[{"kty":"RSA","kid":"1"}]}`, metav1.ConditionTrue, "OIDCReachable"},
+		{"empty keys", `{"keys":[]}`, metav1.ConditionFalse, "OIDCUnreachable"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(srv.Close)
 
-	cfg := &costv1alpha1.CostManagementServiceConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
-		Spec:       bundledNoKafkaSpec(),
-	}
-	cfg.Spec.Auth.Keycloak.URL = srv.URL
+			cfg := &costv1alpha1.CostManagementServiceConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+				Spec:       bundledNoKafkaSpec(),
+			}
+			cfg.Spec.Auth.Keycloak.URL = srv.URL
 
-	r := newValidationReconciler(t)
-	result, err := r.reconcileValidation(context.Background(), cfg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.IsZero() {
-		t.Errorf("OIDC probe must not block the pipeline, got %+v", result)
-	}
-	found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAuthReady)
-	if found == nil || found.Status != metav1.ConditionTrue {
-		t.Fatalf("expected AuthenticationReady=True, got %+v", found)
-	}
-	if found.Reason != "OIDCReachable" {
-		t.Errorf("reason = %q, want OIDCReachable", found.Reason)
-	}
-}
-
-func TestReconcileValidation_OIDCEmptyJWKSNonBlocking(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"keys":[]}`))
-	}))
-	t.Cleanup(srv.Close)
-
-	cfg := &costv1alpha1.CostManagementServiceConfig{
-		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
-		Spec:       bundledNoKafkaSpec(),
-	}
-	cfg.Spec.Auth.Keycloak.URL = srv.URL
-
-	r := newValidationReconciler(t)
-	result, err := r.reconcileValidation(context.Background(), cfg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !result.IsZero() {
-		t.Errorf("empty JWKS must not block the pipeline, got %+v", result)
-	}
-	found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAuthReady)
-	if found == nil || found.Status != metav1.ConditionFalse {
-		t.Fatalf("expected AuthenticationReady=False, got %+v", found)
-	}
-	if found.Reason != "OIDCUnreachable" {
-		t.Errorf("reason = %q, want OIDCUnreachable", found.Reason)
+			r := newValidationReconciler(t)
+			result, err := r.reconcileValidation(context.Background(), cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !result.IsZero() {
+				t.Errorf("OIDC probe must not block the pipeline, got %+v", result)
+			}
+			found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAuthReady)
+			if found == nil || found.Status != tc.status {
+				t.Fatalf("AuthenticationReady=%v, want %s", found, tc.status)
+			}
+			if found.Reason != tc.reason {
+				t.Errorf("reason = %q, want %s", found.Reason, tc.reason)
+			}
+		})
 	}
 }
 
