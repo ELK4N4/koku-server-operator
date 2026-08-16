@@ -142,6 +142,23 @@ location = /logout {
 	}
 }
 
+func uiProfileResources(profile costv1alpha1.Profile) corev1.ResourceRequirements {
+	switch profile {
+	case costv1alpha1.ProfileHA:
+		return corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")},
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m"), corev1.ResourceMemory: resource.MustParse("256Mi")},
+		}
+	case costv1alpha1.ProfileStandard:
+		fallthrough
+	default: // unset
+		return corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")},
+		}
+	}
+}
+
 // UIDeployment builds the UI Deployment with the oauth2-proxy sidecar and nginx app.
 func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deployment {
 	spec := cfg.Spec.UI
@@ -162,18 +179,12 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 	appImage := spec.App.Image.Repository + ":" + spec.App.Image.Tag
 
 	proxyResources := spec.OAuthProxy.Resources
-	if proxyResources.Limits == nil {
-		proxyResources = corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
-			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")},
-		}
+	if len(proxyResources.Requests) == 0 && len(proxyResources.Limits) == 0 {
+		proxyResources = uiProfileResources(cfg.Spec.Profile)
 	}
 	appResources := spec.App.Resources
-	if appResources.Limits == nil {
-		appResources = corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m"), corev1.ResourceMemory: resource.MustParse("64Mi")},
-			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")},
-		}
+	if len(appResources.Requests) == 0 && len(appResources.Limits) == 0 {
+		appResources = uiProfileResources(cfg.Spec.Profile)
 	}
 
 	proxyArgs := []string{
