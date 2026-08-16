@@ -38,8 +38,7 @@ const (
 // -----------------------------------------------------------------------------
 
 // Profile selects a pre-defined resource sizing tier.
-// UI applies these defaults when spec.ui.*.resources are unset; other
-// workloads still use per-component spec.*.resources (COST-7678).
+// Currently applies to UI containers only; other workloads use per-component spec.*.resources fields.
 // +kubebuilder:validation:Enum=standard;ha
 type Profile string
 
@@ -587,7 +586,8 @@ type MonitoringConfig struct {
 // -----------------------------------------------------------------------------
 
 type CostManagementServiceConfigSpec struct {
-	// Profile selects pre-defined resource sizing. Defaults to standard.
+	// Profile selects a pre-defined resource sizing tier.
+	// Currently applies to UI containers only; other workloads use per-component spec.*.resources fields.
 	// +kubebuilder:default:=standard
 	Profile        Profile              `json:"profile,omitempty"`
 	Global         GlobalConfig         `json:"global,omitempty"`

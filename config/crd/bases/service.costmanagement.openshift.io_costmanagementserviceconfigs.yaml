@@ -1863,8 +1863,9 @@ spec:
                 type: object
               profile:
                 default: standard
-                description: Profile selects pre-defined resource sizing. Defaults
-                  to standard.
+                description: |-
+                  Profile selects a pre-defined resource sizing tier.
+                  Currently applies to UI containers only; other workloads use per-component spec.*.resources fields.
                 enum:
                 - standard
                 - ha
