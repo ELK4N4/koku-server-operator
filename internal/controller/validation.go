@@ -3,7 +3,9 @@ package controller
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -18,7 +20,10 @@ import (
 	"github.com/project-koku/koku-service-operator/internal/resources"
 )
 
-const validationTimeout = 5 * time.Second
+const (
+	validationTimeout = 5 * time.Second
+	jwksBodyLimit     = 256 * 1024
+)
 
 // accessKeyKey would be less readable than the key name itself.
 //
@@ -136,7 +141,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileValidation(ctx context.
 	if u := strings.TrimSpace(cfg.Spec.Auth.Keycloak.URL); u != "" {
 		jwksURL := resources.KeycloakJWKSURL(cfg)
 		insecure := cfg.Spec.Auth.Keycloak.TLS.InsecureSkipVerify
-		if err := httpProbe(jwksURL, insecure, validationTimeout); err != nil {
+		if err := jwksProbe(ctx, jwksURL, insecure, validationTimeout); err != nil {
 			r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionFalse,
 				"OIDCUnreachable", fmt.Sprintf("JWKS %s: %v", jwksURL, err))
 		} else {
@@ -182,11 +187,12 @@ func kafkaTCPProbe(bootstrapServers string, timeout time.Duration) error {
 	return fmt.Errorf("bootstrap-servers %q is empty", bootstrapServers)
 }
 
-// httpProbe performs a GET to rawURL and returns nil only for 2xx responses.
-// 4xx responses are also treated as errors: a 401/403 means the endpoint
-// exists but is misconfigured; a 404 means the JWKS URL or realm is wrong.
-// Both indicate the OIDC provider is not usable, not that it is healthy.
-func httpProbe(rawURL string, insecureSkipVerify bool, timeout time.Duration) error {
+// jwksProbe GETs the OIDC JWKS URL and requires HTTP 2xx plus a JSON body
+// with a non-empty keys array (what Envoy needs to validate JWTs).
+// 4xx is an error: 401/403 means the endpoint is misconfigured; 404 means
+// the JWKS URL or realm is wrong. Uses the reconcile context so shutdown
+// cancels an in-flight probe.
+func jwksProbe(ctx context.Context, rawURL string, insecureSkipVerify bool, timeout time.Duration) error {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		base = &http.Transport{}
@@ -198,7 +204,7 @@ func httpProbe(rawURL string, insecureSkipVerify bool, timeout time.Duration) er
 		}
 		transport.TLSClientConfig.InsecureSkipVerify = true //nolint:gosec // user-opted-in
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -210,10 +216,28 @@ func httpProbe(rawURL string, insecureSkipVerify bool, timeout time.Duration) er
 		transport.CloseIdleConnections()
 		return err
 	}
-	_ = resp.Body.Close()
-	transport.CloseIdleConnections()
+	defer func() {
+		_ = resp.Body.Close()
+		transport.CloseIdleConnections()
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("unexpected HTTP status %d (want 2xx)", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, jwksBodyLimit+1))
+	if err != nil {
+		return fmt.Errorf("read JWKS body: %w", err)
+	}
+	if len(body) > jwksBodyLimit {
+		return fmt.Errorf("JWKS response exceeds %d bytes", jwksBodyLimit)
+	}
+	var doc struct {
+		Keys []json.RawMessage `json:"keys"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return fmt.Errorf("JWKS is not valid JSON: %w", err)
+	}
+	if len(doc.Keys) == 0 {
+		return fmt.Errorf("JWKS keys array is empty")
 	}
 	return nil
 }
