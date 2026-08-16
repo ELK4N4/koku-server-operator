@@ -161,7 +161,7 @@ func TestDatabaseNetworkPolicy(t *testing.T) {
 	}
 	wantFrom := []string{
 		"cost-management-api", "cost-processor", "cost-management-migration",
-		"rbac-api", "rbac-worker", "rbac-migration", "rbac-admin-bootstrap",
+		"rbac-api", "rbac-worker", "rbac-migration", "rbac-admin-bootstrap", "rbac-keycloak-sync",
 		"ros-api", "ros-processor", "ros-recommendation-poller",
 		"ros-housekeeper", "ros-optimization", "ros-migration",
 	}

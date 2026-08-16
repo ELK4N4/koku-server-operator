@@ -202,6 +202,7 @@ func DatabaseNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *netwo
 		"rbac-worker",
 		"rbac-migration",
 		"rbac-admin-bootstrap",
+		"rbac-keycloak-sync",
 		"ros-api",
 		"ros-processor",
 		"ros-recommendation-poller",
