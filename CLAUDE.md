@@ -42,10 +42,10 @@ etcd + kube-apiserver binaries needed by the controller integration tests
 
 The `bin/` directory (controller-gen, setup-envtest, kustomize, envtest
 binaries under `bin/k8s/`) is gitignored and not present in worktrees.
-After creating a worktree, symlink it from the main checkout:
+After creating a worktree, symlink `bin/` from the main checkout:
 
 ```bash
-ln -s "$(git rev-parse --show-toplevel)/bin" <worktree>/bin
+ln -s <main-checkout>/bin <worktree>/bin
 ```
 
 ## Production design target
