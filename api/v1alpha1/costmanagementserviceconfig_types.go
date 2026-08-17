@@ -536,11 +536,7 @@ type SaaSCeleryWorkerSpec struct {
 
 // CeleryWorkerSpec returns the shared worker shape used by resource builders.
 func (s SaaSCeleryWorkerSpec) CeleryWorkerSpec() CeleryWorkerSpec {
-	return CeleryWorkerSpec{
-		Replicas:    s.Replicas,
-		Concurrency: s.Concurrency,
-		Resources:   s.Resources,
-	}
+	return CeleryWorkerSpec(s)
 }
 
 // -----------------------------------------------------------------------------
