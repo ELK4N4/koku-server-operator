@@ -349,6 +349,7 @@ type KeycloakSyncSpec struct {
 	// org's Keycloak group. Matches the Helm chart default (true).
 	// +kubebuilder:default:=true
 	PruneOrphans    *bool                       `json:"pruneOrphans,omitempty"`
+	// +kubebuilder:default:="rbac-keycloak-sync"
 	ClientID        string                      `json:"clientId,omitempty"`
 	ClientSecretRef SecretKeyRef                `json:"clientSecretRef,omitempty"`
 	Resources       corev1.ResourceRequirements `json:"resources,omitempty"`
