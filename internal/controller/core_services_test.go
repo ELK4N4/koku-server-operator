@@ -47,8 +47,12 @@ func TestReconcileCoreServices_ROSOff_APINotReady(t *testing.T) {
 	mustNotExist(t, r.Client, "", resources.NameKruizeClusterRole(cfg), &rbacv1.ClusterRole{})
 
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
-	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "WaitingForAPI" {
-		t.Fatalf("expected Available=False WaitingForAPI, got %+v", cond)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "WaitingForRBAC" {
+		t.Fatalf("expected Available=False WaitingForRBAC, got %+v", cond)
+	}
+	rbac := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady)
+	if rbac == nil || rbac.Status != metav1.ConditionFalse || rbac.Reason != "WaitingForRBAC" {
+		t.Fatalf("expected RBACReady=False WaitingForRBAC, got %+v", rbac)
 	}
 }
 
@@ -83,8 +87,8 @@ func TestReconcileCoreServices_ROSOn_APINotReady(t *testing.T) {
 	mustExist(t, r.Client, testNamespace, resources.NameKokuAPI(cfg), &appsv1.Deployment{})
 
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
-	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "WaitingForAPI" {
-		t.Fatalf("expected Available=False WaitingForAPI, got %+v", cond)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "WaitingForRBAC" {
+		t.Fatalf("expected Available=False WaitingForRBAC, got %+v", cond)
 	}
 }
 
@@ -106,6 +110,7 @@ func TestReconcileCoreServices_ROSOff_APIReady(t *testing.T) {
 		t.Fatal("first pass should requeue while API is not ready")
 	}
 
+	markDeploymentReady(t, c, testNamespace, resources.NameRBACAPI(cfg))
 	markDeploymentReady(t, c, testNamespace, resources.NameKokuAPI(cfg))
 
 	result, err = r.reconcileCoreServices(context.Background(), cfg)
@@ -121,6 +126,106 @@ func TestReconcileCoreServices_ROSOff_APIReady(t *testing.T) {
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
 	if cond == nil || cond.Reason != "KokuAvailable" {
 		t.Fatalf("expected Available reason KokuAvailable, got %+v", cond)
+	}
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady) {
+		t.Fatal("expected RBACReady=True")
+	}
+}
+
+// Koku Ready must not make the CR Available while the RBAC API is still down.
+func TestReconcileCoreServices_RBACNotReady_BlocksAvailable(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	c := fakeClientPreservingStatus(scheme)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileCoreServices(context.Background(), cfg); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	mustExist(t, c, testNamespace, resources.NameKokuAPI(cfg), &appsv1.Deployment{})
+	markDeploymentReady(t, c, testNamespace, resources.NameKokuAPI(cfg))
+
+	result, err := r.reconcileCoreServices(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected requeue while RBAC API is not ready")
+	}
+
+	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != "WaitingForRBAC" {
+		t.Fatalf("expected Available=False WaitingForRBAC, got %+v", avail)
+	}
+	rbac := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady)
+	if rbac == nil || rbac.Status != metav1.ConditionFalse || rbac.Reason != "WaitingForRBAC" {
+		t.Fatalf("expected RBACReady=False WaitingForRBAC, got %+v", rbac)
+	}
+}
+
+func TestReconcileCoreServices_RBACReady_KokuNotReady(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	c := fakeClientPreservingStatus(scheme)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileCoreServices(context.Background(), cfg); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	markDeploymentReady(t, c, testNamespace, resources.NameRBACAPI(cfg))
+
+	result, err := r.reconcileCoreServices(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected requeue while Koku API is not ready")
+	}
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady) {
+		t.Fatal("expected RBACReady=True")
+	}
+	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != "WaitingForAPI" {
+		t.Fatalf("expected Available=False WaitingForAPI, got %+v", avail)
+	}
+}
+
+func TestReconcileCoreServices_WorkerNotReady_DoesNotBlock(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	c := fakeClientPreservingStatus(scheme)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileCoreServices(context.Background(), cfg); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	markDeploymentReady(t, c, testNamespace, resources.NameRBACAPI(cfg))
+	markDeploymentReady(t, c, testNamespace, resources.NameKokuAPI(cfg))
+
+	result, err := r.reconcileCoreServices(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if !result.IsZero() {
+		t.Fatalf("expected zero Result when RBAC API and Koku API are ready, got %+v", result)
+	}
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionAvailable) {
+		t.Fatal("expected Available=True without waiting on RBAC worker")
+	}
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady) {
+		t.Fatal("expected RBACReady=True without waiting on RBAC worker")
 	}
 }
 

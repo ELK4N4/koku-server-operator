@@ -528,6 +528,19 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 		}
 	}
 
+	// Gate on the RBAC API (not the worker). Koku and Envoy call this
+	// service for authorization; do not report Available while it is down.
+	rbacReady, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameRBACAPI(cfg))
+	if err != nil {
+		return Result{}, err
+	}
+	if !rbacReady {
+		r.setCondition(cfg, costv1alpha1.ConditionRBACReady, metav1.ConditionFalse, "WaitingForRBAC", "waiting for RBAC API")
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "WaitingForRBAC", "waiting for RBAC API")
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionRBACReady, metav1.ConditionTrue, "RBACAvailable", "")
+
 	// Gate on the API being available.
 	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameKokuAPI(cfg))
 	if err != nil {

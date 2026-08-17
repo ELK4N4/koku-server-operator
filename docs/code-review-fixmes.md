@@ -9,11 +9,13 @@ gap-analysis notes (for example D11, D18, D20, F3, F4).
 
 #### 1. Ready ignores most workload health [D1]
 
-Only 4 resources are readiness-gated: Database StatefulSet, Cache Deployment,
-Koku API Deployment, and Envoy Deployment. Everything else — Masu, Listener,
-Celery, all ROS deployments, RBAC API/Worker, Kruize, Ingress, UI — is applied
-without readiness checks. A bad image on any of those leaves the CR reporting
-`Available=True` with zero running replicas.
+Only 4 resources were readiness-gated at the 2026-08-15 audit: Database
+StatefulSet, Cache Deployment, Koku API Deployment, and Envoy Deployment.
+**RBAC API is now gated** (`RBACReady` / `WaitingForRBAC` before `Available`;
+COST-7689 G2). Everything else — Masu, Listener, Celery, all ROS deployments,
+RBAC worker, Kruize, Ingress, UI — is still applied without readiness checks.
+A bad image on any of those leaves the CR reporting `Available=True` with zero
+running replicas.
 
 #### 2. Progressing status causes a continuous reconcile loop [D2]
 

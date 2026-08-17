@@ -14,7 +14,7 @@ Last audited: 2026-08-15.
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| [COST-7678](https://redhat.atlassian.net/browse/COST-7678) | Define CostManagement CRD types | ✅ | CRD types ✅, CEL + admission webhooks ([#50](https://github.com/project-koku/koku-service-operator/pull/50)/[#51](https://github.com/project-koku/koku-service-operator/pull/51)/[#52](https://github.com/project-koku/koku-service-operator/pull/52)) ✅, `dataRetentionMonths` wired ([#59](https://github.com/project-koku/koku-service-operator/pull/59)) ✅. **G4 partial:** enum `standard`/`ha` + UI profile defaults ([#65](https://github.com/project-koku/koku-service-operator/pull/65)) ✅; shared sizing maps for Celery/core workloads deferred to COST-7686/7687. See [gap analysis](gap_analysis/COST-7678.md). |
+| [COST-7678](https://redhat.atlassian.net/browse/COST-7678) | Define CostManagement CRD types | ✅ | CRD types ✅, CEL + admission webhooks ([#50](https://github.com/project-koku/koku-service-operator/pull/50)/[#51](https://github.com/project-koku/koku-service-operator/pull/51)/[#52](https://github.com/project-koku/koku-service-operator/pull/52)) ✅, `dataRetentionMonths` wired ([#59](https://github.com/project-koku/koku-service-operator/pull/59)) ✅. **G4 partial:** enum `standard`/`ha` + UI profile defaults ([#65](https://github.com/project-koku/koku-service-operator/pull/65)) ✅; shared sizing maps for remaining workloads → [COST-8095](https://redhat.atlassian.net/browse/COST-8095). See [gap analysis](gap_analysis/COST-7678.md). |
 | [COST-7679](https://redhat.atlassian.net/browse/COST-7679) | Create sample CRs and generate manifests | 🔄 | Bundled CR ✅, BYOI CR ✅, BYOI kustomize fixture ✅, CRD installs on CRC ✅. Missing: HA profile sample, CEL validation verified. |
 
 ## Reconciler Core
@@ -37,10 +37,10 @@ Last audited: 2026-08-15.
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API + Masu + Listener `1/1 Running` on CRC ✅, ROS API + Processor ✅ (optional via `spec.ros.enabled`), Kruize Deployment + Service + ClusterRole/Binding ✅ (gated with ROS), Bundled DB/Cache (dev-only extension) ✅. **Beta: ROS/Kruize not required** — see Beta scope below. Missing: profile-based sizing, 5-minute readiness timeout with Degraded condition. |
+| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | Implement application services | 🔄 | Koku API + Masu + Listener `1/1 Running` on CRC ✅, ROS API + Processor ✅ (optional via `spec.ros.enabled`), Kruize Deployment + Service + ClusterRole/Binding ✅ (gated with ROS), Bundled DB/Cache (dev-only extension) ✅. **Beta: ROS/Kruize not required** — see Beta scope below. Missing: 5-minute readiness timeout with Degraded condition. Profile-based sizing → [COST-8095](https://redhat.atlassian.net/browse/COST-8095). |
 | [COST-7687](https://redhat.atlassian.net/browse/COST-7687) | Implement workers and scheduled jobs | ✅ | Celery Beat + 10 workers ✅, ROS Processor + Recommendation Poller + Housekeeper ✅ (when `spec.ros.enabled`), ROS Partition Cleaner CronJob ✅, Kruize DeletePartitions CronJob ✅. Ticket's six on-prem queues all present. |
 | [COST-7688](https://redhat.atlassian.net/browse/COST-7688) | Implement Gateway and Ingress | ✅ | Envoy JWT proxy Deployment + Service + ConfigMap wired to OIDC issuer/audiences ✅, OpenShift Route for gateway API ✅, insights-ingress-go Deployment + Service ✅ (S3/Kafka/CA wiring, port 8080 matching Envoy backend config). |
-| [COST-7689](https://redhat.atlassian.net/browse/COST-7689) | Implement RBAC Service | ✅ | RBAC API Deployment + Service + RBAC Celery worker Deployment ✅. Deployed in Stage 4 before Koku. Both wired with rbac-user/rbac-password from DB credentials secret + cache env vars. Keycloak-to-RBAC principal sync CronJob + ConfigMap ✅ ([PR #53](https://github.com/project-koku/koku-service-operator/pull/53)). |
+| [COST-7689](https://redhat.atlassian.net/browse/COST-7689) | Implement RBAC Service | ✅ | RBAC API Deployment + Service + RBAC Celery worker Deployment ✅. Deployed in Stage 4 before Koku. Both wired with rbac-user/rbac-password from DB credentials secret + cache env vars. Keycloak-to-RBAC principal sync CronJob + ConfigMap ✅ ([PR #53](https://github.com/project-koku/koku-service-operator/pull/53)). `RBACReady` gates on the RBAC API before `Available`. Profile sizing → [COST-8095](https://redhat.atlassian.net/browse/COST-8095). See [gap analysis](gap_analysis/COST-7689.md). |
 | [COST-7690](https://redhat.atlassian.net/browse/COST-7690) | Implement UI and ConsoleLink | ✅ | UI Deployment (oauth2-proxy sidecar + nginx app container) ✅, ClusterIP Service with OpenShift service-CA TLS annotation ✅, UINginxConfigMap (proxies `/api/` to Envoy) ✅, operator-generated cookie Secret ✅, ConsoleLink (cluster-scoped, finalizer cleanup in `reconcileDelete`) ✅. UIRoute deferred to COST-7691. |
 | [COST-7691](https://redhat.atlassian.net/browse/COST-7691) | Implement Routes, NetworkPolicies, and TLS | ✅ | NetworkPolicies (gateway, ingress, kruize, rbac-api, koku-api, ros-api, cache, database) ✅, restricted-v2 SCC compliance (no hardcoded runAsUser, seccompProfile: RuntimeDefault) ✅, `status.phase → Ready` ✅, Gateway Route ✅, UI Route (deferred until cluster domain resolved) ✅. Dedicated SAs: koku, ros, kruize ✅. |
 | [COST-7692](https://redhat.atlassian.net/browse/COST-7692) | Implement monitoring and alerting | ✅ | Kubernetes Events (Ready, MigrationStarted/Complete/Failed, ReconcileError) ✅, AppServiceMonitor + KruizeServiceMonitor ✅, PrometheusRules (5 alert rules) ✅. All guarded by `spec.monitoring.enabled`. ServiceMonitors/Rules applied as unstructured — silently skipped when Prometheus Operator CRDs absent. |
@@ -76,7 +76,7 @@ explicitly. Full ROS/Kruize delivery remains tracked under COST-8054 / post-Beta
 ## Intentional Deviations and Known Gaps
 
 See [docs/design/design-vs-jira.md](design/design-vs-jira.md) for the full analysis.
-Short version: bundled infra is dev-only (intentional), profile-based sizing is not yet implemented (COST-7693 gap), `RealmUser.Password` in spec is a security issue to fix pre-GA.
+Short version: bundled infra is dev-only (intentional), profile-based sizing for remaining workloads is [COST-8095](https://redhat.atlassian.net/browse/COST-8095) (post-beta), `RealmUser.Password` in spec is a security issue to fix pre-GA.
 
 ---
 
@@ -89,6 +89,14 @@ Short version: bundled infra is dev-only (intentional), profile-based sizing is 
 | **`relatedImages` in OLM bundle** | Runtime-constructed images not in CSV `relatedImages`; breaks airgapped deployments. COST-7695. See [review follow-ups](review-follow-ups.md#3-relatedimages-in-olm-bundle-cost-7695). |
 | **RBAC migration/bootstrap code provenance** | Heredoc-embedded Django ORM scripts fail code-provenance audit. Needs `insights-rbac` management commands. See [review follow-ups](review-follow-ups.md#4-rbac-migrationbootstrap-code-provenance). |
 | **`ResolveBootstrapAdmin` fallback values** | Silently substitutes test-fixture IDs (`org1234567`) when CR fields are empty. Pre-existing. See [review follow-ups](review-follow-ups.md#1-resolvebootstrapadmin-silently-substitutes-test-fixture-ids). |
+
+---
+
+## Post-beta follow-ups
+
+| Ticket | Summary | Notes |
+|--------|---------|-------|
+| [COST-8095](https://redhat.atlassian.net/browse/COST-8095) | `spec.profile` sizing maps | Shared `standard`/`ha` maps for remaining Cost workloads. UI already wired. ROS/Kruize rows stay with COST-8054. See [jira snapshot](jira/COST-8095.md). |
 
 ---
 

@@ -26,7 +26,9 @@ const (
 	ConditionKafkaReady        = "KafkaReady"
 	ConditionAuthReady         = "AuthenticationReady"
 	ConditionSchemaUpToDate    = "SchemaUpToDate"
-	ConditionUIReady           = "UIReady"
+	// ConditionRBACReady reports RBAC API Deployment readiness (not the worker).
+	ConditionRBACReady = "RBACReady"
+	ConditionUIReady   = "UIReady"
 	// ConditionROSEnabled reports whether ROS/Kruize are active per spec.ros.enabled.
 	ConditionROSEnabled = "ROSEnabled"
 	// ConditionPaused is True when reconciliation is halted via the pause annotation.
