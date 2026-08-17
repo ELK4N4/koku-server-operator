@@ -228,7 +228,12 @@ type ObjectStorageConfig struct {
 	UseSSL *bool `json:"useSSL,omitempty"`
 	// InsecureSkipVerify disables TLS certificate verification for the S3
 	// endpoint. Use for dev/CRC setups with self-signed certs.
+	// Prefer CACertSecretName for production.
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+	// CACertSecretName names a Secret with key ca.crt containing the CA
+	// certificate used to verify the S3 endpoint TLS. Required for on-prem
+	// S3 endpoints (MinIO, Ceph RGW, NooBaa HTTPS) using private CAs.
+	CACertSecretName string `json:"caCertSecretName,omitempty"`
 	// Name of an existing Secret with keys: access-key, secret-key.
 	// When empty the operator creates or detects the secret via ODF/NooBaa.
 	SecretName string    `json:"secretName,omitempty"`

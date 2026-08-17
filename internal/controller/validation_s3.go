@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -40,11 +41,27 @@ func (r *CostManagementServiceConfigReconciler) validateObjectStorage(ctx contex
 		return
 	}
 
+	var caCertPool *x509.CertPool
+	if caName := cfg.Spec.ObjectStorage.CACertSecretName; caName != "" {
+		caSecret, err := r.checkSecretKeys(ctx, cfg.Namespace, caName, []string{"ca.crt"})
+		if err != nil {
+			r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
+				"StorageCACertInvalid", err.Error())
+			return
+		}
+		caCertPool = x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caSecret.Data["ca.crt"]) {
+			r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
+				"StorageCACertInvalid", fmt.Sprintf("secret %q key ca.crt contains no valid PEM certificates", caName))
+			return
+		}
+	}
+
 	endpoint := resources.S3Endpoint(cfg)
 	region := s3Region(cfg)
 	accessKey := string(secret.Data[s3SecretKeys[0]])
 	secretKey := string(secret.Data[s3SecretKeys[1]])
-	if err := s3ListBucketsProbe(ctx, endpoint, region, accessKey, secretKey, validationTimeout, cfg.Spec.ObjectStorage.InsecureSkipVerify); err != nil {
+	if err := s3ListBucketsProbe(ctx, endpoint, region, accessKey, secretKey, validationTimeout, cfg.Spec.ObjectStorage.InsecureSkipVerify, caCertPool); err != nil {
 		r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
 			"StorageUnreachable", err.Error())
 		return
@@ -55,7 +72,7 @@ func (r *CostManagementServiceConfigReconciler) validateObjectStorage(ctx contex
 
 // s3ListBucketsProbe calls S3 ListBuckets against endpoint using path-style
 // addressing (required for MinIO / NooBaa / Ceph RGW).
-func s3ListBucketsProbe(ctx context.Context, endpoint, region, accessKey, secretKey string, timeout time.Duration, insecureSkipVerify bool) error {
+func s3ListBucketsProbe(ctx context.Context, endpoint, region, accessKey, secretKey string, timeout time.Duration, insecureSkipVerify bool, caCertPool *x509.CertPool) error {
 	if region == "" {
 		region = defaultS3Region
 	}
@@ -73,7 +90,10 @@ func s3ListBucketsProbe(ctx context.Context, endpoint, region, accessKey, secret
 	httpClient := &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify}, //nolint:gosec // user-controlled via CR spec
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: insecureSkipVerify, //nolint:gosec // user-controlled via CR spec
+				RootCAs:            caCertPool,
+			},
 		},
 	}
 	client := s3.New(s3.Options{
