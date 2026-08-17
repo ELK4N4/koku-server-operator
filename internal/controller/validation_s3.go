@@ -42,7 +42,7 @@ func (r *CostManagementServiceConfigReconciler) validateObjectStorage(ctx contex
 	}
 
 	var caCertPool *x509.CertPool
-	if caName := cfg.Spec.ObjectStorage.CACertSecretName; caName != "" {
+	if caName := cfg.Spec.ObjectStorage.CACertSecretName; caName != "" && !cfg.Spec.ObjectStorage.InsecureSkipVerify {
 		caSecret, err := r.checkSecretKeys(ctx, cfg.Namespace, caName, []string{"ca.crt"})
 		if err != nil {
 			r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
@@ -87,15 +87,17 @@ func s3ListBucketsProbe(ctx context.Context, endpoint, region, accessKey, secret
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	httpClient := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: insecureSkipVerify, //nolint:gosec // user-controlled via CR spec
-				RootCAs:            caCertPool,
-			},
-		},
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{}
 	}
+	transport := base.Clone()
+	if transport.TLSClientConfig == nil {
+		transport.TLSClientConfig = &tls.Config{}
+	}
+	transport.TLSClientConfig.InsecureSkipVerify = insecureSkipVerify //nolint:gosec // user-controlled via CR spec
+	transport.TLSClientConfig.RootCAs = caCertPool
+	httpClient := &http.Client{Timeout: timeout, Transport: transport}
 	client := s3.New(s3.Options{
 		Region:       region,
 		Credentials:  aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),

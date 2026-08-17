@@ -246,3 +246,86 @@ func TestReconcileValidation_S3ListBucketsDiscovered(t *testing.T) {
 		t.Fatalf("expected StorageReady=True StorageReachable for discovered S3, got %+v", found)
 	}
 }
+
+func TestReconcileValidation_S3CACertSecretMissing(t *testing.T) {
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec:       bundledNoKafkaSpec(),
+	}
+	useSSL := true
+	cfg.Spec.ObjectStorage = costv1alpha1.ObjectStorageConfig{
+		Endpoint:         localHost,
+		Port:             443,
+		UseSSL:           &useSSL,
+		SecretName:       s3TestSecret,
+		CACertSecretName: "no-such-ca",
+		S3:               costv1alpha1.S3Options{Region: "us-east-1"},
+	}
+
+	r := newValidationReconciler(t, s3CredsSecret(s3TestSecret))
+	_, _ = r.reconcileValidation(context.Background(), cfg)
+
+	found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionStorageReady)
+	if found == nil || found.Status != metav1.ConditionFalse {
+		t.Fatalf("expected StorageReady=False, got %+v", found)
+	}
+	if found.Reason != "StorageCACertInvalid" {
+		t.Errorf("reason = %q, want StorageCACertInvalid", found.Reason)
+	}
+}
+
+func TestReconcileValidation_S3CACertInvalidPEM(t *testing.T) {
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec:       bundledNoKafkaSpec(),
+	}
+	useSSL := true
+	cfg.Spec.ObjectStorage = costv1alpha1.ObjectStorageConfig{
+		Endpoint:         localHost,
+		Port:             443,
+		UseSSL:           &useSSL,
+		SecretName:       s3TestSecret,
+		CACertSecretName: "bad-ca",
+		S3:               costv1alpha1.S3Options{Region: "us-east-1"},
+	}
+
+	badCASecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "bad-ca", Namespace: testNamespace},
+		Data:       map[string][]byte{"ca.crt": []byte("not-a-pem")},
+	}
+
+	r := newValidationReconciler(t, s3CredsSecret(s3TestSecret), badCASecret)
+	_, _ = r.reconcileValidation(context.Background(), cfg)
+
+	found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionStorageReady)
+	if found == nil || found.Status != metav1.ConditionFalse {
+		t.Fatalf("expected StorageReady=False, got %+v", found)
+	}
+	if found.Reason != "StorageCACertInvalid" {
+		t.Errorf("reason = %q, want StorageCACertInvalid", found.Reason)
+	}
+}
+
+func TestReconcileValidation_S3InsecureSkipVerifyBypassesCACert(t *testing.T) {
+	srv := httptest.NewTLSServer(fakeS3ListBuckets(http.StatusOK, listBucketsXML))
+	t.Cleanup(srv.Close)
+
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec:       bundledNoKafkaSpec(),
+	}
+	cfg.Spec.ObjectStorage = objectStorageForServer(t, srv, s3TestSecret)
+	cfg.Spec.ObjectStorage.InsecureSkipVerify = true
+	cfg.Spec.ObjectStorage.CACertSecretName = "stale-ca-that-does-not-exist"
+
+	r := newValidationReconciler(t, s3CredsSecret(s3TestSecret))
+	_, _ = r.reconcileValidation(context.Background(), cfg)
+
+	found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionStorageReady)
+	if found == nil || found.Status != metav1.ConditionTrue {
+		t.Fatalf("expected StorageReady=True (insecureSkipVerify bypasses CA), got %+v", found)
+	}
+	if found.Reason != "StorageReachable" {
+		t.Errorf("reason = %q, want StorageReachable", found.Reason)
+	}
+}
