@@ -36,7 +36,7 @@ func (r *CostManagementServiceConfigReconciler) validateObjectStorage(ctx contex
 		return
 	}
 
-	secret, err := r.checkSecretKeys(ctx, cfg.Namespace, secretName, s3SecretKeys)
+	secret, err := r.getSecret(ctx, cfg.Namespace, secretName, s3SecretKeys)
 	if err != nil {
 		r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
 			"StorageSecretInvalid", err.Error())
@@ -45,7 +45,7 @@ func (r *CostManagementServiceConfigReconciler) validateObjectStorage(ctx contex
 
 	var caCertPool *x509.CertPool
 	if caName := cfg.Spec.ObjectStorage.CACertSecretName; caName != "" && !cfg.Spec.ObjectStorage.InsecureSkipVerify {
-		caSecret, err := r.checkSecretKeys(ctx, cfg.Namespace, caName, []string{caCertKey})
+		caSecret, err := r.getSecret(ctx, cfg.Namespace, caName, []string{caCertKey})
 		if err != nil {
 			r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
 				"StorageCACertInvalid", err.Error())
