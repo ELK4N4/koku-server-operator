@@ -18,6 +18,8 @@ import (
 	"github.com/project-koku/koku-service-operator/internal/resources"
 )
 
+const caCertKey = "ca.crt"
+
 // validateObjectStorage checks S3 credentials then probes the object store.
 // Non-blocking: failures set StorageReady=False but do not gate Migration.
 //
@@ -43,14 +45,14 @@ func (r *CostManagementServiceConfigReconciler) validateObjectStorage(ctx contex
 
 	var caCertPool *x509.CertPool
 	if caName := cfg.Spec.ObjectStorage.CACertSecretName; caName != "" && !cfg.Spec.ObjectStorage.InsecureSkipVerify {
-		caSecret, err := r.checkSecretKeys(ctx, cfg.Namespace, caName, []string{"ca.crt"})
+		caSecret, err := r.checkSecretKeys(ctx, cfg.Namespace, caName, []string{caCertKey})
 		if err != nil {
 			r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
 				"StorageCACertInvalid", err.Error())
 			return
 		}
 		caCertPool = x509.NewCertPool()
-		if !caCertPool.AppendCertsFromPEM(caSecret.Data["ca.crt"]) {
+		if !caCertPool.AppendCertsFromPEM(caSecret.Data[caCertKey]) {
 			r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
 				"StorageCACertInvalid", fmt.Sprintf("secret %q key ca.crt contains no valid PEM certificates", caName))
 			return
