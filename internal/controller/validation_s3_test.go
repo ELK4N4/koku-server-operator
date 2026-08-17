@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"crypto/x509"
+	"encoding/pem"
 	"io"
 	"net"
 	"net/http"
@@ -324,6 +325,39 @@ func TestReconcileValidation_S3InsecureSkipVerifyBypassesCACert(t *testing.T) {
 	found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionStorageReady)
 	if found == nil || found.Status != metav1.ConditionTrue {
 		t.Fatalf("expected StorageReady=True (insecureSkipVerify bypasses CA), got %+v", found)
+	}
+	if found.Reason != "StorageReachable" {
+		t.Errorf("reason = %q, want StorageReachable", found.Reason)
+	}
+}
+
+func TestReconcileValidation_S3CACertValid(t *testing.T) {
+	srv := httptest.NewTLSServer(fakeS3ListBuckets(http.StatusOK, listBucketsXML))
+	t.Cleanup(srv.Close)
+
+	caPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: srv.Certificate().Raw,
+	})
+
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec:       bundledNoKafkaSpec(),
+	}
+	cfg.Spec.ObjectStorage = objectStorageForServer(t, srv, s3TestSecret)
+	cfg.Spec.ObjectStorage.CACertSecretName = "s3-ca"
+
+	caSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "s3-ca", Namespace: testNamespace},
+		Data:       map[string][]byte{"ca.crt": caPEM},
+	}
+
+	r := newValidationReconciler(t, s3CredsSecret(s3TestSecret), caSecret)
+	_, _ = r.reconcileValidation(context.Background(), cfg)
+
+	found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionStorageReady)
+	if found == nil || found.Status != metav1.ConditionTrue {
+		t.Fatalf("expected StorageReady=True with valid CA cert, got %+v", found)
 	}
 	if found.Reason != "StorageReachable" {
 		t.Errorf("reason = %q, want StorageReachable", found.Reason)
