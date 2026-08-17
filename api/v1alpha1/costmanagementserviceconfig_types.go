@@ -226,6 +226,9 @@ type ObjectStorageConfig struct {
 	Port int32 `json:"port,omitempty"`
 	// +kubebuilder:default:=true
 	UseSSL *bool `json:"useSSL,omitempty"`
+	// InsecureSkipVerify disables TLS certificate verification for the S3
+	// endpoint. Use for dev/CRC setups with self-signed certs.
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
 	// Name of an existing Secret with keys: access-key, secret-key.
 	// When empty the operator creates or detects the secret via ODF/NooBaa.
 	SecretName string    `json:"secretName,omitempty"`

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -43,7 +44,7 @@ func (r *CostManagementServiceConfigReconciler) validateObjectStorage(ctx contex
 	region := s3Region(cfg)
 	accessKey := string(secret.Data[s3SecretKeys[0]])
 	secretKey := string(secret.Data[s3SecretKeys[1]])
-	if err := s3ListBucketsProbe(ctx, endpoint, region, accessKey, secretKey, validationTimeout); err != nil {
+	if err := s3ListBucketsProbe(ctx, endpoint, region, accessKey, secretKey, validationTimeout, cfg.Spec.ObjectStorage.InsecureSkipVerify); err != nil {
 		r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
 			"StorageUnreachable", err.Error())
 		return
@@ -54,7 +55,7 @@ func (r *CostManagementServiceConfigReconciler) validateObjectStorage(ctx contex
 
 // s3ListBucketsProbe calls S3 ListBuckets against endpoint using path-style
 // addressing (required for MinIO / NooBaa / Ceph RGW).
-func s3ListBucketsProbe(ctx context.Context, endpoint, region, accessKey, secretKey string, timeout time.Duration) error {
+func s3ListBucketsProbe(ctx context.Context, endpoint, region, accessKey, secretKey string, timeout time.Duration, insecureSkipVerify bool) error {
 	if region == "" {
 		region = defaultS3Region
 	}
@@ -69,12 +70,18 @@ func s3ListBucketsProbe(ctx context.Context, endpoint, region, accessKey, secret
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	httpClient := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify}, //nolint:gosec // user-controlled via CR spec
+		},
+	}
 	client := s3.New(s3.Options{
 		Region:       region,
 		Credentials:  aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
 		BaseEndpoint: aws.String(endpoint),
 		UsePathStyle: true,
-		HTTPClient:   &http.Client{Timeout: timeout},
+		HTTPClient:   httpClient,
 		EndpointOptions: s3.EndpointResolverOptions{
 			DisableHTTPS: u.Scheme == "http",
 		},

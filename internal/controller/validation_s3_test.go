@@ -87,7 +87,7 @@ func TestS3ListBucketsProbe(t *testing.T) {
 	t.Run("reachable", func(t *testing.T) {
 		srv := httptest.NewServer(fakeS3ListBuckets(http.StatusOK, listBucketsXML))
 		t.Cleanup(srv.Close)
-		if err := s3ListBucketsProbe(ctx, srv.URL, "us-east-1", s3TestAccessKey, s3TestSecretKey, time.Second); err != nil {
+		if err := s3ListBucketsProbe(ctx, srv.URL, "us-east-1", s3TestAccessKey, s3TestSecretKey, time.Second, false); err != nil {
 			t.Fatalf("expected success, got %v", err)
 		}
 	})
@@ -95,13 +95,13 @@ func TestS3ListBucketsProbe(t *testing.T) {
 	t.Run("403 AccessDenied", func(t *testing.T) {
 		srv := httptest.NewServer(fakeS3ListBuckets(http.StatusForbidden, `<Error><Code>AccessDenied</Code><Message>denied</Message></Error>`))
 		t.Cleanup(srv.Close)
-		if err := s3ListBucketsProbe(ctx, srv.URL, "us-east-1", s3TestAccessKey, s3TestSecretKey, time.Second); err == nil {
+		if err := s3ListBucketsProbe(ctx, srv.URL, "us-east-1", s3TestAccessKey, s3TestSecretKey, time.Second, false); err == nil {
 			t.Fatal("expected error for HTTP 403")
 		}
 	})
 
 	t.Run("unreachable", func(t *testing.T) {
-		if err := s3ListBucketsProbe(ctx, "http://"+localHost+":1", "us-east-1", s3TestAccessKey, s3TestSecretKey, 200*time.Millisecond); err == nil {
+		if err := s3ListBucketsProbe(ctx, "http://"+localHost+":1", "us-east-1", s3TestAccessKey, s3TestSecretKey, 200*time.Millisecond, false); err == nil {
 			t.Fatal("expected error for unreachable endpoint")
 		}
 	})
@@ -109,13 +109,21 @@ func TestS3ListBucketsProbe(t *testing.T) {
 	t.Run("tls verify failure", func(t *testing.T) {
 		srv := httptest.NewTLSServer(fakeS3ListBuckets(http.StatusOK, listBucketsXML))
 		t.Cleanup(srv.Close)
-		if err := s3ListBucketsProbe(ctx, srv.URL, "us-east-1", s3TestAccessKey, s3TestSecretKey, time.Second); err == nil {
+		if err := s3ListBucketsProbe(ctx, srv.URL, "us-east-1", s3TestAccessKey, s3TestSecretKey, time.Second, false); err == nil {
 			t.Fatal("expected TLS error")
 		}
 	})
 
+	t.Run("tls insecure skip verify", func(t *testing.T) {
+		srv := httptest.NewTLSServer(fakeS3ListBuckets(http.StatusOK, listBucketsXML))
+		t.Cleanup(srv.Close)
+		if err := s3ListBucketsProbe(ctx, srv.URL, "us-east-1", s3TestAccessKey, s3TestSecretKey, time.Second, true); err != nil {
+			t.Fatalf("expected success with insecureSkipVerify, got %v", err)
+		}
+	})
+
 	t.Run("endpoint missing scheme", func(t *testing.T) {
-		if err := s3ListBucketsProbe(ctx, "s3.example.svc:443", "us-east-1", s3TestAccessKey, s3TestSecretKey, time.Second); err == nil {
+		if err := s3ListBucketsProbe(ctx, "s3.example.svc:443", "us-east-1", s3TestAccessKey, s3TestSecretKey, time.Second, false); err == nil {
 			t.Fatal("expected error for endpoint without scheme")
 		}
 	})

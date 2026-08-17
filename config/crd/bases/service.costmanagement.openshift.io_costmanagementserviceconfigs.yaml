@@ -1833,6 +1833,11 @@ spec:
                       S3 endpoint hostname (without protocol or port).
                       Auto-detected by the Discovery phase (OBC → NooBaa → user-provided).
                     type: string
+                  insecureSkipVerify:
+                    description: |-
+                      InsecureSkipVerify disables TLS certificate verification for the S3
+                      endpoint. Use for dev/CRC setups with self-signed certs.
+                    type: boolean
                   port:
                     default: 443
                     format: int32
