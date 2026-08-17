@@ -47,12 +47,16 @@ func TestReconcileCoreServices_ROSOff_APINotReady(t *testing.T) {
 	mustNotExist(t, r.Client, "", resources.NameKruizeClusterRole(cfg), &rbacv1.ClusterRole{})
 
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
-	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "WaitingForRBAC" {
-		t.Fatalf("expected Available=False WaitingForRBAC, got %+v", cond)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != reasonWaitingForRBAC {
+		t.Fatalf("expected Available=False %s, got %+v", reasonWaitingForRBAC, cond)
 	}
 	rbac := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady)
-	if rbac == nil || rbac.Status != metav1.ConditionFalse || rbac.Reason != "WaitingForRBAC" {
-		t.Fatalf("expected RBACReady=False WaitingForRBAC, got %+v", rbac)
+	if rbac == nil || rbac.Status != metav1.ConditionFalse || rbac.Reason != reasonWaitingForRBAC {
+		t.Fatalf("expected RBACReady=False %s, got %+v", reasonWaitingForRBAC, rbac)
+	}
+	worker := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionRBACWorkerReady)
+	if worker == nil || worker.Status != metav1.ConditionFalse || worker.Reason != reasonWaitingForRBACWorker {
+		t.Fatalf("expected RBACWorkerReady=False %s, got %+v", reasonWaitingForRBACWorker, worker)
 	}
 }
 
@@ -87,8 +91,8 @@ func TestReconcileCoreServices_ROSOn_APINotReady(t *testing.T) {
 	mustExist(t, r.Client, testNamespace, resources.NameKokuAPI(cfg), &appsv1.Deployment{})
 
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
-	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "WaitingForRBAC" {
-		t.Fatalf("expected Available=False WaitingForRBAC, got %+v", cond)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != reasonWaitingForRBAC {
+		t.Fatalf("expected Available=False %s, got %+v", reasonWaitingForRBAC, cond)
 	}
 }
 
@@ -111,6 +115,7 @@ func TestReconcileCoreServices_ROSOff_APIReady(t *testing.T) {
 	}
 
 	markDeploymentReady(t, c, testNamespace, resources.NameRBACAPI(cfg))
+	markDeploymentReady(t, c, testNamespace, resources.NameRBACWorker(cfg))
 	markDeploymentReady(t, c, testNamespace, resources.NameKokuAPI(cfg))
 
 	result, err = r.reconcileCoreServices(context.Background(), cfg)
@@ -129,6 +134,9 @@ func TestReconcileCoreServices_ROSOff_APIReady(t *testing.T) {
 	}
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady) {
 		t.Fatal("expected RBACReady=True")
+	}
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionRBACWorkerReady) {
+		t.Fatal("expected RBACWorkerReady=True")
 	}
 }
 
@@ -158,12 +166,12 @@ func TestReconcileCoreServices_RBACNotReady_BlocksAvailable(t *testing.T) {
 	}
 
 	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
-	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != "WaitingForRBAC" {
-		t.Fatalf("expected Available=False WaitingForRBAC, got %+v", avail)
+	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != reasonWaitingForRBAC {
+		t.Fatalf("expected Available=False %s, got %+v", reasonWaitingForRBAC, avail)
 	}
 	rbac := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady)
-	if rbac == nil || rbac.Status != metav1.ConditionFalse || rbac.Reason != "WaitingForRBAC" {
-		t.Fatalf("expected RBACReady=False WaitingForRBAC, got %+v", rbac)
+	if rbac == nil || rbac.Status != metav1.ConditionFalse || rbac.Reason != reasonWaitingForRBAC {
+		t.Fatalf("expected RBACReady=False %s, got %+v", reasonWaitingForRBAC, rbac)
 	}
 }
 
@@ -191,6 +199,10 @@ func TestReconcileCoreServices_RBACReady_KokuNotReady(t *testing.T) {
 	}
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady) {
 		t.Fatal("expected RBACReady=True")
+	}
+	worker := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionRBACWorkerReady)
+	if worker == nil || worker.Status != metav1.ConditionFalse || worker.Reason != reasonWaitingForRBACWorker {
+		t.Fatalf("expected RBACWorkerReady=False %s, got %+v", reasonWaitingForRBACWorker, worker)
 	}
 	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
 	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != "WaitingForAPI" {
@@ -226,6 +238,10 @@ func TestReconcileCoreServices_WorkerNotReady_DoesNotBlock(t *testing.T) {
 	}
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady) {
 		t.Fatal("expected RBACReady=True without waiting on RBAC worker")
+	}
+	worker := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionRBACWorkerReady)
+	if worker == nil || worker.Status != metav1.ConditionFalse || worker.Reason != reasonWaitingForRBACWorker {
+		t.Fatalf("expected RBACWorkerReady=False %s, got %+v", reasonWaitingForRBACWorker, worker)
 	}
 }
 

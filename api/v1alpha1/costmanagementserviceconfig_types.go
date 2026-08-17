@@ -28,7 +28,10 @@ const (
 	ConditionSchemaUpToDate    = "SchemaUpToDate"
 	// ConditionRBACReady reports RBAC API Deployment readiness (not the worker).
 	ConditionRBACReady = "RBACReady"
-	ConditionUIReady   = "UIReady"
+	// ConditionRBACWorkerReady reports the RBAC Celery worker Deployment. It
+	// does not gate Available — Koku/Envoy call the API, not the worker.
+	ConditionRBACWorkerReady = "RBACWorkerReady"
+	ConditionUIReady         = "UIReady"
 	// ConditionROSEnabled reports whether ROS/Kruize are active per spec.ros.enabled.
 	ConditionROSEnabled = "ROSEnabled"
 	// ConditionPaused is True when reconciliation is halted via the pause annotation.
