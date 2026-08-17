@@ -151,9 +151,18 @@ func TestCheckSecretKeys(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := r.checkSecretKeys(context.Background(), testNamespace, tc.secret, tc.required)
+			got, err := r.checkSecretKeys(context.Background(), testNamespace, tc.secret, tc.required)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("checkSecretKeys(%q): err=%v, wantErr=%v", tc.secret, err, tc.wantErr)
+			}
+			if !tc.wantErr && got == nil {
+				t.Error("checkSecretKeys should return the Secret on success")
+			}
+			if !tc.wantErr && got != nil && got.Name != tc.secret {
+				t.Errorf("returned Secret.Name = %q, want %q", got.Name, tc.secret)
+			}
+			if tc.wantErr && got != nil {
+				t.Error("checkSecretKeys should return nil Secret on error")
 			}
 		})
 	}
@@ -455,7 +464,7 @@ func TestDBSecretValidationRequiresKruizeCredentials(t *testing.T) {
 		"rbac-user", "rbac-password",
 		"kruize-user", "kruize-password",
 	}
-	err := r.checkSecretKeys(context.Background(), testNamespace, testDBSecret, requiredKeys)
+	_, err := r.checkSecretKeys(context.Background(), testNamespace, testDBSecret, requiredKeys)
 	if err == nil {
 		t.Error("checkSecretKeys should fail when kruize-user/kruize-password are absent, got nil")
 	}

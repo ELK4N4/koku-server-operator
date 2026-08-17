@@ -10,9 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 	"github.com/project-koku/koku-service-operator/internal/resources"
@@ -34,16 +32,10 @@ func (r *CostManagementServiceConfigReconciler) validateObjectStorage(ctx contex
 		return
 	}
 
-	if err := r.checkSecretKeys(ctx, cfg.Namespace, secretName, s3SecretKeys); err != nil {
+	secret, err := r.checkSecretKeys(ctx, cfg.Namespace, secretName, s3SecretKeys)
+	if err != nil {
 		r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
 			"StorageSecretInvalid", err.Error())
-		return
-	}
-
-	secret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: cfg.Namespace, Name: secretName}, secret); err != nil {
-		r.setCondition(cfg, costv1alpha1.ConditionStorageReady, metav1.ConditionFalse,
-			"StorageSecretInvalid", fmt.Sprintf("get secret %q: %v", secretName, err))
 		return
 	}
 

@@ -67,7 +67,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileValidation(ctx context.
 			// Validate secret keys when the user provided their own secret.
 			if cfg.Spec.Database.SecretName != "" {
 				required := dbSecretKeys
-				if err := r.checkSecretKeys(ctx, cfg.Namespace, cfg.Spec.Database.SecretName, required); err != nil {
+				if _, err := r.checkSecretKeys(ctx, cfg.Namespace, cfg.Spec.Database.SecretName, required); err != nil {
 					r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionFalse,
 						"DatabaseSecretInvalid", err.Error())
 					allReady = false
@@ -96,7 +96,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileValidation(ctx context.
 			allReady = false
 		} else {
 			if cfg.Spec.Cache.Auth.SecretName != "" {
-				if err := r.checkSecretKeys(ctx, cfg.Namespace, cfg.Spec.Cache.Auth.SecretName, []string{"redis-password"}); err != nil {
+				if _, err := r.checkSecretKeys(ctx, cfg.Namespace, cfg.Spec.Cache.Auth.SecretName, []string{"redis-password"}); err != nil {
 					r.setCondition(cfg, costv1alpha1.ConditionCacheReady, metav1.ConditionFalse,
 						"CacheSecretInvalid", err.Error())
 					allReady = false
@@ -118,7 +118,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileValidation(ctx context.
 				"KafkaUnreachable", err.Error())
 		} else {
 			if cfg.Spec.Kafka.SASL.ExistingSecret != "" {
-				if err := r.checkSecretKeys(ctx, cfg.Namespace, cfg.Spec.Kafka.SASL.ExistingSecret, []string{"username", "password"}); err != nil { //nolint:goconst // Secret key names are clearer as literals
+				if _, err := r.checkSecretKeys(ctx, cfg.Namespace, cfg.Spec.Kafka.SASL.ExistingSecret, []string{"username", "password"}); err != nil { //nolint:goconst // Secret key names are clearer as literals
 					r.setCondition(cfg, costv1alpha1.ConditionKafkaReady, metav1.ConditionFalse,
 						"KafkaSASLSecretInvalid", err.Error())
 				} else {
@@ -243,14 +243,15 @@ func jwksProbe(ctx context.Context, rawURL string, insecureSkipVerify bool, time
 }
 
 // checkSecretKeys verifies that a named Secret exists and contains all required keys
-// with non-empty values.
-func (r *CostManagementServiceConfigReconciler) checkSecretKeys(ctx context.Context, namespace, name string, required []string) error {
+// with non-empty values. Returns the fetched Secret on success so callers can
+// read credential data without a second API server round-trip.
+func (r *CostManagementServiceConfigReconciler) checkSecretKeys(ctx context.Context, namespace, name string, required []string) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, secret); err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("secret %q not found", name)
+			return nil, fmt.Errorf("secret %q not found", name)
 		}
-		return fmt.Errorf("get secret %q: %w", name, err)
+		return nil, fmt.Errorf("get secret %q: %w", name, err)
 	}
 	var missing []string
 	for _, key := range required {
@@ -259,7 +260,7 @@ func (r *CostManagementServiceConfigReconciler) checkSecretKeys(ctx context.Cont
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("secret %q missing keys: %s", name, strings.Join(missing, ", "))
+		return nil, fmt.Errorf("secret %q missing keys: %s", name, strings.Join(missing, ", "))
 	}
-	return nil
+	return secret, nil
 }
