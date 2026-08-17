@@ -508,12 +508,12 @@ type CeleryWorkersSpec struct {
 	Summary   CeleryWorkerSpec `json:"summary,omitempty"`
 	OCP       CeleryWorkerSpec `json:"ocp,omitempty"`
 	CostModel CeleryWorkerSpec `json:"costModel,omitempty"`
-	// Cloud-provider workers — typically 0 replicas for OCP-only deployments.
-	Refresh          CeleryWorkerSpec `json:"refresh,omitempty"`
-	HCS              CeleryWorkerSpec `json:"hcs,omitempty"`
-	Download         CeleryWorkerSpec `json:"download,omitempty"`
-	SubsExtraction   CeleryWorkerSpec `json:"subsExtraction,omitempty"`
-	SubsTransmission CeleryWorkerSpec `json:"subsTransmission,omitempty"`
+	Refresh   CeleryWorkerSpec `json:"refresh,omitempty"`
+	Download  CeleryWorkerSpec `json:"download,omitempty"`
+	// SaaS-only queues — disabled by default for on-prem (COST-7687).
+	HCS              SaaSCeleryWorkerSpec `json:"hcs,omitempty"`
+	SubsExtraction   SaaSCeleryWorkerSpec `json:"subsExtraction,omitempty"`
+	SubsTransmission SaaSCeleryWorkerSpec `json:"subsTransmission,omitempty"`
 }
 
 type CeleryWorkerSpec struct {
@@ -522,6 +522,25 @@ type CeleryWorkerSpec struct {
 	// +kubebuilder:default:=5
 	Concurrency int32                       `json:"concurrency,omitempty"`
 	Resources   corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// SaaSCeleryWorkerSpec configures cloud/SaaS Celery queues (hcs, subs_*).
+// On-prem installs should leave these at the default of 0 replicas.
+type SaaSCeleryWorkerSpec struct {
+	// +kubebuilder:default:=0
+	Replicas int32 `json:"replicas,omitempty"`
+	// +kubebuilder:default:=5
+	Concurrency int32                       `json:"concurrency,omitempty"`
+	Resources   corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// CeleryWorkerSpec returns the shared worker shape used by resource builders.
+func (s SaaSCeleryWorkerSpec) CeleryWorkerSpec() CeleryWorkerSpec {
+	return CeleryWorkerSpec{
+		Replicas:    s.Replicas,
+		Concurrency: s.Concurrency,
+		Resources:   s.Resources,
+	}
 }
 
 // -----------------------------------------------------------------------------

@@ -3,7 +3,10 @@ package resources
 import (
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+
+	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
 func TestKokuAPIService(t *testing.T) {
@@ -45,5 +48,58 @@ func TestMasuService(t *testing.T) {
 	port := svc.Spec.Ports[0]
 	if port.Name != "http" || port.Port != 9000 || port.Protocol != corev1.ProtocolTCP {
 		t.Errorf("port = %+v, want http/9000/TCP", port)
+	}
+}
+
+func celeryWorkerCfg() *costv1alpha1.CostManagementServiceConfig {
+	cfg := testCfg()
+	cfg.Spec.CostManagement.API.Image.Repository = "quay.io/example/koku"
+	cfg.Spec.CostManagement.API.Image.Tag = "latest"
+	cfg.Spec.CostManagement.Celery.Workers.Default.Replicas = 1
+	cfg.Spec.CostManagement.Celery.Workers.Priority.Replicas = 1
+	return cfg
+}
+
+func celeryDeploymentReplicas(t *testing.T, cfg *costv1alpha1.CostManagementServiceConfig, deps []*appsv1.Deployment, queue string) int32 {
+	t.Helper()
+	wantName := NameCeleryWorker(cfg, queue)
+	for _, d := range deps {
+		if d.Name != wantName {
+			continue
+		}
+		if d.Spec.Replicas == nil {
+			t.Fatalf("deployment %q has nil replicas", d.Name)
+		}
+		return *d.Spec.Replicas
+	}
+	t.Fatalf("deployment for queue %q not found", queue)
+	return 0
+}
+
+func TestCeleryWorkerDeployments_SaaSQueuesDefaultZero(t *testing.T) {
+	cfg := celeryWorkerCfg()
+	deps := CeleryWorkerDeployments(cfg)
+
+	for _, queue := range []string{"hcs", "subs_extraction", "subs_transmission"} {
+		if got := celeryDeploymentReplicas(t, cfg, deps, queue); got != 0 {
+			t.Errorf("queue %q replicas = %d, want 0", queue, got)
+		}
+	}
+	if got := celeryDeploymentReplicas(t, cfg, deps, "priority"); got != 1 {
+		t.Errorf("on-prem queue priority replicas = %d, want 1", got)
+	}
+}
+
+func TestCeleryWorkerDeployments_SaaSQueuesOptIn(t *testing.T) {
+	cfg := celeryWorkerCfg()
+	cfg.Spec.CostManagement.Celery.Workers.HCS.Replicas = 2
+	cfg.Spec.CostManagement.Celery.Workers.SubsExtraction.Replicas = 1
+
+	deps := CeleryWorkerDeployments(cfg)
+	if got := celeryDeploymentReplicas(t, cfg, deps, "hcs"); got != 2 {
+		t.Errorf("hcs replicas = %d, want 2", got)
+	}
+	if got := celeryDeploymentReplicas(t, cfg, deps, "subs_extraction"); got != 1 {
+		t.Errorf("subs_extraction replicas = %d, want 1", got)
 	}
 }
