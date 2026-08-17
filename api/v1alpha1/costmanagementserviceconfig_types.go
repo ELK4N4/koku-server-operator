@@ -229,6 +229,7 @@ type ObjectStorageConfig struct {
 	// InsecureSkipVerify disables TLS certificate verification for the S3
 	// endpoint. Use for dev/CRC setups with self-signed certs.
 	// Prefer CACertSecretName for production.
+	// +kubebuilder:default:=false
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
 	// CACertSecretName names a Secret with key ca.crt containing the CA
 	// certificate used to verify the S3 endpoint TLS. Required for on-prem

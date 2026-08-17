@@ -1840,6 +1840,7 @@ spec:
                       Auto-detected by the Discovery phase (OBC → NooBaa → user-provided).
                     type: string
                   insecureSkipVerify:
+                    default: false
                     description: |-
                       InsecureSkipVerify disables TLS certificate verification for the S3
                       endpoint. Use for dev/CRC setups with self-signed certs.
