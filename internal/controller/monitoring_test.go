@@ -38,9 +38,6 @@ func TestMonitoringRealApplyErrorSurfaces(t *testing.T) {
 			Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
 				return realErr
 			},
-			Delete: func(_ context.Context, _ client.WithWatch, _ client.Object, _ ...client.DeleteOption) error {
-				return nil // legacy App SM delete is best-effort
-			},
 		}).
 		Build()
 
@@ -65,15 +62,12 @@ func TestMonitoringCRDAbsentSkipsResource(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
 	}
 
-	noMatchErr := &apimeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "monitoring.coreos.com", Kind: "PrometheusRule"}}
+	noMatchErr := &apimeta.NoKindMatchError{GroupKind: schema.GroupKind{Group: "monitoring.coreos.com", Kind: "ServiceMonitor"}}
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
-				return noMatchErr
-			},
-			Delete: func(_ context.Context, _ client.WithWatch, _ client.Object, _ ...client.DeleteOption) error {
 				return noMatchErr
 			},
 		}).
@@ -93,8 +87,8 @@ func TestMonitoringCRDAbsentSkipsResource(t *testing.T) {
 	}
 }
 
-// TestMonitoringAppliesOnlyPrometheusRule ensures PR1 does not Patch ServiceMonitors.
-func TestMonitoringAppliesOnlyPrometheusRule(t *testing.T) {
+// TestMonitoringAppliesServiceMonitorAndPrometheusRule ensures PR2 applies both.
+func TestMonitoringAppliesServiceMonitorAndPrometheusRule(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = costv1alpha1.AddToScheme(scheme)
@@ -104,19 +98,12 @@ func TestMonitoringAppliesOnlyPrometheusRule(t *testing.T) {
 	}
 
 	var patchKinds []string
-	var deletedAppSM atomic.Bool
 
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Patch: func(_ context.Context, _ client.WithWatch, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
 				patchKinds = append(patchKinds, obj.GetObjectKind().GroupVersionKind().Kind)
-				return nil
-			},
-			Delete: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.DeleteOption) error {
-				if obj.GetName() == testCRName+"-app-metrics" {
-					deletedAppSM.Store(true)
-				}
 				return nil
 			},
 		}).
@@ -130,11 +117,66 @@ func TestMonitoringAppliesOnlyPrometheusRule(t *testing.T) {
 	if _, err := r.reconcileMonitoring(context.Background(), cfg); err != nil {
 		t.Fatalf("reconcileMonitoring: %v", err)
 	}
-	if !deletedAppSM.Load() {
-		t.Error("expected best-effort delete of legacy App ServiceMonitor")
+	if len(patchKinds) != 2 || patchKinds[0] != "ServiceMonitor" || patchKinds[1] != "PrometheusRule" {
+		t.Errorf("expected ServiceMonitor then PrometheusRule patches, got %v", patchKinds)
 	}
-	if len(patchKinds) != 1 || patchKinds[0] != "PrometheusRule" {
-		t.Errorf("expected single PrometheusRule patch, got %v", patchKinds)
+}
+
+// TestMonitoringDisabledDeletesManagedResources verifies disable cleanup.
+func TestMonitoringDisabledDeletesManagedResources(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = costv1alpha1.AddToScheme(scheme)
+
+	enabled := false
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			Monitoring: costv1alpha1.MonitoringConfig{Enabled: &enabled},
+		},
+	}
+
+	var deleted []string
+	var patched atomic.Bool
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				patched.Store(true)
+				return nil
+			},
+			Delete: func(_ context.Context, _ client.WithWatch, obj client.Object, _ ...client.DeleteOption) error {
+				deleted = append(deleted, obj.GetName())
+				return nil
+			},
+		}).
+		Build()
+
+	r := &CostManagementServiceConfigReconciler{
+		Client:   fakeClient,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileMonitoring(context.Background(), cfg); err != nil {
+		t.Fatalf("reconcileMonitoring: %v", err)
+	}
+	if patched.Load() {
+		t.Error("disabled monitoring must not Patch/apply resources")
+	}
+	wantDelete := map[string]bool{
+		testCRName + "-app-metrics": false,
+		testCRName + "-alerts":      false,
+	}
+	for _, name := range deleted {
+		if _, ok := wantDelete[name]; ok {
+			wantDelete[name] = true
+		}
+	}
+	for name, ok := range wantDelete {
+		if !ok {
+			t.Errorf("expected delete of %s, got deleted=%v", name, deleted)
+		}
 	}
 }
 

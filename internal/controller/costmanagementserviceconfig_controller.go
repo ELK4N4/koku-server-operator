@@ -767,35 +767,41 @@ func (r *CostManagementServiceConfigReconciler) reconcileUI(ctx context.Context,
 }
 
 // -----------------------------------------------------------------------------
-// Stage 8 — Monitoring (PrometheusRules; app scrape is PR2)
+// Stage 8 — Monitoring (PrometheusRules + App ServiceMonitor)
 // -----------------------------------------------------------------------------
 
-// reconcileMonitoring applies operator-centric PrometheusRules when
-// spec.monitoring.enabled is true (the default). App/Kruize ServiceMonitors are
-// not applied in PR1 (scrape wiring is follow-up). A best-effort delete removes
-// any legacy App ServiceMonitor left from earlier builds. CRDs absent → skip.
+// reconcileMonitoring applies App ServiceMonitor and PrometheusRules when
+// spec.monitoring.enabled is true (the default). When disabled, best-effort
+// deletes those managed objects so Alerting/scrape targets do not linger.
+// CRDs absent → skip (IsNoMatchError).
 func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	logger := log.FromContext(ctx)
+	objs := []client.Object{
+		resources.AppServiceMonitor(cfg),
+		resources.PrometheusRules(cfg),
+	}
+
 	if !costv1alpha1.BoolVal(cfg.Spec.Monitoring.Enabled, true) {
+		for _, obj := range objs {
+			obj.SetNamespace(cfg.Namespace)
+			if err := r.Delete(ctx, obj); err != nil && !errors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+				gvk := obj.GetObjectKind().GroupVersionKind()
+				return Result{}, fmt.Errorf("delete monitoring %s %s: %w", gvk.Kind, obj.GetName(), err)
+			}
+		}
 		return Result{}, nil
 	}
-	logger := log.FromContext(ctx)
 
-	// Remove legacy app scrape monitor so we do not advertise broken targets.
-	legacyAppSM := resources.AppServiceMonitor(cfg)
-	legacyAppSM.SetNamespace(cfg.Namespace)
-	if err := r.Delete(ctx, legacyAppSM); err != nil && !errors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
-		return Result{}, fmt.Errorf("delete legacy App ServiceMonitor %s: %w", legacyAppSM.GetName(), err)
-	}
-
-	obj := resources.PrometheusRules(cfg)
-	if err := r.apply(ctx, cfg, obj); err != nil {
-		gvk := obj.GetObjectKind().GroupVersionKind()
-		if apimeta.IsNoMatchError(err) {
-			logger.Info("monitoring resource skipped (CRD absent)",
-				"kind", gvk.Kind, "name", obj.GetName())
-			return Result{}, nil
+	for _, obj := range objs {
+		if err := r.apply(ctx, cfg, obj); err != nil {
+			gvk := obj.GetObjectKind().GroupVersionKind()
+			if apimeta.IsNoMatchError(err) {
+				logger.Info("monitoring resource skipped (CRD absent)",
+					"kind", gvk.Kind, "name", obj.GetName())
+				return Result{}, nil
+			}
+			return Result{}, fmt.Errorf("monitoring %s %s: %w", gvk.Kind, obj.GetName(), err)
 		}
-		return Result{}, fmt.Errorf("monitoring %s %s: %w", gvk.Kind, obj.GetName(), err)
 	}
 	return Result{}, nil
 }

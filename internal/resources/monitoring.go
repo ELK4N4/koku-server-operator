@@ -13,7 +13,6 @@ var (
 )
 
 // serviceMonitor builds a ServiceMonitor that selects Services by component label.
-// Kept for PR2 (app scrape) and ROS cleanup paths; not applied in PR1 reconcileMonitoring.
 func serviceMonitor(cfg *costv1alpha1.CostManagementServiceConfig, name, portName string, components []string) *unstructured.Unstructured {
 	matchExpressions := make([]any, len(components))
 	for i, c := range components {
@@ -52,24 +51,24 @@ func serviceMonitor(cfg *costv1alpha1.CostManagementServiceConfig, name, portNam
 	return sm
 }
 
-// AppServiceMonitor watches application services that expose metrics on port 9000.
-// PR1 does not apply this object (scrape wiring is PR2). Builder retained for PR2
-// and for best-effort delete of legacy objects.
+// AppServiceMonitor scrapes beta managed workloads that expose Prometheus
+// /metrics on a Service port named "metrics": Koku API, Masu, and Ingress.
+// Listener / ROS / Kruize / Gateway are intentionally excluded (no named metrics
+// port, wrong path, or out of beta).
 func AppServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
 	return serviceMonitor(cfg, cfg.Name+"-app-metrics", "metrics", []string{
-		"cost-management-api", "cost-processor", "listener",
-		"ros-api", "ingress",
+		"cost-management-api", "cost-processor", "ingress",
 	})
 }
 
 // KruizeServiceMonitor watches Kruize which exposes metrics on port 8080.
-// Not applied in PR1; retained for ROS cleanup when ros.enabled flips false.
+// Not applied in beta; retained for ROS cleanup when ros.enabled flips false.
 func KruizeServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
 	return serviceMonitor(cfg, cfg.Name+"-kruize-metrics", "metrics", []string{"ros-optimization"})
 }
 
 // OperatorServiceMonitor watches the controller-manager metrics endpoint.
-// Not applied in PR1 (scaffold HTTPS/port mismatch); retained for a later PR.
+// Not applied in beta (scaffold HTTPS/port mismatch); retained for a later PR.
 func OperatorServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
 	sm := &unstructured.Unstructured{}
 	sm.SetGroupVersionKind(serviceMonitorGVK)
@@ -95,12 +94,12 @@ func OperatorServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unst
 	return sm
 }
 
-// PrometheusRules returns operator-centric alert rules for beta (PR1).
-// Alerts use CMSC conditions, migration Jobs, and kube-state pod metrics —
-// not application /metrics scrape (PR2).
+// PrometheusRules returns operator-centric alert rules plus scrape-up APIDown
+// once App ServiceMonitor targets are wired (PR2).
 func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
 	instance := cfg.Name
 	ns := cfg.Namespace
+	kokuAPIService := NameKokuAPI(cfg)
 
 	rules := []any{
 		// Migration Job failed
@@ -209,6 +208,20 @@ func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 			"annotations": map[string]any{
 				"summary":     "Cost Management stack is not available",
 				"description": "CostManagementServiceConfig {{ $labels.customresource_name }} has Available=False for 30 minutes.",
+			},
+		},
+		// Koku API /metrics scrape target down (requires App ServiceMonitor)
+		map[string]any{
+			"alert": "CostManagementAPIDown",
+			"expr":  `up{namespace="` + ns + `",service="` + kokuAPIService + `"} == 0`,
+			"for":   "5m",
+			"labels": map[string]any{
+				"severity": "critical",
+				"instance": instance,
+			},
+			"annotations": map[string]any{
+				"summary":     "Cost Management API metrics endpoint unreachable",
+				"description": "Prometheus cannot scrape /metrics on Service {{ $labels.service }} in namespace {{ $labels.namespace }} for more than 5 minutes.",
 			},
 		},
 	}

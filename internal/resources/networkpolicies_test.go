@@ -29,21 +29,24 @@ func TestGatewayNetworkPolicy(t *testing.T) {
 	}
 }
 
-func TestIngressNetworkPolicy_GatewayOnly(t *testing.T) {
+func TestIngressNetworkPolicy_GatewayAndMonitoring(t *testing.T) {
 	cfg := testCfg()
 	np := IngressNetworkPolicy(cfg)
 	if np.Name != cfg.Name+"-ingress" {
 		t.Errorf("Name = %q", np.Name)
 	}
 	assertIngressOnly(t, np)
-	if len(np.Spec.Ingress) != 1 {
-		t.Fatalf("expected single gateway rule, got %d", len(np.Spec.Ingress))
+	if len(np.Spec.Ingress) != 2 {
+		t.Fatalf("expected gateway + monitoring rules, got %d", len(np.Spec.Ingress))
 	}
 	if !peerHasComponent(np.Spec.Ingress[0], "gateway") {
 		t.Error("ingress rule must allow from gateway")
 	}
 	if !ruleAllowsPort(np.Spec.Ingress, ingressHTTPPort) {
 		t.Errorf("missing ingress HTTP port %d", ingressHTTPPort)
+	}
+	if !ruleAllowsPort(np.Spec.Ingress, ingressMetricsPort) {
+		t.Errorf("missing ingress metrics port %d", ingressMetricsPort)
 	}
 }
 

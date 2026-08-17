@@ -62,6 +62,7 @@ func TestPrometheusRules_BetaOperatorCentricSet(t *testing.T) {
 		"CostManagementDependencyDown",
 		"CostManagementPodRestarting",
 		"CostManagementNotAvailable",
+		"CostManagementAPIDown",
 	}
 	for _, a := range want {
 		if !names[a] {
@@ -70,7 +71,6 @@ func TestPrometheusRules_BetaOperatorCentricSet(t *testing.T) {
 	}
 
 	absent := []string{
-		"CostManagementAPIDown",
 		"CostManagementCeleryBacklog",
 		"CostManagementSchemaOutOfDate",
 		"CostManagementNotProgressing",
@@ -82,12 +82,55 @@ func TestPrometheusRules_BetaOperatorCentricSet(t *testing.T) {
 	}
 }
 
-func TestAppServiceMonitor_BuilderRetainedForPR2(t *testing.T) {
+func TestAppServiceMonitor_BetaComponents(t *testing.T) {
 	sm := AppServiceMonitor(testMonitoringCFG())
 	if sm.GetName() != "cost-management-app-metrics" {
 		t.Errorf("name: got %q", sm.GetName())
 	}
 	if sm.GroupVersionKind().Kind != "ServiceMonitor" {
 		t.Errorf("kind: got %s", sm.GroupVersionKind().Kind)
+	}
+
+	endpoints, found, err := unstructured.NestedSlice(sm.Object, "spec", "endpoints")
+	if err != nil || !found || len(endpoints) != 1 {
+		t.Fatalf("endpoints: found=%v len=%d err=%v", found, len(endpoints), err)
+	}
+	ep, ok := endpoints[0].(map[string]any)
+	if !ok {
+		t.Fatalf("endpoint type %T", endpoints[0])
+	}
+	if ep["port"] != "metrics" {
+		t.Errorf("port: got %v want metrics", ep["port"])
+	}
+	if ep["path"] != "/metrics" {
+		t.Errorf("path: got %v", ep["path"])
+	}
+
+	exprs, found, err := unstructured.NestedSlice(sm.Object, "spec", "selector", "matchExpressions")
+	if err != nil || !found || len(exprs) != 1 {
+		t.Fatalf("matchExpressions: found=%v len=%d err=%v", found, len(exprs), err)
+	}
+	expr, ok := exprs[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expr type %T", exprs[0])
+	}
+	values, ok := expr["values"].([]any)
+	if !ok {
+		t.Fatalf("values type %T", expr["values"])
+	}
+	got := map[string]bool{}
+	for _, v := range values {
+		s, _ := v.(string)
+		got[s] = true
+	}
+	for _, want := range []string{"cost-management-api", "cost-processor", "ingress"} {
+		if !got[want] {
+			t.Errorf("missing component %q", want)
+		}
+	}
+	for _, absent := range []string{"listener", "ros-api", "ros-optimization", "gateway"} {
+		if got[absent] {
+			t.Errorf("unexpected component %q", absent)
+		}
 	}
 }
