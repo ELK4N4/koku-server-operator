@@ -585,8 +585,10 @@ type GatewayRouteConfig struct {
 }
 
 type RouteTLSSpec struct {
+	// Envoy's backend listener is plaintext HTTP, so only edge termination
+	// is valid — passthrough/reencrypt would break the TLS handshake.
 	// +kubebuilder:default:=edge
-	// +kubebuilder:validation:Enum=edge;passthrough;reencrypt
+	// +kubebuilder:validation:Enum=edge
 	Termination string `json:"termination,omitempty"`
 	// +kubebuilder:default:=Redirect
 	// +kubebuilder:validation:Enum=Allow;Redirect;None

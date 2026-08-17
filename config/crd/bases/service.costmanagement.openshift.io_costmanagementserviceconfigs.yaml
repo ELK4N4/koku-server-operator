@@ -1487,10 +1487,11 @@ spec:
                         type: string
                       termination:
                         default: edge
+                        description: |-
+                          Envoy's backend listener is plaintext HTTP, so only edge termination
+                          is valid — passthrough/reencrypt would break the TLS handshake.
                         enum:
                         - edge
-                        - passthrough
-                        - reencrypt
                         type: string
                     type: object
                 type: object
