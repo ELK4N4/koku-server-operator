@@ -14,7 +14,7 @@ Last audited: 2026-08-15.
 
 | Ticket | Summary | Status | Notes |
 |--------|---------|--------|-------|
-| [COST-7678](https://redhat.atlassian.net/browse/COST-7678) | Define CostManagement CRD types | ✅ | CRD types ✅, CEL + admission webhooks ([#50](https://github.com/project-koku/koku-service-operator/pull/50)/[#51](https://github.com/project-koku/koku-service-operator/pull/51)/[#52](https://github.com/project-koku/koku-service-operator/pull/52)) ✅, `dataRetentionMonths` wired ([#59](https://github.com/project-koku/koku-service-operator/pull/59)) ✅. **Profile sizing maps deferred** to COST-7686/7687 — `spec.profile` is `standard` only and not read by the reconciler until then ([#48](https://github.com/project-koku/koku-service-operator/pull/48)). See [gap analysis](gap_analysis/COST-7678.md). |
+| [COST-7678](https://redhat.atlassian.net/browse/COST-7678) | Define CostManagement CRD types | ✅ | CRD types ✅, CEL + admission webhooks ([#50](https://github.com/project-koku/koku-service-operator/pull/50)/[#51](https://github.com/project-koku/koku-service-operator/pull/51)/[#52](https://github.com/project-koku/koku-service-operator/pull/52)) ✅, `dataRetentionMonths` wired ([#59](https://github.com/project-koku/koku-service-operator/pull/59)) ✅. **G4 partial:** enum `standard`/`ha` + UI profile defaults ([#65](https://github.com/project-koku/koku-service-operator/pull/65)) ✅; shared sizing maps for Celery/core workloads deferred to COST-7686/7687. See [gap analysis](gap_analysis/COST-7678.md). |
 | [COST-7679](https://redhat.atlassian.net/browse/COST-7679) | Create sample CRs and generate manifests | 🔄 | Bundled CR ✅, BYOI CR ✅, BYOI kustomize fixture ✅, CRD installs on CRC ✅. Missing: HA profile sample, CEL validation verified. |
 
 ## Reconciler Core
