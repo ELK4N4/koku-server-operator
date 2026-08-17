@@ -219,6 +219,7 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue,
 			"ReconcileError", err.Error())
 		cfg.Status.Phase = costv1alpha1.PhaseDegraded
+		r.emitPhaseChanged(cfg, priorPhase, costv1alpha1.PhaseDegraded)
 		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "ReconcileError", "%v", err)
 		return ctrl.Result{RequeueAfter: requeueSlow}, err
 	}
@@ -236,6 +237,7 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "ReconcileComplete", "")
 	r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionFalse, "ReconcileComplete", "")
 	cfg.Status.Phase = costv1alpha1.PhaseReady
+	r.emitPhaseChanged(cfg, priorPhase, costv1alpha1.PhaseReady)
 	// Periodic drift correction: re-apply all desired state every 5 minutes so
 	// manual edits to managed resources are reverted without waiting for an event.
 	return ctrl.Result{RequeueAfter: requeueDrift}, nil
@@ -396,9 +398,13 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 	}
 
 	// All steps completed.
+	schemaWasReady := apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionSchemaUpToDate)
 	r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionTrue, "MigrationComplete", "all schema migrations succeeded")
 	r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionFalse, "MigrationSucceeded", "")
-	r.Recorder.Event(cfg, corev1.EventTypeNormal, "MigrationComplete", "All schema migrations succeeded (Koku → ROS → RBAC)")
+	if !schemaWasReady && r.Recorder != nil {
+		r.Recorder.Event(cfg, corev1.EventTypeNormal, "MigrationsComplete",
+			"All schema migrations succeeded (Koku → ROS → RBAC)")
+	}
 	return Result{}, nil
 }
 
@@ -761,35 +767,35 @@ func (r *CostManagementServiceConfigReconciler) reconcileUI(ctx context.Context,
 }
 
 // -----------------------------------------------------------------------------
-// Stage 8 — Monitoring (ServiceMonitors + PrometheusRules)
+// Stage 8 — Monitoring (PrometheusRules; app scrape is PR2)
 // -----------------------------------------------------------------------------
 
-// reconcileMonitoring applies ServiceMonitor and PrometheusRule objects when
-// spec.monitoring.enabled is true (the default). Both types are Prometheus
-// Operator CRDs; the stage is silently skipped when those CRDs are absent so
-// the operator works on clusters without the monitoring stack.
+// reconcileMonitoring applies operator-centric PrometheusRules when
+// spec.monitoring.enabled is true (the default). App/Kruize ServiceMonitors are
+// not applied in PR1 (scrape wiring is follow-up). A best-effort delete removes
+// any legacy App ServiceMonitor left from earlier builds. CRDs absent → skip.
 func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
 	if !costv1alpha1.BoolVal(cfg.Spec.Monitoring.Enabled, true) {
 		return Result{}, nil
 	}
-	for _, obj := range []client.Object{
-		resources.AppServiceMonitor(cfg),
-		resources.KruizeServiceMonitor(cfg),
-		resources.PrometheusRules(cfg),
-	} {
-		if err := r.apply(ctx, cfg, obj); err != nil {
-			gvk := obj.GetObjectKind().GroupVersionKind()
-			if apimeta.IsNoMatchError(err) {
-				// Prometheus Operator CRDs not installed — expected on clusters
-				// without the monitoring stack. Skip silently.
-				log.FromContext(ctx).Info("monitoring resource skipped (CRD absent)",
-					"kind", gvk.Kind, "name", obj.GetName())
-				continue
-			}
-			// Real error (permissions, API server issues, etc.) — surface it so
-			// the reconcile loop sets Degraded and the user is notified.
-			return Result{}, fmt.Errorf("monitoring %s %s: %w", gvk.Kind, obj.GetName(), err)
+	logger := log.FromContext(ctx)
+
+	// Remove legacy app scrape monitor so we do not advertise broken targets.
+	legacyAppSM := resources.AppServiceMonitor(cfg)
+	legacyAppSM.SetNamespace(cfg.Namespace)
+	if err := r.Delete(ctx, legacyAppSM); err != nil && !errors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+		return Result{}, fmt.Errorf("delete legacy App ServiceMonitor %s: %w", legacyAppSM.GetName(), err)
+	}
+
+	obj := resources.PrometheusRules(cfg)
+	if err := r.apply(ctx, cfg, obj); err != nil {
+		gvk := obj.GetObjectKind().GroupVersionKind()
+		if apimeta.IsNoMatchError(err) {
+			logger.Info("monitoring resource skipped (CRD absent)",
+				"kind", gvk.Kind, "name", obj.GetName())
+			return Result{}, nil
 		}
+		return Result{}, fmt.Errorf("monitoring %s %s: %w", gvk.Kind, obj.GetName(), err)
 	}
 	return Result{}, nil
 }
@@ -963,6 +969,33 @@ func (r *CostManagementServiceConfigReconciler) setCondition(cfg *costv1alpha1.C
 		Message:            message,
 		ObservedGeneration: cfg.Generation,
 	})
+}
+
+// emitPhaseChanged emits PhaseChanged when the reconcile settles on a phase
+// different from the phase observed at the start of the pass.
+func (r *CostManagementServiceConfigReconciler) emitPhaseChanged(cfg *costv1alpha1.CostManagementServiceConfig, from, to costv1alpha1.Phase) {
+	if r.Recorder == nil || from == to || to == "" {
+		return
+	}
+	fromLabel := string(from)
+	if fromLabel == "" {
+		fromLabel = "None"
+	}
+	r.Recorder.Eventf(cfg, corev1.EventTypeNormal, "PhaseChanged",
+		"Phase changed from %s to %s", fromLabel, to)
+}
+
+// emitDependencyFailed emits DependencyFailed when a blocking dependency
+// condition transitions to False (operator validation signal, not BYOI scrape).
+func (r *CostManagementServiceConfigReconciler) emitDependencyFailed(cfg *costv1alpha1.CostManagementServiceConfig, condType, message string) {
+	if r.Recorder == nil {
+		return
+	}
+	if apimeta.IsStatusConditionFalse(cfg.Status.Conditions, condType) {
+		return // already False — avoid spam on requeue
+	}
+	r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "DependencyFailed",
+		"%s: %s", condType, message)
 }
 
 // -----------------------------------------------------------------------------
