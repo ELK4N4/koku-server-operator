@@ -45,7 +45,6 @@ func TestGatewayAPIRouteSpec(t *testing.T) {
 	route := GatewayAPIRoute(cfg)
 	if route == nil {
 		t.Fatal("expected Route")
-		return
 	}
 	if route.GetName() != "cost-management-api" {
 		t.Errorf("name = %q", route.GetName())

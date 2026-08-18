@@ -42,7 +42,6 @@ func TestUIDeploymentOAuthProxySecurityContext(t *testing.T) {
 	sc := proxy.SecurityContext
 	if sc == nil {
 		t.Fatal("oauth-proxy SecurityContext is nil")
-		return
 	}
 	// RunAsUser must be absent — restricted-v2 SCC injects the namespace UID.
 	if sc.RunAsUser != nil {
@@ -278,7 +277,6 @@ func TestUIRoute_Spec(t *testing.T) {
 	route := UIRoute(cfg)
 	if route == nil {
 		t.Fatal("expected Route when cluster domain is set")
-		return
 	}
 	if route.GroupVersionKind() != routeGVK {
 		t.Errorf("GVK = %v, want %v", route.GroupVersionKind(), routeGVK)

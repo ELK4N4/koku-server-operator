@@ -125,7 +125,6 @@ func TestPhaseError(t *testing.T) {
 
 	if pe == nil {
 		t.Fatal("expected non-nil error")
-		return
 	}
 	if !errors.Is(pe, inner) {
 		t.Error("PhaseError should unwrap to inner error")

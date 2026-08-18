@@ -31,7 +31,6 @@ func assertValidYAMLWithStringAudiences(t *testing.T, yamlStr string) {
 	)
 	if audiences == nil {
 		t.Fatal("could not walk YAML to http_filters")
-		return
 	}
 
 	filters, ok := audiences.([]any)
