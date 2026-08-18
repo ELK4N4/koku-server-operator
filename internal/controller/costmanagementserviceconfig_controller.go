@@ -37,6 +37,17 @@ const (
 	requeueFast    = 10 * time.Second
 	requeueSlow    = 30 * time.Second
 	requeueDrift   = 5 * time.Minute
+
+	// Status condition reasons shared with tests so the strings cannot drift.
+	reasonWaitingForRBAC       = "WaitingForRBAC"
+	reasonRBACAvailable        = "RBACAvailable"
+	reasonWaitingForRBACWorker = "WaitingForRBACWorker"
+	reasonRBACWorkerAvailable  = "RBACWorkerAvailable"
+	reasonWaitingForAPI        = "WaitingForAPI"
+	reasonKokuAvailable        = "KokuAvailable"
+	msgWaitingForRBACAPI       = "waiting for RBAC API"
+	msgWaitingForRBACWorker    = "waiting for RBAC worker"
+	msgWaitingForKokuAPI       = "waiting for Koku API"
 )
 
 type CostManagementServiceConfigReconciler struct {
@@ -61,6 +72,8 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// ObjectBucketClaims: namespaced Get/List during reconcile (findBoundOBC), not a watcher.
+// +kubebuilder:rbac:groups=objectbucket.io,resources=objectbucketclaims,verbs=get;list
 // Cluster-scoped resources (ingresses, storageclasses, consolelinks, clusterroles,
 // clusterrolebindings, noobaa-admin secret) live in cluster_access_role.yaml
 // (hand-maintained, bound via ClusterRoleBinding) — not here.
@@ -437,7 +450,7 @@ func (r *CostManagementServiceConfigReconciler) runMigrationStep(
 	}
 
 	// Upgrade: image tag changed → delete and let next reconcile recreate.
-	if existing.Annotations["koku.costmanagement.io/image-tag"] != imageTag {
+	if existing.Annotations[resources.MigrationImageTagAnnotation] != imageTag {
 		if delErr := r.Delete(ctx, existing, client.PropagationPolicy(metav1.DeletePropagationBackground)); delErr != nil && !errors.IsNotFound(delErr) {
 			return Result{}, fmt.Errorf("delete stale %s: %w", jobName, delErr)
 		}
@@ -528,19 +541,44 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 		}
 	}
 
+	// RBAC worker is independent of Available: surface it as its own
+	// condition so a down worker is not hidden behind RBACReady=True.
+	workerReady, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameRBACWorker(cfg))
+	if err != nil {
+		return Result{}, err
+	}
+	if !workerReady {
+		r.setCondition(cfg, costv1alpha1.ConditionRBACWorkerReady, metav1.ConditionFalse, reasonWaitingForRBACWorker, msgWaitingForRBACWorker)
+	} else {
+		r.setCondition(cfg, costv1alpha1.ConditionRBACWorkerReady, metav1.ConditionTrue, reasonRBACWorkerAvailable, "")
+	}
+
+	// Gate on the RBAC API (not the worker). Koku and Envoy call this
+	// service for authorization; do not report Available while it is down.
+	rbacReady, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameRBACAPI(cfg))
+	if err != nil {
+		return Result{}, err
+	}
+	if !rbacReady {
+		r.setCondition(cfg, costv1alpha1.ConditionRBACReady, metav1.ConditionFalse, reasonWaitingForRBAC, msgWaitingForRBACAPI)
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, reasonWaitingForRBAC, msgWaitingForRBACAPI)
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionRBACReady, metav1.ConditionTrue, reasonRBACAvailable, "")
+
 	// Gate on the API being available.
 	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameKokuAPI(cfg))
 	if err != nil {
 		return Result{}, err
 	}
 	if !ready {
-		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "WaitingForAPI", "waiting for Koku API")
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, reasonWaitingForAPI, msgWaitingForKokuAPI)
 		return Result{RequeueAfter: requeueSlow}, nil
 	}
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionAvailable) {
 		r.Recorder.Event(cfg, corev1.EventTypeNormal, "CoreServicesAvailable", "Koku API is ready")
 	}
-	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "KokuAvailable", "")
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, reasonKokuAvailable, "")
 	return Result{}, nil
 }
 
@@ -621,6 +659,17 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		}
 	}
 
+	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameIngress(cfg))
+	if err != nil {
+		return Result{}, err
+	}
+	if !ready {
+		r.setCondition(cfg, costv1alpha1.ConditionIngressReady, metav1.ConditionFalse,
+			"WaitingForIngress", "waiting for Ingress upload Deployment")
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionIngressReady, metav1.ConditionTrue,
+		"IngressReady", "Ingress upload Deployment is ready")
 	return Result{}, nil
 }
 
@@ -656,18 +705,18 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		return Result{}, err
 	}
 	if !ready {
-		r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionFalse,
+		r.setCondition(cfg, costv1alpha1.ConditionGatewayReady, metav1.ConditionFalse,
 			"WaitingForGateway", "waiting for Envoy gateway Deployment")
 		return Result{RequeueAfter: requeueSlow}, nil
 	}
 
 	if route == nil {
-		r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionFalse,
+		r.setCondition(cfg, costv1alpha1.ConditionGatewayReady, metav1.ConditionFalse,
 			"ClusterDomainPending", "Envoy gateway ready; API Route deferred until cluster domain is available")
 		return Result{RequeueAfter: requeueSlow}, nil
 	}
 
-	r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionTrue,
+	r.setCondition(cfg, costv1alpha1.ConditionGatewayReady, metav1.ConditionTrue,
 		"GatewayReady", "Envoy JWT gateway and API Route are ready")
 
 	if err := r.reconcileUI(ctx, cfg); err != nil {
