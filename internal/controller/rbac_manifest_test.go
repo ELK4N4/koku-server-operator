@@ -31,15 +31,18 @@ func decodeYAMLFile(t *testing.T, path string, into any) {
 	}
 }
 
-// olmCSVClusterPermissions is the CSV fragment we round-trip. Avoids adding
-// operator-framework/api just to inspect install.spec.clusterPermissions.
-type olmCSVClusterPermissions struct {
+// olmCSVInstallPermissions is the CSV fragment we round-trip. Avoids adding
+// operator-framework/api just to inspect install.spec.{clusterPermissions,permissions}.
+type olmCSVInstallPermissions struct {
 	Spec struct {
 		Install struct {
 			Spec struct {
 				ClusterPermissions []struct {
 					Rules []rbacv1.PolicyRule `json:"rules"`
 				} `json:"clusterPermissions"`
+				Permissions []struct {
+					Rules []rbacv1.PolicyRule `json:"rules"`
+				} `json:"permissions"`
 			} `json:"spec"`
 		} `json:"install"`
 	} `json:"spec"`
@@ -159,17 +162,19 @@ func TestManagerRole_GrantsObjectBucketClaimGetList(t *testing.T) {
 	}
 
 	// OLM installs from the CSV, not role.yaml. CI does not regenerate the
-	// bundle, so lock clusterPermissions to the same get+list grant.
-	var csv olmCSVClusterPermissions
+	// bundle, so lock namespaced permissions (manager-role) to the same
+	// get+list grant. objectbucketclaims are namespaced; they must not live
+	// only under clusterPermissions.
+	var csv olmCSVInstallPermissions
 	decodeYAMLFile(t, bundleCSVPath(t), &csv)
 	var csvRules []rbacv1.PolicyRule
-	for _, p := range csv.Spec.Install.Spec.ClusterPermissions {
+	for _, p := range csv.Spec.Install.Spec.Permissions {
 		csvRules = append(csvRules, p.Rules...)
 	}
-	if len(csv.Spec.Install.Spec.ClusterPermissions) == 0 {
-		t.Fatal("CSV spec.install.spec.clusterPermissions is empty (unmarshal failed or field moved)")
+	if len(csv.Spec.Install.Spec.Permissions) == 0 {
+		t.Fatal("CSV spec.install.spec.permissions is empty (unmarshal failed or field moved)")
 	}
-	assertObjectBucketClaimGetList(t, "CSV clusterPermissions", csvRules)
+	assertObjectBucketClaimGetList(t, "CSV permissions", csvRules)
 }
 
 func TestManagerRole_StillGrantsNamespacedSecrets(t *testing.T) {
