@@ -72,6 +72,8 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// ObjectBucketClaims: namespaced Get/List during reconcile (findBoundOBC), not a watcher.
+// +kubebuilder:rbac:groups=objectbucket.io,resources=objectbucketclaims,verbs=get;list
 // Cluster-scoped resources (ingresses, storageclasses, consolelinks, clusterroles,
 // clusterrolebindings, noobaa-admin secret) live in cluster_access_role.yaml
 // (hand-maintained, bound via ClusterRoleBinding) — not here.
