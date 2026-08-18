@@ -288,16 +288,39 @@ func TestReconcileMigration_ROSEnabled_IncludesROSMigration(t *testing.T) {
 		Recorder: &noopRecorder{},
 	}
 
+	// Step 1: Koku Job created
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("koku: %v", err)
 	}
-	markJobComplete(t, c, testNamespace, resources.NameKokuMigration(cfg))
+	if !jobExists(t, c, testNamespace, resources.NameKokuMigration(cfg)) {
+		t.Fatal("expected Koku Job on first pass")
+	}
+	if jobExists(t, c, testNamespace, resources.NameROSMigration(cfg)) {
+		t.Fatal("ROS Job should not exist yet")
+	}
+	if jobExists(t, c, testNamespace, resources.NameRBACMigration(cfg)) {
+		t.Fatal("RBAC Job should not exist yet (gated behind ROS)")
+	}
 
+	// Step 2: Complete Koku → ROS Job created
+	markJobComplete(t, c, testNamespace, resources.NameKokuMigration(cfg))
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("ros: %v", err)
 	}
 	if !jobExists(t, c, testNamespace, resources.NameROSMigration(cfg)) {
-		t.Fatal("expected ROS MigrationJob when ROS enabled")
+		t.Fatal("expected ROS MigrationJob after Koku complete")
+	}
+	if jobExists(t, c, testNamespace, resources.NameRBACMigration(cfg)) {
+		t.Fatal("RBAC Job should not exist yet (gated behind ROS)")
+	}
+
+	// Step 3: Complete ROS → RBAC Job created
+	markJobComplete(t, c, testNamespace, resources.NameROSMigration(cfg))
+	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
+		t.Fatalf("rbac: %v", err)
+	}
+	if !jobExists(t, c, testNamespace, resources.NameRBACMigration(cfg)) {
+		t.Fatal("expected RBAC MigrationJob after ROS complete")
 	}
 }
 
