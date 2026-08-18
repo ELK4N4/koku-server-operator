@@ -20,6 +20,26 @@ func minimalCRForResources(name, ns string) *costv1alpha1.CostManagementServiceC
 	}
 }
 
+// TestMigrationJob_UsesConstants verifies Job spec uses package-level constants
+// for backoffLimit, activeDeadlineSeconds, and the image-tag annotation key.
+func TestMigrationJob_UsesConstants(t *testing.T) {
+	cfg := minimalCRForResources("test", "ns")
+	cfg.Spec.Database.Deploy = boolPtr(true)
+	cfg.Spec.CostManagement.API.Image.Tag = "v1"
+
+	job := MigrationJob(cfg, "v1")
+
+	if *job.Spec.BackoffLimit != MigrationBackoffLimit {
+		t.Errorf("BackoffLimit = %d, want %d (MigrationBackoffLimit)", *job.Spec.BackoffLimit, MigrationBackoffLimit)
+	}
+	if *job.Spec.ActiveDeadlineSeconds != MigrationDeadlineSeconds {
+		t.Errorf("ActiveDeadlineSeconds = %d, want %d (MigrationDeadlineSeconds)", *job.Spec.ActiveDeadlineSeconds, MigrationDeadlineSeconds)
+	}
+	if job.Annotations[MigrationImageTagAnnotation] != "v1" {
+		t.Errorf("Annotation %q = %q, want v1", MigrationImageTagAnnotation, job.Annotations[MigrationImageTagAnnotation])
+	}
+}
+
 // TestMigrationJob_TTLNil verifies TTLSecondsAfterFinished is nil.
 // A TTL would cause Job GC and re-run migrations on every reconcile (~hourly).
 func TestMigrationJob_TTLNil(t *testing.T) {
