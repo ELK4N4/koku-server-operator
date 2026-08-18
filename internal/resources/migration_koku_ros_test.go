@@ -33,6 +33,7 @@ func TestMigrationJobBuildsValidJob(t *testing.T) {
 
 	if job == nil {
 		t.Fatal("MigrationJob returned nil")
+		return
 	}
 	if job.Name != "cost-onprem-koku-migrate" {
 		t.Errorf("Name = %q, want cost-onprem-koku-migrate", job.Name)

@@ -134,6 +134,7 @@ func TestReconcile_ResumeClearsPausedCondition(t *testing.T) {
 	paused := apimeta.FindStatusCondition(updated.Status.Conditions, costv1alpha1.ConditionPaused)
 	if paused == nil {
 		t.Fatal("expected Paused condition to still exist (False)")
+		return
 	}
 	if paused.Status != metav1.ConditionFalse || paused.Reason != "Resumed" {
 		t.Errorf("expected Paused=False reason=Resumed, got status=%s reason=%s", paused.Status, paused.Reason)
