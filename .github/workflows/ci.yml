@@ -43,7 +43,7 @@ jobs:
             GO-2026-4946 GO-2026-4947 GO-2026-4971
             GO-2026-5026 GO-2026-5037 GO-2026-5038 GO-2026-5039 GO-2026-5856
             GO-2026-5972
-            GO-2026-6089 GO-2026-6090 GO-2026-6218
+            GO-2026-6088 GO-2026-6089 GO-2026-6090 GO-2026-6218
           "
           set +e
           output=$(govulncheck ./... 2>&1)
@@ -102,12 +102,22 @@ jobs:
       - name: Run tests (unit + envtest integration)
         run: make test
 
+      - name: Coverage gate (internal packages)
+        run: make coverage-gate
+
       - name: Coverage summary
         run: |
           echo '### Test Coverage' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           go tool cover -func=cover.out | grep -E 'total:|\.go:' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ -f cover.internal.out ]; then
+            echo '' >> $GITHUB_STEP_SUMMARY
+            echo '### Internal coverage (gate)' >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            go tool cover -func=cover.internal.out | grep '^total:' >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
 
   check-generated:
     name: Check Generated Code

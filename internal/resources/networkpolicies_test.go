@@ -107,29 +107,7 @@ func TestKokuAPINetworkPolicy(t *testing.T) {
 	}
 }
 
-func TestROSAPINetworkPolicy_GatewayOnly(t *testing.T) {
-	// Extends the smoke test in names_test.go with peer/port assertions.
-	cfg := testCfg()
-	np := ROSAPINetworkPolicy(cfg)
-	assertIngressOnly(t, np)
-	if len(np.Spec.Ingress) != 1 {
-		t.Fatalf("expected single gateway rule, got %d", len(np.Spec.Ingress))
-	}
-	if !peerHasComponent(np.Spec.Ingress[0], "gateway") {
-		t.Error("ROS API must only accept traffic from gateway")
-	}
-	if !ruleAllowsPort(np.Spec.Ingress, rosAPIPort) {
-		t.Errorf("missing ros API port %d", rosAPIPort)
-	}
-}
-
 func TestCacheNetworkPolicy(t *testing.T) {
-	cfg := testCfg()
-	np := CacheNetworkPolicy(cfg)
-	assertIngressOnly(t, np)
-	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "cache" {
-		t.Errorf("podSelector component = %q, want cache", got)
-	}
 	wantFrom := []string{
 		"cost-management-api", "cost-processor", "listener", "cost-scheduler",
 		"cost-worker-celery", "cost-worker-priority", "cost-worker-summary",
@@ -137,6 +115,19 @@ func TestCacheNetworkPolicy(t *testing.T) {
 		"cost-worker-hcs", "cost-worker-download",
 		"cost-worker-subs-extraction", "cost-worker-subs-transmission",
 		"rbac-api", "rbac-worker",
+	}
+
+	cfg := testCfg()
+	np := CacheNetworkPolicy(cfg)
+	if np.Name != cfg.Name+"-cache" {
+		t.Errorf("Name = %q", np.Name)
+	}
+	assertIngressOnly(t, np)
+	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "cache" {
+		t.Errorf("podSelector component = %q, want cache", got)
+	}
+	if len(np.Spec.Ingress) != len(wantFrom) {
+		t.Fatalf("ingress rules = %d, want %d", len(np.Spec.Ingress), len(wantFrom))
 	}
 	for _, comp := range wantFrom {
 		found := false
@@ -153,20 +144,34 @@ func TestCacheNetworkPolicy(t *testing.T) {
 	if !ruleAllowsPort(np.Spec.Ingress, 6379) {
 		t.Error("missing default cache port 6379")
 	}
+
+	cfgCustom := testCfg()
+	cfgCustom.Spec.Cache.Port = 6380
+	npCustom := CacheNetworkPolicy(cfgCustom)
+	if !ruleAllowsPort(npCustom.Spec.Ingress, 6380) {
+		t.Errorf("missing custom cache port 6380")
+	}
 }
 
 func TestDatabaseNetworkPolicy(t *testing.T) {
-	cfg := testCfg()
-	np := DatabaseNetworkPolicy(cfg)
-	assertIngressOnly(t, np)
-	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "database" {
-		t.Errorf("podSelector component = %q, want database", got)
-	}
 	wantFrom := []string{
 		"cost-management-api", "cost-processor", "cost-management-migration",
 		"rbac-api", "rbac-worker", "rbac-migration", "rbac-admin-bootstrap", "rbac-keycloak-sync",
 		"ros-api", "ros-processor", "ros-recommendation-poller",
 		"ros-housekeeper", "ros-optimization", "ros-migration",
+	}
+
+	cfg := testCfg()
+	np := DatabaseNetworkPolicy(cfg)
+	if np.Name != cfg.Name+"-database" {
+		t.Errorf("Name = %q", np.Name)
+	}
+	assertIngressOnly(t, np)
+	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "database" {
+		t.Errorf("podSelector component = %q, want database", got)
+	}
+	if len(np.Spec.Ingress) != len(wantFrom) {
+		t.Fatalf("ingress rules = %d, want %d", len(np.Spec.Ingress), len(wantFrom))
 	}
 	for _, comp := range wantFrom {
 		found := false
@@ -182,6 +187,29 @@ func TestDatabaseNetworkPolicy(t *testing.T) {
 	}
 	if !ruleAllowsPort(np.Spec.Ingress, 5432) {
 		t.Error("missing default database port 5432")
+	}
+
+	cfgCustom := testCfg()
+	cfgCustom.Spec.Database.Port = 5433
+	npCustom := DatabaseNetworkPolicy(cfgCustom)
+	if !ruleAllowsPort(npCustom.Spec.Ingress, 5433) {
+		t.Errorf("missing custom database port 5433")
+	}
+}
+
+func TestROSAPINetworkPolicy_GatewayOnly(t *testing.T) {
+	// Extends the smoke test in names_test.go with peer/port assertions.
+	cfg := testCfg()
+	np := ROSAPINetworkPolicy(cfg)
+	assertIngressOnly(t, np)
+	if len(np.Spec.Ingress) != 1 {
+		t.Fatalf("expected single gateway rule, got %d", len(np.Spec.Ingress))
+	}
+	if !peerHasComponent(np.Spec.Ingress[0], "gateway") {
+		t.Error("ROS API must only accept traffic from gateway")
+	}
+	if !ruleAllowsPort(np.Spec.Ingress, rosAPIPort) {
+		t.Errorf("missing ros API port %d", rosAPIPort)
 	}
 }
 

@@ -68,35 +68,54 @@ func TestKafkaTCPProbe(t *testing.T) {
 	}
 }
 
-func TestHTTPProbe(t *testing.T) {
+func TestJWKSProbe(t *testing.T) {
+	ctx := context.Background()
+	validJWKS := `{"keys":[{"kty":"RSA","kid":"1"}]}`
+
 	tests := []struct {
 		name    string
 		status  int
+		body    string
 		wantErr bool
 	}{
-		{"200 OK", http.StatusOK, false},
-		// 4xx must fail: a 401/403/404 means the OIDC endpoint is wrong or
-		// unreachable as configured — not a healthy JWKS endpoint.
-		{"401 Unauthorized", http.StatusUnauthorized, true},
-		{"403 Forbidden", http.StatusForbidden, true},
-		{"404 Not Found", http.StatusNotFound, true},
-		{"503 Service Unavailable", http.StatusServiceUnavailable, true},
+		{"200 valid JWKS", http.StatusOK, validJWKS, false},
+		{"200 invalid JSON", http.StatusOK, "not-json", true},
+		{"200 empty keys", http.StatusOK, `{"keys":[]}`, true},
+		{"200 missing keys", http.StatusOK, `{}`, true},
+		{"401 Unauthorized", http.StatusUnauthorized, "", true},
+		{"403 Forbidden", http.StatusForbidden, "", true},
+		{"404 Not Found", http.StatusNotFound, "", true},
+		{"503 Service Unavailable", http.StatusServiceUnavailable, "", true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
 			}))
-			defer srv.Close()
-			if err := httpProbe(srv.URL, false, time.Second); (err != nil) != tc.wantErr {
-				t.Errorf("httpProbe status=%d: err=%v, wantErr=%v", tc.status, err, tc.wantErr)
+			t.Cleanup(srv.Close)
+			err := jwksProbe(ctx, srv.URL, false, time.Second)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("jwksProbe status=%d body=%q: err=%v, wantErr=%v", tc.status, tc.body, err, tc.wantErr)
 			}
 		})
 	}
 
 	t.Run("unreachable", func(t *testing.T) {
-		if err := httpProbe("http://"+localHost+":1/jwks", false, 200*time.Millisecond); err == nil {
+		if err := jwksProbe(ctx, "http://"+localHost+":1/jwks", false, 200*time.Millisecond); err == nil {
 			t.Fatal("expected error for unreachable server")
+		}
+	})
+
+	t.Run("parent context cancelled", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(validJWKS))
+		}))
+		t.Cleanup(srv.Close)
+		cancelled, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := jwksProbe(cancelled, srv.URL, false, time.Second); err == nil {
+			t.Fatal("expected error when parent context is cancelled")
 		}
 	})
 }
@@ -307,6 +326,49 @@ func TestReconcileValidation_KafkaUnreachableNonBlocking(t *testing.T) {
 	kCond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionKafkaReady)
 	if kCond == nil || kCond.Status != metav1.ConditionFalse {
 		t.Errorf("expected KafkaReady=False, got %+v", kCond)
+	}
+}
+
+func TestReconcileValidation_OIDCJWKS(t *testing.T) {
+	tests := []struct {
+		name   string
+		body   string
+		status metav1.ConditionStatus
+		reason string
+	}{
+		{"valid JWKS", `{"keys":[{"kty":"RSA","kid":"1"}]}`, metav1.ConditionTrue, "OIDCReachable"},
+		{"empty keys", `{"keys":[]}`, metav1.ConditionFalse, "OIDCUnreachable"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(srv.Close)
+
+			cfg := &costv1alpha1.CostManagementServiceConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+				Spec:       bundledNoKafkaSpec(),
+			}
+			cfg.Spec.Auth.Keycloak.URL = srv.URL
+
+			r := newValidationReconciler(t)
+			result, err := r.reconcileValidation(context.Background(), cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !result.IsZero() {
+				t.Errorf("OIDC probe must not block the pipeline, got %+v", result)
+			}
+			found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAuthReady)
+			if found == nil || found.Status != tc.status {
+				t.Fatalf("AuthenticationReady=%v, want %s", found, tc.status)
+			}
+			if found.Reason != tc.reason {
+				t.Errorf("reason = %q, want %s", found.Reason, tc.reason)
+			}
+		})
 	}
 }
 
