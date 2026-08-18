@@ -11,7 +11,7 @@ import (
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
-func TestRBACMigrationScriptUsesSeedsOnly(t *testing.T) {
+func TestRBACMigrationScriptSeedsCostManagementAndSources(t *testing.T) {
 	script := rbacMigrationScript()
 	for _, want := range []string{
 		"manage.py migrate --noinput",
@@ -22,16 +22,29 @@ func TestRBACMigrationScriptUsesSeedsOnly(t *testing.T) {
 			t.Errorf("rbacMigrationScript missing %q", want)
 		}
 	}
-	for _, absent := range []string{
-		"manage.py shell",
-		"SEED_SCRIPT",
-		"ADMIN_DEFAULT_SCRIPT",
-		"CLEANUP_DEFAULTS",
-		"Cost Administrator",
+
+	// Chart-parity seed content is loaded from mounted catalog JSON via seeds.
+	cfg := testCfg()
+	defs := RBACRoleDefinitionsConfigMap(cfg).Data
+	costDefs := defs["cost-management.json"]
+	sourcesDefs := defs["sources.json"]
+	for _, want := range []struct {
+		label    string
+		haystack string
+	}{
+		{"Cost Administrator", costDefs},
+		{"Sources administrator", sourcesDefs},
+		{"sources:*:*", sourcesDefs},
+		{"admin_default", costDefs},
+		{"admin_default", sourcesDefs},
 	} {
-		if strings.Contains(script, absent) {
-			t.Errorf("rbacMigrationScript should not contain %q", absent)
+		if !strings.Contains(want.haystack, want.label) {
+			t.Errorf("seed catalog missing %q", want.label)
 		}
+	}
+	// platform_default cleanup parity: cost-management roles must not be platform defaults.
+	if strings.Contains(costDefs, `"platform_default": true`) {
+		t.Error("cost-management definitions must not mark roles platform_default")
 	}
 }
 
@@ -83,6 +96,10 @@ func TestAdminBootstrapJobGated(t *testing.T) {
 	}
 	if job.Name != "cost-onprem-rbac-admin-bootstrap" {
 		t.Errorf("name = %q", job.Name)
+	}
+	full := strings.Join(job.Spec.Template.Spec.Containers[0].Command, "\n")
+	if !strings.Contains(full, "Cost Admin Default") {
+		t.Error("bootstrap script missing Cost Admin Default group")
 	}
 	script := job.Spec.Template.Spec.Containers[0].Command[2]
 	for _, want := range []string{
