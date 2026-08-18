@@ -1827,12 +1827,25 @@ spec:
                 type: object
               objectStorage:
                 properties:
+                  caCertSecretName:
+                    description: |-
+                      CACertSecretName names a Secret with key ca.crt containing the CA
+                      certificate used to verify the S3 endpoint TLS. Required for on-prem
+                      S3 endpoints (MinIO, Ceph RGW, NooBaa HTTPS) using private CAs.
+                    type: string
                   endpoint:
                     default: s3.openshift-storage.svc.cluster.local
                     description: |-
                       S3 endpoint hostname (without protocol or port).
                       Auto-detected by the Discovery phase (OBC → NooBaa → user-provided).
                     type: string
+                  insecureSkipVerify:
+                    default: false
+                    description: |-
+                      InsecureSkipVerify disables TLS certificate verification for the S3
+                      endpoint. Use for dev/CRC setups with self-signed certs.
+                      Prefer CACertSecretName for production.
+                    type: boolean
                   port:
                     default: 443
                     format: int32

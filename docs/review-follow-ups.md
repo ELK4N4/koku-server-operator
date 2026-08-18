@@ -159,3 +159,30 @@ disabling the sync could leave orphaned CronJobs running.
 
 **Suggested fix:** Add a test following the Kruize CronJob disable pattern
 in `ros_cleanup_test.go`.
+
+---
+
+## 9. S3 TLS fields are probe-only — not wired to app pods
+
+**Source:** Code review of PR #71 (validation follow-ups).
+
+**Problem:** `spec.objectStorage.insecureSkipVerify` and
+`spec.objectStorage.caCertSecretName` configure the operator's own
+`ListBuckets` validation probe, but are not wired to application pod
+env vars (`AWS_CA_BUNDLE`) or volume mounts. App pods that need to
+reach the same S3 endpoint with a private CA rely on the combined CA
+bundle from `CACombineInitContainer`, which does not read the
+objectStorage TLS fields.
+
+The Keycloak and Cache TLS equivalents (`auth.keycloak.tls`,
+`cache.tls`) are wired to both the operator probe and the app
+containers. S3 should follow the same pattern.
+
+**Impact:** A user sets `caCertSecretName` expecting it to fix S3
+connectivity for both the operator condition and the running workloads.
+The `StorageReady` condition turns green, but uploads still fail if
+the app pods don't have the CA in their trust store via another path.
+
+**Suggested fix:** Wire `objectStorage.caCertSecretName` into the
+`CACombineInitContainer` inputs (or set `AWS_CA_BUNDLE` env var on
+Koku/Masu containers) so app pods trust the same CA.
