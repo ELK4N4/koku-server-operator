@@ -37,6 +37,17 @@ const (
 	requeueFast    = 10 * time.Second
 	requeueSlow    = 30 * time.Second
 	requeueDrift   = 5 * time.Minute
+
+	// Status condition reasons shared with tests so the strings cannot drift.
+	reasonWaitingForRBAC       = "WaitingForRBAC"
+	reasonRBACAvailable        = "RBACAvailable"
+	reasonWaitingForRBACWorker = "WaitingForRBACWorker"
+	reasonRBACWorkerAvailable  = "RBACWorkerAvailable"
+	reasonWaitingForAPI        = "WaitingForAPI"
+	reasonKokuAvailable        = "KokuAvailable"
+	msgWaitingForRBACAPI       = "waiting for RBAC API"
+	msgWaitingForRBACWorker    = "waiting for RBAC worker"
+	msgWaitingForKokuAPI       = "waiting for Koku API"
 )
 
 type CostManagementServiceConfigReconciler struct {
@@ -528,19 +539,44 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 		}
 	}
 
+	// RBAC worker is independent of Available: surface it as its own
+	// condition so a down worker is not hidden behind RBACReady=True.
+	workerReady, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameRBACWorker(cfg))
+	if err != nil {
+		return Result{}, err
+	}
+	if !workerReady {
+		r.setCondition(cfg, costv1alpha1.ConditionRBACWorkerReady, metav1.ConditionFalse, reasonWaitingForRBACWorker, msgWaitingForRBACWorker)
+	} else {
+		r.setCondition(cfg, costv1alpha1.ConditionRBACWorkerReady, metav1.ConditionTrue, reasonRBACWorkerAvailable, "")
+	}
+
+	// Gate on the RBAC API (not the worker). Koku and Envoy call this
+	// service for authorization; do not report Available while it is down.
+	rbacReady, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameRBACAPI(cfg))
+	if err != nil {
+		return Result{}, err
+	}
+	if !rbacReady {
+		r.setCondition(cfg, costv1alpha1.ConditionRBACReady, metav1.ConditionFalse, reasonWaitingForRBAC, msgWaitingForRBACAPI)
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, reasonWaitingForRBAC, msgWaitingForRBACAPI)
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionRBACReady, metav1.ConditionTrue, reasonRBACAvailable, "")
+
 	// Gate on the API being available.
 	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameKokuAPI(cfg))
 	if err != nil {
 		return Result{}, err
 	}
 	if !ready {
-		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "WaitingForAPI", "waiting for Koku API")
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, reasonWaitingForAPI, msgWaitingForKokuAPI)
 		return Result{RequeueAfter: requeueSlow}, nil
 	}
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionAvailable) {
 		r.Recorder.Event(cfg, corev1.EventTypeNormal, "CoreServicesAvailable", "Koku API is ready")
 	}
-	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "KokuAvailable", "")
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, reasonKokuAvailable, "")
 	return Result{}, nil
 }
 
