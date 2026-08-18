@@ -19,17 +19,7 @@ import (
 )
 
 func TestReconcileMigration_FirstReconcileCreatesKokuJob(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	cfg.Spec.Database.Deploy = boolPtr(true)
-	cfg.Spec.Cache.Deploy = boolPtr(true)
-
-	c := fakeClientWithApplySupport(scheme)
-	r := &CostManagementServiceConfigReconciler{
-		Client:   c,
-		Scheme:   scheme,
-		Recorder: &noopRecorder{},
-	}
+	r, cfg, c := newMigrationTestReconciler(t)
 
 	result, err := r.reconcileMigration(context.Background(), cfg)
 	if err != nil {
@@ -63,18 +53,8 @@ func TestReconcileMigration_FirstReconcileCreatesKokuJob(t *testing.T) {
 }
 
 func TestReconcileMigration_KokuComplete_CreatesRBACJob(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	cfg.Spec.Database.Deploy = boolPtr(true)
-	cfg.Spec.Cache.Deploy = boolPtr(true)
+	r, cfg, c := newMigrationTestReconciler(t)
 	cfg.Spec.RBAC.Image.Tag = "rbac-tag"
-
-	c := fakeClientWithApplySupport(scheme)
-	r := &CostManagementServiceConfigReconciler{
-		Client:   c,
-		Scheme:   scheme,
-		Recorder: &noopRecorder{},
-	}
 
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("first pass: %v", err)
@@ -105,17 +85,7 @@ func TestReconcileMigration_KokuComplete_CreatesRBACJob(t *testing.T) {
 }
 
 func TestReconcileMigration_AllComplete_SchemaUpToDateTrue(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	cfg.Spec.Database.Deploy = boolPtr(true)
-	cfg.Spec.Cache.Deploy = boolPtr(true)
-
-	c := fakeClientWithApplySupport(scheme)
-	r := &CostManagementServiceConfigReconciler{
-		Client:   c,
-		Scheme:   scheme,
-		Recorder: &noopRecorder{},
-	}
+	r, cfg, c := newMigrationTestReconciler(t)
 
 	steps := []string{
 		resources.NameKokuMigration(cfg),
@@ -149,17 +119,7 @@ func TestReconcileMigration_AllComplete_SchemaUpToDateTrue(t *testing.T) {
 }
 
 func TestReconcileMigration_JobFailed_DegradedAndStop(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	cfg.Spec.Database.Deploy = boolPtr(true)
-	cfg.Spec.Cache.Deploy = boolPtr(true)
-
-	c := fakeClientWithApplySupport(scheme)
-	r := &CostManagementServiceConfigReconciler{
-		Client:   c,
-		Scheme:   scheme,
-		Recorder: &noopRecorder{},
-	}
+	r, cfg, c := newMigrationTestReconciler(t)
 
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("create: %v", err)
@@ -194,18 +154,8 @@ func TestReconcileMigration_JobFailed_DegradedAndStop(t *testing.T) {
 }
 
 func TestReconcileMigration_ImageTagChange_RecreatesJob(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	cfg.Spec.Database.Deploy = boolPtr(true)
-	cfg.Spec.Cache.Deploy = boolPtr(true)
+	r, cfg, c := newMigrationTestReconciler(t)
 	cfg.Spec.CostManagement.API.Image.Tag = "v1"
-
-	c := fakeClientWithApplySupport(scheme)
-	r := &CostManagementServiceConfigReconciler{
-		Client:   c,
-		Scheme:   scheme,
-		Recorder: &noopRecorder{},
-	}
 
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("v1 create: %v", err)
@@ -245,18 +195,8 @@ func TestReconcileMigration_ImageTagChange_RecreatesJob(t *testing.T) {
 }
 
 func TestReconcileMigration_ROSDisabled_SkipsROSMigration(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	cfg.Spec.Database.Deploy = boolPtr(true)
-	cfg.Spec.Cache.Deploy = boolPtr(true)
+	r, cfg, c := newMigrationTestReconciler(t)
 	cfg.Spec.ROS.Enabled = boolPtr(false)
-
-	c := fakeClientWithApplySupport(scheme)
-	r := &CostManagementServiceConfigReconciler{
-		Client:   c,
-		Scheme:   scheme,
-		Recorder: &noopRecorder{},
-	}
 
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("koku: %v", err)
@@ -277,18 +217,8 @@ func TestReconcileMigration_ROSDisabled_SkipsROSMigration(t *testing.T) {
 }
 
 func TestReconcileMigration_ROSEnabled_IncludesROSMigration(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	cfg.Spec.Database.Deploy = boolPtr(true)
-	cfg.Spec.Cache.Deploy = boolPtr(true)
+	r, cfg, c := newMigrationTestReconciler(t)
 	cfg.Spec.ROS.Enabled = boolPtr(true)
-
-	c := fakeClientWithApplySupport(scheme)
-	r := &CostManagementServiceConfigReconciler{
-		Client:   c,
-		Scheme:   scheme,
-		Recorder: &noopRecorder{},
-	}
 
 	// Step 1: Koku Job created
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
@@ -327,17 +257,7 @@ func TestReconcileMigration_ROSEnabled_IncludesROSMigration(t *testing.T) {
 }
 
 func TestReconcileMigration_AdminBootstrapGated(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	cfg.Spec.Database.Deploy = boolPtr(true)
-	cfg.Spec.Cache.Deploy = boolPtr(true)
-
-	c := fakeClientWithApplySupport(scheme)
-	r := &CostManagementServiceConfigReconciler{
-		Client:   c,
-		Scheme:   scheme,
-		Recorder: &noopRecorder{},
-	}
+	r, cfg, c := newMigrationTestReconciler(t)
 
 	for _, jobName := range []string{
 		resources.NameKokuMigration(cfg),
@@ -362,19 +282,9 @@ func TestReconcileMigration_AdminBootstrapGated(t *testing.T) {
 }
 
 func TestReconcileMigration_AdminBootstrapEnabledWithSecret_CreatesJob(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	cfg.Spec.Database.Deploy = boolPtr(true)
-	cfg.Spec.Cache.Deploy = boolPtr(true)
+	r, cfg, c := newMigrationTestReconciler(t)
 	cfg.Spec.RBAC.BootstrapAdmin.Enabled = true
 	cfg.Spec.RBAC.BootstrapAdmin.SecretRef.Name = "rbac-bootstrap-admin"
-
-	c := fakeClientWithApplySupport(scheme)
-	r := &CostManagementServiceConfigReconciler{
-		Client:   c,
-		Scheme:   scheme,
-		Recorder: &noopRecorder{},
-	}
 
 	for _, jobName := range []string{
 		resources.NameKokuMigration(cfg),
@@ -395,19 +305,11 @@ func TestReconcileMigration_AdminBootstrapEnabledWithSecret_CreatesJob(t *testin
 }
 
 func TestReconcileMigration_AdminBootstrapEnabledNoSecret_WarningEvent(t *testing.T) {
-	scheme := ownershipScheme(t)
-	cfg := minimalCR(testCRName, testNamespace)
-	cfg.Spec.Database.Deploy = boolPtr(true)
-	cfg.Spec.Cache.Deploy = boolPtr(true)
+	r, cfg, c := newMigrationTestReconciler(t)
 	cfg.Spec.RBAC.BootstrapAdmin.Enabled = true
-
-	c := fakeClientWithApplySupport(scheme)
+	// Replace recorder with FakeRecorder to capture events
 	rec := record.NewFakeRecorder(10)
-	r := &CostManagementServiceConfigReconciler{
-		Client:   c,
-		Scheme:   scheme,
-		Recorder: rec,
-	}
+	r.Recorder = rec
 
 	for _, jobName := range []string{
 		resources.NameKokuMigration(cfg),
@@ -496,4 +398,22 @@ func countJobs(c client.Client, ns string) int {
 		return 0
 	}
 	return len(list.Items)
+}
+
+// newMigrationTestReconciler returns a reconciler and CR configured with
+// bundled DB/Cache (so Validation passes) and a noopRecorder.
+func newMigrationTestReconciler(t *testing.T) (*CostManagementServiceConfigReconciler, *costv1alpha1.CostManagementServiceConfig, client.Client) {
+	t.Helper()
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	cfg.Spec.Database.Deploy = boolPtr(true)
+	cfg.Spec.Cache.Deploy = boolPtr(true)
+
+	c := fakeClientWithApplySupport(scheme)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+	return r, cfg, c
 }
