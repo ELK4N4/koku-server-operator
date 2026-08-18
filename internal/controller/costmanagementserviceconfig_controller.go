@@ -269,6 +269,8 @@ func (r *CostManagementServiceConfigReconciler) reconcileSharedConfig(ctx contex
 		resources.AWSConfigMap(cfg),
 		resources.CACombineConfigMap(cfg),
 		resources.ServiceCAConfigMap(cfg),
+		resources.RBACRolePermissionsConfigMap(cfg),
+		resources.RBACRoleDefinitionsConfigMap(cfg),
 	} {
 		if err := r.apply(ctx, cfg, cm); err != nil {
 			return Result{}, fmt.Errorf("configmap %s: %w", cm.Name, err)

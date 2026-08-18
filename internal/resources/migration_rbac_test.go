@@ -5,28 +5,32 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
-func TestRBACMigrationScriptSeedsCostManagementAndSources(t *testing.T) {
+func TestRBACMigrationScriptUsesSeedsOnly(t *testing.T) {
 	script := rbacMigrationScript()
 	for _, want := range []string{
-		"sources:*:*",
-		"Cost Administrator",
-		"Sources administrator",
-		"admin_default",
-		"Cost Admin Default",
-		"platform_default",
-		"PERMISSION_SEEDING_ENABLED", // env is separate; script should still complete
+		"manage.py migrate --noinput",
+		"manage.py seeds --skip-notifications",
 		"bootstrap_tenants --all",
 	} {
-		if want == "PERMISSION_SEEDING_ENABLED" {
-			continue // asserted on Job env below
-		}
 		if !strings.Contains(script, want) {
 			t.Errorf("rbacMigrationScript missing %q", want)
+		}
+	}
+	for _, absent := range []string{
+		"manage.py shell",
+		"SEED_SCRIPT",
+		"ADMIN_DEFAULT_SCRIPT",
+		"CLEANUP_DEFAULTS",
+		"Cost Administrator",
+	} {
+		if strings.Contains(script, absent) {
+			t.Errorf("rbacMigrationScript should not contain %q", absent)
 		}
 	}
 }
@@ -41,8 +45,8 @@ func TestRBACMigrationJobEnvEnablesSeeding(t *testing.T) {
 		},
 	}
 	job := RBACMigrationJob(cfg, "test")
-	if got := job.Annotations["koku.costmanagement.io/image-tag"]; got != "test-cmseed1" {
-		t.Errorf("image-tag annotation = %q, want test-cmseed1", got)
+	if got := job.Annotations["koku.costmanagement.io/image-tag"]; got != "test-cmseed2" {
+		t.Errorf("image-tag annotation = %q, want test-cmseed2", got)
 	}
 	env := map[string]string{}
 	for _, e := range job.Spec.Template.Spec.Containers[0].Env {
@@ -53,6 +57,7 @@ func TestRBACMigrationJobEnvEnablesSeeding(t *testing.T) {
 			t.Errorf("env %s = %q, want True", k, env[k])
 		}
 	}
+	assertRBACSeedVolumeMounts(t, job.Spec.Template.Spec.Volumes, job.Spec.Template.Spec.Containers[0].VolumeMounts)
 }
 
 func TestAdminBootstrapJobGated(t *testing.T) {
@@ -79,9 +84,24 @@ func TestAdminBootstrapJobGated(t *testing.T) {
 	if job.Name != "cost-onprem-rbac-admin-bootstrap" {
 		t.Errorf("name = %q", job.Name)
 	}
-	full := strings.Join(job.Spec.Template.Spec.Containers[0].Command, "\n")
-	if !strings.Contains(full, "Cost Admin Default") {
-		t.Error("bootstrap script missing Cost Admin Default group")
+	script := job.Spec.Template.Spec.Containers[0].Command[2]
+	for _, want := range []string{
+		"manage.py ensure_user",
+		"--application cost-management",
+		"--application sources",
+		"--admin",
+		"--admin-group-name \"Cost Admin Default\"",
+		"--admin-policy-name \"Cost Admin Default Policy\"",
+		"${SYNC_USERNAME}",
+		"${SYNC_ORG_ID}",
+		"${SYNC_ACCOUNT_NUMBER}",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("bootstrap script missing %q", want)
+		}
+	}
+	if strings.Contains(script, "manage.py shell") {
+		t.Error("bootstrap script must not embed Django ORM via manage.py shell")
 	}
 	// Identity values must come from the Secret via secretKeyRef — never hardcoded.
 	for _, e := range job.Spec.Template.Spec.Containers[0].Env {
@@ -98,6 +118,30 @@ func TestAdminBootstrapJobGated(t *testing.T) {
 					e.Name, e.ValueFrom.SecretKeyRef.Name)
 			}
 		}
+	}
+	assertRBACSeedVolumeMounts(t, job.Spec.Template.Spec.Volumes, job.Spec.Template.Spec.Containers[0].VolumeMounts)
+}
+
+func assertRBACSeedVolumeMounts(t *testing.T, vols []corev1.Volume, mounts []corev1.VolumeMount) {
+	t.Helper()
+	volNames := map[string]bool{}
+	for _, v := range vols {
+		volNames[v.Name] = true
+	}
+	for _, name := range []string{rbacRolePermissionsVolume, rbacRoleDefinitionsVolume} {
+		if !volNames[name] {
+			t.Errorf("missing volume %q", name)
+		}
+	}
+	mountPaths := map[string]string{}
+	for _, m := range mounts {
+		mountPaths[m.Name] = m.MountPath
+	}
+	if mountPaths[rbacRolePermissionsVolume] != rbacRolePermissionsMountPath {
+		t.Errorf("permissions mount = %q, want %q", mountPaths[rbacRolePermissionsVolume], rbacRolePermissionsMountPath)
+	}
+	if mountPaths[rbacRoleDefinitionsVolume] != rbacRoleDefinitionsMountPath {
+		t.Errorf("definitions mount = %q, want %q", mountPaths[rbacRoleDefinitionsVolume], rbacRoleDefinitionsMountPath)
 	}
 }
 
