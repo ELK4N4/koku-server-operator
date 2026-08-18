@@ -183,8 +183,9 @@ bootstrap_rc=$?
 set -e
 if [ $bootstrap_rc -ne 0 ]; then
   echo "WARNING: bootstrap_tenants exited with code $bootstrap_rc (non-fatal)"
+else
+  echo "✓ Tenant bootstrap complete"
 fi
-echo "✓ Tenant bootstrap complete"
 echo "=== insights-rbac migration job completed ==="`
 }
 
@@ -226,9 +227,6 @@ func rbacAdminBootstrapScript() string {
 	// Identity comes from Secret via env; ensure_user is in the RBAC image (COST-8088).
 	return `set -e
 echo "=== insights-rbac admin bootstrap job ==="
-echo "Username: ${SYNC_USERNAME}"
-echo "Org ID: ${SYNC_ORG_ID}"
-echo "Account Number: ${SYNC_ACCOUNT_NUMBER}"
 cd /opt/rbac/rbac
 python manage.py ensure_user \
   --username "${SYNC_USERNAME}" \

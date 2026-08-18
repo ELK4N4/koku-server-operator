@@ -46,6 +46,9 @@ func TestRBACMigrationScriptSeedsCostManagementAndSources(t *testing.T) {
 	if strings.Contains(costDefs, `"platform_default": true`) {
 		t.Error("cost-management definitions must not mark roles platform_default")
 	}
+	if strings.Contains(script, "✓ Tenant bootstrap complete") && !strings.Contains(script, "else\n  echo \"✓ Tenant bootstrap complete\"") {
+		t.Error("rbacMigrationScript must only log tenant bootstrap success when bootstrap_tenants succeeds")
+	}
 }
 
 func TestRBACMigrationJobEnvEnablesSeeding(t *testing.T) {
@@ -120,6 +123,15 @@ func TestAdminBootstrapJobGated(t *testing.T) {
 	if strings.Contains(script, "manage.py shell") {
 		t.Error("bootstrap script must not embed Django ORM via manage.py shell")
 	}
+	for _, secretEcho := range []string{
+		"echo \"Username:",
+		"echo \"Org ID:",
+		"echo \"Account Number:",
+	} {
+		if strings.Contains(script, secretEcho) {
+			t.Errorf("bootstrap script must not log secret-derived identity: contains %q", secretEcho)
+		}
+	}
 	if strings.Contains(script, "bootstrap_tenants") {
 		t.Error("bootstrap script must not call bootstrap_tenants; ensure_user runs it internally")
 	}
@@ -153,21 +165,38 @@ func assertRBACSeedVolumeMounts(t *testing.T, vols []corev1.Volume, mounts []cor
 			t.Errorf("missing volume %q", name)
 		}
 	}
-	mountPaths := map[string]string{}
-	mountReadOnly := map[string]bool{}
+	wantMounts := []struct {
+		volume    string
+		mountPath string
+		subPath   string
+	}{
+		{rbacRolePermissionsVolume, rbacRolePermissionsMountPath + "/" + rbacCostManagementSeedFile, rbacCostManagementSeedFile},
+		{rbacRolePermissionsVolume, rbacRolePermissionsMountPath + "/" + rbacSourcesSeedFile, rbacSourcesSeedFile},
+		{rbacRoleDefinitionsVolume, rbacRoleDefinitionsMountPath + "/" + rbacCostManagementSeedFile, rbacCostManagementSeedFile},
+		{rbacRoleDefinitionsVolume, rbacRoleDefinitionsMountPath + "/" + rbacSourcesSeedFile, rbacSourcesSeedFile},
+	}
+	type mountKey struct {
+		volume    string
+		mountPath string
+	}
+	found := make(map[mountKey]corev1.VolumeMount, len(wantMounts))
 	for _, m := range mounts {
-		mountPaths[m.Name] = m.MountPath
-		mountReadOnly[m.Name] = m.ReadOnly
+		if m.Name != rbacRolePermissionsVolume && m.Name != rbacRoleDefinitionsVolume {
+			continue
+		}
+		found[mountKey{volume: m.Name, mountPath: m.MountPath}] = m
 	}
-	if mountPaths[rbacRolePermissionsVolume] != rbacRolePermissionsMountPath {
-		t.Errorf("permissions mount = %q, want %q", mountPaths[rbacRolePermissionsVolume], rbacRolePermissionsMountPath)
-	}
-	if mountPaths[rbacRoleDefinitionsVolume] != rbacRoleDefinitionsMountPath {
-		t.Errorf("definitions mount = %q, want %q", mountPaths[rbacRoleDefinitionsVolume], rbacRoleDefinitionsMountPath)
-	}
-	for _, name := range []string{rbacRolePermissionsVolume, rbacRoleDefinitionsVolume} {
-		if !mountReadOnly[name] {
-			t.Errorf("volume mount %q must be ReadOnly", name)
+	for _, want := range wantMounts {
+		m, ok := found[mountKey{volume: want.volume, mountPath: want.mountPath}]
+		if !ok {
+			t.Errorf("missing subPath mount for volume %q at %q (subPath %q)", want.volume, want.mountPath, want.subPath)
+			continue
+		}
+		if m.SubPath != want.subPath {
+			t.Errorf("mount %q subPath = %q, want %q", want.mountPath, m.SubPath, want.subPath)
+		}
+		if !m.ReadOnly {
+			t.Errorf("mount %q must be ReadOnly", want.mountPath)
 		}
 	}
 }

@@ -17,6 +17,8 @@ const (
 	rbacRoleDefinitionsMountPath = "/opt/rbac/rbac/management/role/definitions"
 	rbacRolePermissionsVolume    = "rbac-role-permissions"
 	rbacRoleDefinitionsVolume    = "rbac-role-definitions"
+	rbacCostManagementSeedFile   = "cost-management.json"
+	rbacSourcesSeedFile          = "sources.json"
 )
 
 //go:embed rbac-config/permissions/*
@@ -91,18 +93,21 @@ func RBACRoleDefinitionsConfigMap(cfg *costv1alpha1.CostManagementServiceConfig)
 	}
 }
 
-// appendRBACSeedConfigVolumes mounts operator-owned seed JSON over the image defaults.
+// appendRBACSeedConfigVolumes mounts operator-owned seed JSON files via subPath so
+// built-in image catalog files in the same directories remain visible to seeds.
 func appendRBACSeedConfigVolumes(
 	cfg *costv1alpha1.CostManagementServiceConfig,
 	vols []corev1.Volume,
 	mounts []corev1.VolumeMount,
 ) ([]corev1.Volume, []corev1.VolumeMount) {
+	permissionsCM := NameRBACRolePermissionsConfigMap(cfg)
+	definitionsCM := NameRBACRoleDefinitionsConfigMap(cfg)
 	vols = append(vols,
 		corev1.Volume{
 			Name: rbacRolePermissionsVolume,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{Name: NameRBACRolePermissionsConfigMap(cfg)},
+					LocalObjectReference: corev1.LocalObjectReference{Name: permissionsCM},
 				},
 			},
 		},
@@ -110,14 +115,27 @@ func appendRBACSeedConfigVolumes(
 			Name: rbacRoleDefinitionsVolume,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{Name: NameRBACRoleDefinitionsConfigMap(cfg)},
+					LocalObjectReference: corev1.LocalObjectReference{Name: definitionsCM},
 				},
 			},
 		},
 	)
-	mounts = append(mounts,
-		corev1.VolumeMount{Name: rbacRolePermissionsVolume, MountPath: rbacRolePermissionsMountPath, ReadOnly: true},
-		corev1.VolumeMount{Name: rbacRoleDefinitionsVolume, MountPath: rbacRoleDefinitionsMountPath, ReadOnly: true},
-	)
+	for _, seed := range []struct {
+		volume    string
+		mountBase string
+		file      string
+	}{
+		{rbacRolePermissionsVolume, rbacRolePermissionsMountPath, rbacCostManagementSeedFile},
+		{rbacRolePermissionsVolume, rbacRolePermissionsMountPath, rbacSourcesSeedFile},
+		{rbacRoleDefinitionsVolume, rbacRoleDefinitionsMountPath, rbacCostManagementSeedFile},
+		{rbacRoleDefinitionsVolume, rbacRoleDefinitionsMountPath, rbacSourcesSeedFile},
+	} {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      seed.volume,
+			MountPath: seed.mountBase + "/" + seed.file,
+			SubPath:   seed.file,
+			ReadOnly:  true,
+		})
+	}
 	return vols, mounts
 }
