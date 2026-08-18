@@ -32,6 +32,11 @@ const (
 	// does not gate Available — Koku/Envoy call the API, not the worker.
 	ConditionRBACWorkerReady = "RBACWorkerReady"
 	ConditionUIReady         = "UIReady"
+	// ConditionGatewayReady reports Envoy Deployment + API Route readiness.
+	// Distinct from AuthenticationReady, which is the OIDC JWKS probe.
+	ConditionGatewayReady = "GatewayReady"
+	// ConditionIngressReady reports insights-ingress-go Deployment readiness.
+	ConditionIngressReady = "IngressReady"
 	// ConditionROSEnabled reports whether ROS/Kruize are active per spec.ros.enabled.
 	ConditionROSEnabled = "ROSEnabled"
 	// ConditionPaused is True when reconciliation is halted via the pause annotation.
@@ -340,6 +345,8 @@ type KeycloakSyncSpec struct {
 	Schedule         string `json:"schedule,omitempty"`
 	OrgGroupPrefix   string `json:"orgGroupPrefix,omitempty"`
 	OrgAdminSubgroup string `json:"orgAdminSubgroup,omitempty"`
+	// PruneOrphans deletes RBAC Principals that no longer exist in the
+	// org's Keycloak group. Matches the Helm chart default (true).
 	// +kubebuilder:default:=true
 	PruneOrphans *bool `json:"pruneOrphans,omitempty"`
 	// +kubebuilder:default:="rbac-keycloak-sync"
@@ -578,8 +585,10 @@ type GatewayRouteConfig struct {
 }
 
 type RouteTLSSpec struct {
+	// Envoy's backend listener is plaintext HTTP, so only edge termination
+	// is valid — passthrough/reencrypt would break the TLS handshake.
 	// +kubebuilder:default:=edge
-	// +kubebuilder:validation:Enum=edge;passthrough;reencrypt
+	// +kubebuilder:validation:Enum=edge
 	Termination string `json:"termination,omitempty"`
 	// +kubebuilder:default:=Redirect
 	// +kubebuilder:validation:Enum=Allow;Redirect;None
@@ -674,7 +683,8 @@ type CostManagementServiceConfigStatus struct {
 	// Conditions is the canonical status API.
 	// Standard conditions: Available, Progressing, Degraded.
 	// Component conditions: DatabaseReady, CacheReady, StorageReady,
-	// KafkaReady, AuthenticationReady, SchemaUpToDate, DiscoveryComplete.
+	// KafkaReady, AuthenticationReady, SchemaUpToDate, DiscoveryComplete,
+	// GatewayReady, IngressReady, UIReady.
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
