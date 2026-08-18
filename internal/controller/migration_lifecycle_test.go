@@ -2,15 +2,16 @@ package controller
 
 import (
 	"context"
-	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
@@ -39,7 +40,7 @@ func TestReconcileMigration_FirstReconcileCreatesKokuJob(t *testing.T) {
 	}
 
 	kokuJobName := resources.NameKokuMigration(cfg)
-	if !jobExists(t, c, testNamespace, kokuJobName) {
+	if !jobExists(c, testNamespace, kokuJobName) {
 		t.Fatalf("expected Koku migration Job %q to exist", kokuJobName)
 	}
 	if getJobAnnotation(t, c, testNamespace, kokuJobName, "koku.costmanagement.io/image-tag") != cfg.Spec.CostManagement.API.Image.Tag {
@@ -47,10 +48,10 @@ func TestReconcileMigration_FirstReconcileCreatesKokuJob(t *testing.T) {
 	}
 
 	// RBAC and ROS jobs should NOT exist yet (sequential creation)
-	if jobExists(t, c, testNamespace, resources.NameRBACMigration(cfg)) {
+	if jobExists(c, testNamespace, resources.NameRBACMigration(cfg)) {
 		t.Fatal("expected RBAC Job to NOT exist on first pass (sequential)")
 	}
-	if jobExists(t, c, testNamespace, resources.NameROSMigration(cfg)) {
+	if jobExists(c, testNamespace, resources.NameROSMigration(cfg)) {
 		t.Fatal("expected ROS Job to NOT exist on first pass (sequential)")
 	}
 
@@ -89,7 +90,7 @@ func TestReconcileMigration_KokuComplete_CreatesRBACJob(t *testing.T) {
 	}
 
 	rbacJobName := resources.NameRBACMigration(cfg)
-	if !jobExists(t, c, testNamespace, rbacJobName) {
+	if !jobExists(c, testNamespace, rbacJobName) {
 		t.Fatalf("expected RBAC migration Job %q to exist", rbacJobName)
 	}
 	if getJobAnnotation(t, c, testNamespace, rbacJobName, "koku.costmanagement.io/image-tag") != "rbac-tag-cmseed1" {
@@ -174,7 +175,7 @@ func TestReconcileMigration_JobFailed_DegradedAndStop(t *testing.T) {
 	}
 
 	// RBAC Job should NOT have been created (pipeline stops on failure)
-	if jobExists(t, c, testNamespace, resources.NameRBACMigration(cfg)) {
+	if jobExists(c, testNamespace, resources.NameRBACMigration(cfg)) {
 		t.Fatal("expected RBAC Job to NOT exist after Koku failure (pipeline stops)")
 	}
 
@@ -218,7 +219,7 @@ func TestReconcileMigration_ImageTagChange_RecreatesJob(t *testing.T) {
 	}
 
 	// Old Job should be deleted
-	if jobExists(t, c, testNamespace, kokuJobName) {
+	if jobExists(c, testNamespace, kokuJobName) {
 		t.Fatal("expected old Job to be deleted on image tag change")
 	}
 	if result.RequeueAfter == 0 {
@@ -230,7 +231,7 @@ func TestReconcileMigration_ImageTagChange_RecreatesJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("v2 reconcile (recreate): %v", err)
 	}
-	if !jobExists(t, c, testNamespace, kokuJobName) {
+	if !jobExists(c, testNamespace, kokuJobName) {
 		t.Fatal("expected new Job to be created on requeue")
 	}
 	newAnnotation := getJobAnnotation(t, c, testNamespace, kokuJobName, "koku.costmanagement.io/image-tag")
@@ -265,12 +266,12 @@ func TestReconcileMigration_ROSDisabled_SkipsROSMigration(t *testing.T) {
 		t.Fatalf("rbac: %v", err)
 	}
 
-	if jobExists(t, c, testNamespace, resources.NameROSMigration(cfg)) {
+	if jobExists(c, testNamespace, resources.NameROSMigration(cfg)) {
 		t.Fatal("expected no ROS MigrationJob when ROS disabled")
 	}
 
-	if countJobs(t, c, testNamespace) != 2 {
-		t.Errorf("expected 2 jobs (Koku + RBAC), got %d", countJobs(t, c, testNamespace))
+	if countJobs(c, testNamespace) != 2 {
+		t.Errorf("expected 2 jobs (Koku + RBAC), got %d", countJobs(c, testNamespace))
 	}
 }
 
@@ -292,13 +293,13 @@ func TestReconcileMigration_ROSEnabled_IncludesROSMigration(t *testing.T) {
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("koku: %v", err)
 	}
-	if !jobExists(t, c, testNamespace, resources.NameKokuMigration(cfg)) {
+	if !jobExists(c, testNamespace, resources.NameKokuMigration(cfg)) {
 		t.Fatal("expected Koku Job on first pass")
 	}
-	if jobExists(t, c, testNamespace, resources.NameROSMigration(cfg)) {
+	if jobExists(c, testNamespace, resources.NameROSMigration(cfg)) {
 		t.Fatal("ROS Job should not exist yet")
 	}
-	if jobExists(t, c, testNamespace, resources.NameRBACMigration(cfg)) {
+	if jobExists(c, testNamespace, resources.NameRBACMigration(cfg)) {
 		t.Fatal("RBAC Job should not exist yet (gated behind ROS)")
 	}
 
@@ -307,10 +308,10 @@ func TestReconcileMigration_ROSEnabled_IncludesROSMigration(t *testing.T) {
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("ros: %v", err)
 	}
-	if !jobExists(t, c, testNamespace, resources.NameROSMigration(cfg)) {
+	if !jobExists(c, testNamespace, resources.NameROSMigration(cfg)) {
 		t.Fatal("expected ROS MigrationJob after Koku complete")
 	}
-	if jobExists(t, c, testNamespace, resources.NameRBACMigration(cfg)) {
+	if jobExists(c, testNamespace, resources.NameRBACMigration(cfg)) {
 		t.Fatal("RBAC Job should not exist yet (gated behind ROS)")
 	}
 
@@ -319,7 +320,7 @@ func TestReconcileMigration_ROSEnabled_IncludesROSMigration(t *testing.T) {
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("rbac: %v", err)
 	}
-	if !jobExists(t, c, testNamespace, resources.NameRBACMigration(cfg)) {
+	if !jobExists(c, testNamespace, resources.NameRBACMigration(cfg)) {
 		t.Fatal("expected RBAC MigrationJob after ROS complete")
 	}
 }
@@ -354,7 +355,7 @@ func TestReconcileMigration_AdminBootstrapGated(t *testing.T) {
 	if !result.IsZero() {
 		t.Fatalf("expected zero result, got %+v", result)
 	}
-	if jobExists(t, c, testNamespace, resources.NameRBACAdminBootstrap(cfg)) {
+	if jobExists(c, testNamespace, resources.NameRBACAdminBootstrap(cfg)) {
 		t.Fatal("expected no AdminBootstrap Job when disabled")
 	}
 }
@@ -387,7 +388,7 @@ func TestReconcileMigration_AdminBootstrapEnabledWithSecret_CreatesJob(t *testin
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
-	if !jobExists(t, c, testNamespace, resources.NameRBACAdminBootstrap(cfg)) {
+	if !jobExists(c, testNamespace, resources.NameRBACAdminBootstrap(cfg)) {
 		t.Fatal("expected AdminBootstrap Job when enabled with secretRef")
 	}
 }
@@ -400,11 +401,11 @@ func TestReconcileMigration_AdminBootstrapEnabledNoSecret_WarningEvent(t *testin
 	cfg.Spec.RBAC.BootstrapAdmin.Enabled = true
 
 	c := fakeClientWithApplySupport(scheme)
-	recorder := &testRecorder{Events: make([]string, 0)}
+	rec := record.NewFakeRecorder(10)
 	r := &CostManagementServiceConfigReconciler{
 		Client:   c,
 		Scheme:   scheme,
-		Recorder: recorder,
+		Recorder: rec,
 	}
 
 	for _, jobName := range []string{
@@ -421,10 +422,16 @@ func TestReconcileMigration_AdminBootstrapEnabledNoSecret_WarningEvent(t *testin
 		t.Fatalf("bootstrap: %v", err)
 	}
 
-	if !recorder.hasEvent("BootstrapAdminSkipped") {
-		t.Fatal("expected BootstrapAdminSkipped warning event")
+	select {
+	case event := <-rec.Events:
+		if !strings.Contains(event, "BootstrapAdminSkipped") {
+			t.Fatalf("expected BootstrapAdminSkipped warning event, got: %s", event)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected BootstrapAdminSkipped event but channel was empty")
 	}
-	if jobExists(t, c, testNamespace, resources.NameRBACAdminBootstrap(cfg)) {
+
+	if jobExists(c, testNamespace, resources.NameRBACAdminBootstrap(cfg)) {
 		t.Fatal("expected no AdminBootstrap Job when secretRef empty")
 	}
 }
@@ -465,35 +472,18 @@ func getJobAnnotation(t *testing.T, c client.Client, ns, name, key string) strin
 	return job.Annotations[key]
 }
 
-func jobExists(t *testing.T, c client.Client, ns, name string) bool {
+func jobExists(c client.Client, ns, name string) bool {
 	ctx := context.Background()
 	job := &batchv1.Job{}
 	err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, job)
 	return err == nil
 }
 
-func countJobs(t *testing.T, c client.Client, ns string) int {
+func countJobs(c client.Client, ns string) int {
 	ctx := context.Background()
 	list := &batchv1.JobList{}
 	if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
-		t.Fatalf("list jobs: %v", err)
+		return 0
 	}
 	return len(list.Items)
-}
-
-type testRecorder struct {
-	Events []string
-}
-
-func (t *testRecorder) Event(obj runtime.Object, eventtype, reason, message string) {
-	t.Events = append(t.Events, reason)
-}
-func (t *testRecorder) Eventf(obj runtime.Object, eventtype, reason, message string, args ...any) {
-	t.Events = append(t.Events, reason)
-}
-func (t *testRecorder) AnnotatedEventf(obj runtime.Object, annotations map[string]string, eventtype, reason, message string, args ...any) {
-	t.Events = append(t.Events, reason)
-}
-func (t *testRecorder) hasEvent(reason string) bool {
-	return slices.Contains(t.Events, reason)
 }
