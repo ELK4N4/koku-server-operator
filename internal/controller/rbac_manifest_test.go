@@ -3,6 +3,7 @@ package controller
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -73,6 +74,65 @@ func TestClusterAccessRole_NarrowNooBaaSecretGet(t *testing.T) {
 	}
 	if !foundNoobaa {
 		t.Fatal("expected secrets get with resourceNames=[noobaa-admin] on manager-cluster-role")
+	}
+}
+
+func TestManagerRole_GrantsObjectBucketClaimGetList(t *testing.T) {
+	var cr rbacv1.ClusterRole
+	decodeYAMLFile(t, rbacManifestPath(t, "role.yaml"), &cr)
+	if cr.Name != "manager-role" {
+		t.Fatalf("manager role name: got %q", cr.Name)
+	}
+
+	const (
+		wantGroup    = "objectbucket.io"
+		wantResource = "objectbucketclaims"
+	)
+	extraVerbs := map[string]struct{}{
+		"watch":  {},
+		"create": {},
+		"update": {},
+		"patch":  {},
+		"delete": {},
+	}
+
+	var found bool
+	for _, rule := range cr.Rules {
+		if !slices.Contains(rule.APIGroups, wantGroup) {
+			continue
+		}
+		if !slices.Contains(rule.Resources, wantResource) {
+			continue
+		}
+
+		hasGet, hasList := false, false
+		for _, v := range rule.Verbs {
+			switch v {
+			case "get":
+				hasGet = true
+			case "list":
+				hasList = true
+			}
+			if _, extra := extraVerbs[v]; extra {
+				t.Errorf("objectbucketclaims rule must not include verb %q: %+v", v, rule)
+			}
+		}
+		if !hasGet || !hasList {
+			t.Errorf("objectbucketclaims rule missing get and/or list: %+v", rule)
+			continue
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("manager-role must grant get+list on objectbucket.io/objectbucketclaims")
+	}
+
+	var clusterCR rbacv1.ClusterRole
+	decodeYAMLFile(t, rbacManifestPath(t, "cluster_access_role.yaml"), &clusterCR)
+	for _, rule := range clusterCR.Rules {
+		if slices.Contains(rule.APIGroups, wantGroup) {
+			t.Errorf("manager-cluster-role must not grant objectbucket.io: %+v", rule)
+		}
 	}
 }
 

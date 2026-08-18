@@ -270,6 +270,13 @@ spec:
           - update
           - watch
         - apiGroups:
+          - objectbucket.io
+          resources:
+          - objectbucketclaims
+          verbs:
+          - get
+          - list
+        - apiGroups:
           - rbac.authorization.k8s.io
           resources:
           - clusterrolebindings
