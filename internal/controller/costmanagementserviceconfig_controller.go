@@ -450,7 +450,7 @@ func (r *CostManagementServiceConfigReconciler) runMigrationStep(
 	}
 
 	// Upgrade: image tag changed → delete and let next reconcile recreate.
-	if existing.Annotations["koku.costmanagement.io/image-tag"] != imageTag {
+	if existing.Annotations[resources.MigrationImageTagAnnotation] != imageTag {
 		if delErr := r.Delete(ctx, existing, client.PropagationPolicy(metav1.DeletePropagationBackground)); delErr != nil && !errors.IsNotFound(delErr) {
 			return Result{}, fmt.Errorf("delete stale %s: %w", jobName, delErr)
 		}

@@ -182,6 +182,7 @@ func TestMigrationJobExternalDB(t *testing.T) {
 	// External DB path uses /wait-for binary (waitForTCP), not pg_isready.
 	if len(wc.Command) == 0 {
 		t.Fatal("wait init container has empty Command")
+		return
 	}
 	if wc.Command[0] != "/wait-for" {
 		t.Errorf("external DB wait command[0] = %q, want /wait-for", wc.Command[0])
