@@ -45,6 +45,7 @@ func TestDegradedClearedOnSuccessfulReconcile(t *testing.T) {
 	cond := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
 	if cond == nil {
 		t.Fatal("Degraded condition should exist (False), not be absent")
+		return
 	}
 	if cond.Reason != "ReconcileComplete" {
 		t.Errorf("Degraded.Reason = %q, want ReconcileComplete", cond.Reason)
@@ -79,6 +80,7 @@ func TestSuccessfulReconcileSetsDegradedFalseFromCleanStart(t *testing.T) {
 	cond := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
 	if cond == nil {
 		t.Fatal("Degraded condition should be present (False) even on clean start")
+		return
 	}
 	if cond.Status != metav1.ConditionFalse {
 		t.Errorf("Degraded.Status = %q, want False", cond.Status)
