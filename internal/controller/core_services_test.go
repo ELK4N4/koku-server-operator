@@ -129,8 +129,8 @@ func TestReconcileCoreServices_ROSOff_APIReady(t *testing.T) {
 		t.Fatal("expected Available=True")
 	}
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
-	if cond == nil || cond.Reason != "KokuAvailable" {
-		t.Fatalf("expected Available reason KokuAvailable, got %+v", cond)
+	if cond == nil || cond.Reason != reasonKokuAvailable {
+		t.Fatalf("expected Available reason %s, got %+v", reasonKokuAvailable, cond)
 	}
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionRBACReady) {
 		t.Fatal("expected RBACReady=True")
@@ -205,8 +205,8 @@ func TestReconcileCoreServices_RBACReady_KokuNotReady(t *testing.T) {
 		t.Fatalf("expected RBACWorkerReady=False %s, got %+v", reasonWaitingForRBACWorker, worker)
 	}
 	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
-	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != "WaitingForAPI" {
-		t.Fatalf("expected Available=False WaitingForAPI, got %+v", avail)
+	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != reasonWaitingForAPI {
+		t.Fatalf("expected Available=False %s, got %+v", reasonWaitingForAPI, avail)
 	}
 }
 

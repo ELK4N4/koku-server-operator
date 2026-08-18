@@ -97,6 +97,7 @@ Short version: bundled infra is dev-only (intentional), profile-based sizing for
 | Ticket | Summary | Notes |
 |--------|---------|-------|
 | [COST-8095](https://redhat.atlassian.net/browse/COST-8095) | `spec.profile` sizing maps | Shared `standard`/`ha` maps for remaining Cost workloads. UI already wired. ROS/Kruize rows stay with COST-8054. See [jira snapshot](jira/COST-8095.md). |
+| [COST-8103](https://redhat.atlassian.net/browse/COST-8103) | `CoreServicesAvailable` / mid-pipeline `Available` | Sparse success Events (`Ready`); stop treating Koku-API-up as product-available. See [jira snapshot](jira/COST-8103.md). |
 
 ---
 

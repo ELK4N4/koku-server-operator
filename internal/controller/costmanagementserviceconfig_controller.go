@@ -43,8 +43,11 @@ const (
 	reasonRBACAvailable        = "RBACAvailable"
 	reasonWaitingForRBACWorker = "WaitingForRBACWorker"
 	reasonRBACWorkerAvailable  = "RBACWorkerAvailable"
+	reasonWaitingForAPI        = "WaitingForAPI"
+	reasonKokuAvailable        = "KokuAvailable"
 	msgWaitingForRBACAPI       = "waiting for RBAC API"
 	msgWaitingForRBACWorker    = "waiting for RBAC worker"
+	msgWaitingForKokuAPI       = "waiting for Koku API"
 )
 
 type CostManagementServiceConfigReconciler struct {
@@ -567,13 +570,13 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 		return Result{}, err
 	}
 	if !ready {
-		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "WaitingForAPI", "waiting for Koku API")
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, reasonWaitingForAPI, msgWaitingForKokuAPI)
 		return Result{RequeueAfter: requeueSlow}, nil
 	}
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionAvailable) {
 		r.Recorder.Event(cfg, corev1.EventTypeNormal, "CoreServicesAvailable", "Koku API is ready")
 	}
-	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "KokuAvailable", "")
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, reasonKokuAvailable, "")
 	return Result{}, nil
 }
 
