@@ -15,6 +15,11 @@ func rbacManifestPath(t *testing.T, name string) string {
 	return filepath.Join("..", "..", "config", "rbac", name)
 }
 
+func bundleCSVPath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join("..", "..", "bundle", "manifests", "koku-service-operator.clusterserviceversion.yaml")
+}
+
 func decodeYAMLFile(t *testing.T, path string, into any) {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -23,6 +28,66 @@ func decodeYAMLFile(t *testing.T, path string, into any) {
 	}
 	if err := yaml.Unmarshal(data, into); err != nil {
 		t.Fatalf("decode %s: %v", path, err)
+	}
+}
+
+// olmCSVClusterPermissions is the CSV fragment we round-trip. Avoids adding
+// operator-framework/api just to inspect install.spec.clusterPermissions.
+type olmCSVClusterPermissions struct {
+	Spec struct {
+		Install struct {
+			Spec struct {
+				ClusterPermissions []struct {
+					Rules []rbacv1.PolicyRule `json:"rules"`
+				} `json:"clusterPermissions"`
+			} `json:"spec"`
+		} `json:"install"`
+	} `json:"spec"`
+}
+
+func assertObjectBucketClaimGetList(t *testing.T, source string, rules []rbacv1.PolicyRule) {
+	t.Helper()
+	const (
+		wantGroup    = "objectbucket.io"
+		wantResource = "objectbucketclaims"
+	)
+	extraVerbs := map[string]struct{}{
+		"watch":  {},
+		"create": {},
+		"update": {},
+		"patch":  {},
+		"delete": {},
+	}
+
+	var found bool
+	for _, rule := range rules {
+		if !slices.Contains(rule.APIGroups, wantGroup) {
+			continue
+		}
+		if !slices.Contains(rule.Resources, wantResource) {
+			continue
+		}
+
+		hasGet, hasList := false, false
+		for _, v := range rule.Verbs {
+			switch v {
+			case "get":
+				hasGet = true
+			case "list":
+				hasList = true
+			}
+			if _, extra := extraVerbs[v]; extra {
+				t.Errorf("%s objectbucketclaims rule must not include verb %q: %+v", source, v, rule)
+			}
+		}
+		if !hasGet || !hasList {
+			t.Errorf("%s objectbucketclaims rule missing get and/or list: %+v", source, rule)
+			continue
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("%s must grant get+list on objectbucket.io/objectbucketclaims", source)
 	}
 }
 
@@ -83,57 +148,28 @@ func TestManagerRole_GrantsObjectBucketClaimGetList(t *testing.T) {
 	if cr.Name != "manager-role" {
 		t.Fatalf("manager role name: got %q", cr.Name)
 	}
-
-	const (
-		wantGroup    = "objectbucket.io"
-		wantResource = "objectbucketclaims"
-	)
-	extraVerbs := map[string]struct{}{
-		"watch":  {},
-		"create": {},
-		"update": {},
-		"patch":  {},
-		"delete": {},
-	}
-
-	var found bool
-	for _, rule := range cr.Rules {
-		if !slices.Contains(rule.APIGroups, wantGroup) {
-			continue
-		}
-		if !slices.Contains(rule.Resources, wantResource) {
-			continue
-		}
-
-		hasGet, hasList := false, false
-		for _, v := range rule.Verbs {
-			switch v {
-			case "get":
-				hasGet = true
-			case "list":
-				hasList = true
-			}
-			if _, extra := extraVerbs[v]; extra {
-				t.Errorf("objectbucketclaims rule must not include verb %q: %+v", v, rule)
-			}
-		}
-		if !hasGet || !hasList {
-			t.Errorf("objectbucketclaims rule missing get and/or list: %+v", rule)
-			continue
-		}
-		found = true
-	}
-	if !found {
-		t.Fatal("manager-role must grant get+list on objectbucket.io/objectbucketclaims")
-	}
+	assertObjectBucketClaimGetList(t, "manager-role", cr.Rules)
 
 	var clusterCR rbacv1.ClusterRole
 	decodeYAMLFile(t, rbacManifestPath(t, "cluster_access_role.yaml"), &clusterCR)
 	for _, rule := range clusterCR.Rules {
-		if slices.Contains(rule.APIGroups, wantGroup) {
+		if slices.Contains(rule.APIGroups, "objectbucket.io") {
 			t.Errorf("manager-cluster-role must not grant objectbucket.io: %+v", rule)
 		}
 	}
+
+	// OLM installs from the CSV, not role.yaml. CI does not regenerate the
+	// bundle, so lock clusterPermissions to the same get+list grant.
+	var csv olmCSVClusterPermissions
+	decodeYAMLFile(t, bundleCSVPath(t), &csv)
+	var csvRules []rbacv1.PolicyRule
+	for _, p := range csv.Spec.Install.Spec.ClusterPermissions {
+		csvRules = append(csvRules, p.Rules...)
+	}
+	if len(csv.Spec.Install.Spec.ClusterPermissions) == 0 {
+		t.Fatal("CSV spec.install.spec.clusterPermissions is empty (unmarshal failed or field moved)")
+	}
+	assertObjectBucketClaimGetList(t, "CSV clusterPermissions", csvRules)
 }
 
 func TestManagerRole_StillGrantsNamespacedSecrets(t *testing.T) {
