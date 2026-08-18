@@ -1,9 +1,9 @@
----
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
+  creationTimestamp: null
   name: costmanagementserviceconfigs.service.costmanagement.openshift.io
 spec:
   group: service.costmanagement.openshift.io
@@ -1864,11 +1864,11 @@ spec:
               profile:
                 default: standard
                 description: |-
-                  Profile selects pre-defined resource sizing. Defaults to standard.
-                  NOT YET IMPLEMENTED — accepted but not read by the reconciler (COST-7678).
-                  Use per-component resources fields until profile sizing is wired.
+                  Profile selects a pre-defined resource sizing tier.
+                  Currently applies to UI containers only; other workloads use per-component spec.*.resources fields.
                 enum:
                 - standard
+                - ha
                 type: string
               rbac:
                 properties:
@@ -1978,6 +1978,7 @@ spec:
                   keycloakSync:
                     properties:
                       clientId:
+                        default: rbac-keycloak-sync
                         type: string
                       clientSecretRef:
                         description: SecretKeyRef points to a key inside a named Secret.
@@ -1997,6 +1998,7 @@ spec:
                       orgGroupPrefix:
                         type: string
                       pruneOrphans:
+                        default: true
                         type: boolean
                       resources:
                         description: ResourceRequirements describes the compute resource
@@ -2805,3 +2807,9 @@ spec:
     storage: true
     subresources:
       status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions: null
