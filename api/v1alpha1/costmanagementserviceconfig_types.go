@@ -26,7 +26,12 @@ const (
 	ConditionKafkaReady        = "KafkaReady"
 	ConditionAuthReady         = "AuthenticationReady"
 	ConditionSchemaUpToDate    = "SchemaUpToDate"
-	ConditionUIReady           = "UIReady"
+	// ConditionRBACReady reports RBAC API Deployment readiness (not the worker).
+	ConditionRBACReady = "RBACReady"
+	// ConditionRBACWorkerReady reports the RBAC Celery worker Deployment. It
+	// does not gate Available — Koku/Envoy call the API, not the worker.
+	ConditionRBACWorkerReady = "RBACWorkerReady"
+	ConditionUIReady         = "UIReady"
 	// ConditionROSEnabled reports whether ROS/Kruize are active per spec.ros.enabled.
 	ConditionROSEnabled = "ROSEnabled"
 	// ConditionPaused is True when reconciliation is halted via the pause annotation.
@@ -226,6 +231,15 @@ type ObjectStorageConfig struct {
 	Port int32 `json:"port,omitempty"`
 	// +kubebuilder:default:=true
 	UseSSL *bool `json:"useSSL,omitempty"`
+	// InsecureSkipVerify disables TLS certificate verification for the S3
+	// endpoint. Use for dev/CRC setups with self-signed certs.
+	// Prefer CACertSecretName for production.
+	// +kubebuilder:default:=false
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+	// CACertSecretName names a Secret with key ca.crt containing the CA
+	// certificate used to verify the S3 endpoint TLS. Required for on-prem
+	// S3 endpoints (MinIO, Ceph RGW, NooBaa HTTPS) using private CAs.
+	CACertSecretName string `json:"caCertSecretName,omitempty"`
 	// Name of an existing Secret with keys: access-key, secret-key.
 	// When empty the operator creates or detects the secret via ODF/NooBaa.
 	SecretName string    `json:"secretName,omitempty"`
