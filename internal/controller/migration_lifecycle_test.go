@@ -195,17 +195,28 @@ func TestReconcileMigration_ImageTagChange_RecreatesJob(t *testing.T) {
 	cfg.Spec.CostManagement.API.Image.Tag = "v2"
 	result, err := r.reconcileMigration(context.Background(), cfg)
 	if err != nil {
-		t.Fatalf("v2 reconcile: %v", err)
+		t.Fatalf("v2 reconcile (delete): %v", err)
 	}
 
-	// Old Job should be deleted, new one created
+	// Old Job should be deleted
 	if jobExists(t, c, testNamespace, kokuJobName) {
-		newAnnotation := getJobAnnotation(t, c, testNamespace, kokuJobName, "koku.costmanagement.io/image-tag")
-		if newAnnotation != "v2" {
-			t.Errorf("expected Job recreated with v2 annotation, got %q", newAnnotation)
-		}
-	} else {
-		t.Log("Job was deleted as expected for image tag change")
+		t.Fatal("expected old Job to be deleted on image tag change")
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected RequeueAfter after deleting stale Job")
+	}
+
+	// Next reconcile should create new Job with v2 tag
+	result, err = r.reconcileMigration(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("v2 reconcile (recreate): %v", err)
+	}
+	if !jobExists(t, c, testNamespace, kokuJobName) {
+		t.Fatal("expected new Job to be created on requeue")
+	}
+	newAnnotation := getJobAnnotation(t, c, testNamespace, kokuJobName, "koku.costmanagement.io/image-tag")
+	if newAnnotation != "v2" {
+		t.Errorf("expected Job recreated with v2 annotation, got %q", newAnnotation)
 	}
 	if result.RequeueAfter == 0 {
 		t.Fatal("expected RequeueAfter for new Job")
