@@ -80,6 +80,7 @@ func TestAdminBootstrapJobGated(t *testing.T) {
 	job := AdminBootstrapJob(cfg, "test")
 	if job == nil {
 		t.Fatal("expected AdminBootstrapJob when enabled with secretRef set")
+		return
 	}
 	if job.Name != "cost-onprem-rbac-admin-bootstrap" {
 		t.Errorf("name = %q", job.Name)
