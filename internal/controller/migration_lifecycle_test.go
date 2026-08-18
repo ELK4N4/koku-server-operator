@@ -46,6 +46,14 @@ func TestReconcileMigration_FirstReconcileCreatesKokuJob(t *testing.T) {
 		t.Errorf("Koku Job missing image-tag annotation")
 	}
 
+	// RBAC and ROS jobs should NOT exist yet (sequential creation)
+	if jobExists(t, c, testNamespace, resources.NameRBACMigration(cfg)) {
+		t.Fatal("expected RBAC Job to NOT exist on first pass (sequential)")
+	}
+	if jobExists(t, c, testNamespace, resources.NameROSMigration(cfg)) {
+		t.Fatal("expected ROS Job to NOT exist on first pass (sequential)")
+	}
+
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionSchemaUpToDate)
 	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "MigrationRunning" {
 		t.Fatalf("expected SchemaUpToDate=False MigrationRunning, got %+v", cond)
@@ -157,6 +165,11 @@ func TestReconcileMigration_JobFailed_DegradedAndStop(t *testing.T) {
 	}
 	if !result.Stop {
 		t.Fatal("expected Stop=true when Job fails")
+	}
+
+	// RBAC Job should NOT have been created (pipeline stops on failure)
+	if jobExists(t, c, testNamespace, resources.NameRBACMigration(cfg)) {
+		t.Fatal("expected RBAC Job to NOT exist after Koku failure (pipeline stops)")
 	}
 
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionSchemaUpToDate)
