@@ -104,6 +104,9 @@ func TestAdminBootstrapJobGated(t *testing.T) {
 	if strings.Contains(script, "manage.py shell") {
 		t.Error("bootstrap script must not embed Django ORM via manage.py shell")
 	}
+	if strings.Contains(script, "bootstrap_tenants") {
+		t.Error("bootstrap script must not call bootstrap_tenants; ensure_user runs it internally")
+	}
 	// Identity values must come from the Secret via secretKeyRef — never hardcoded.
 	for _, e := range job.Spec.Template.Spec.Containers[0].Env {
 		if e.Name == "SYNC_ORG_ID" || e.Name == "SYNC_ACCOUNT_NUMBER" || e.Name == "SYNC_USERNAME" {
@@ -135,14 +138,21 @@ func assertRBACSeedVolumeMounts(t *testing.T, vols []corev1.Volume, mounts []cor
 		}
 	}
 	mountPaths := map[string]string{}
+	mountReadOnly := map[string]bool{}
 	for _, m := range mounts {
 		mountPaths[m.Name] = m.MountPath
+		mountReadOnly[m.Name] = m.ReadOnly
 	}
 	if mountPaths[rbacRolePermissionsVolume] != rbacRolePermissionsMountPath {
 		t.Errorf("permissions mount = %q, want %q", mountPaths[rbacRolePermissionsVolume], rbacRolePermissionsMountPath)
 	}
 	if mountPaths[rbacRoleDefinitionsVolume] != rbacRoleDefinitionsMountPath {
 		t.Errorf("definitions mount = %q, want %q", mountPaths[rbacRoleDefinitionsVolume], rbacRoleDefinitionsMountPath)
+	}
+	for _, name := range []string{rbacRolePermissionsVolume, rbacRoleDefinitionsVolume} {
+		if !mountReadOnly[name] {
+			t.Errorf("volume mount %q must be ReadOnly", name)
+		}
 	}
 }
 

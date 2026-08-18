@@ -199,7 +199,10 @@ func AdminBootstrapJob(cfg *costv1alpha1.CostManagementServiceConfig, imageTag s
 
 	image := cfg.Spec.RBAC.Image.Repository + ":" + cfg.Spec.RBAC.Image.Tag
 
-	env := append(rbacEnv(cfg),
+	baseEnv := rbacEnv(cfg)
+	env := make([]corev1.EnvVar, len(baseEnv), len(baseEnv)+3)
+	copy(env, baseEnv)
+	env = append(env,
 		EnvFromSecret("SYNC_ORG_ID", secretName, "org-id"),
 		EnvFromSecret("SYNC_ACCOUNT_NUMBER", secretName, "account-number"),
 		EnvFromSecret("SYNC_USERNAME", secretName, "username"),
@@ -237,14 +240,6 @@ python manage.py ensure_user \
   --admin-group-name "Cost Admin Default" \
   --admin-group-description "Admin default: grants admin_default roles to bootstrap admin user" \
   --admin-policy-name "Cost Admin Default Policy"
-echo "✓ Admin user bootstrap complete"
-set +e
-python manage.py bootstrap_tenants --org-id "${SYNC_ORG_ID}" --force
-bootstrap_rc=$?
-set -e
-if [ $bootstrap_rc -ne 0 ]; then
-  echo "WARNING: bootstrap_tenants exited with code $bootstrap_rc (non-fatal)"
-fi
 echo "=== insights-rbac admin bootstrap job completed ==="`
 }
 

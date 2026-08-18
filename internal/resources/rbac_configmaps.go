@@ -2,6 +2,7 @@ package resources
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"path"
 
@@ -24,11 +25,14 @@ var rbacPermissionConfig embed.FS
 //go:embed rbac-config/definitions/*
 var rbacDefinitionConfig embed.FS
 
-func embeddedConfigMapData(fsys embed.FS, root string) map[string]string {
+func embeddedConfigMapData(fsys embed.FS, root string) (map[string]string, error) {
 	data := make(map[string]string)
-	_ = fs.WalkDir(fsys, root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
+	err := fs.WalkDir(fsys, root, func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
 		}
 		b, readErr := fsys.ReadFile(p)
 		if readErr != nil {
@@ -37,7 +41,26 @@ func embeddedConfigMapData(fsys embed.FS, root string) map[string]string {
 		data[path.Base(p)] = string(b)
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("no JSON files under %s", root)
+	}
+	return data, nil
+}
+
+func mustEmbeddedConfigMapData(fsys embed.FS, root string) map[string]string {
+	data, err := embeddedConfigMapData(fsys, root)
+	if err != nil {
+		panic(fmt.Sprintf("rbac seed embed %s: %v", root, err))
+	}
 	return data
+}
+
+func init() {
+	mustEmbeddedConfigMapData(rbacPermissionConfig, "rbac-config/permissions")
+	mustEmbeddedConfigMapData(rbacDefinitionConfig, "rbac-config/definitions")
 }
 
 // RBACRolePermissionsConfigMap holds on-prem cost-management and sources permissions
@@ -50,7 +73,7 @@ func RBACRolePermissionsConfigMap(cfg *costv1alpha1.CostManagementServiceConfig)
 			Namespace: cfg.Namespace,
 			Labels:    Labels(cfg, "rbac-seed"),
 		},
-		Data: embeddedConfigMapData(rbacPermissionConfig, "rbac-config/permissions"),
+		Data: mustEmbeddedConfigMapData(rbacPermissionConfig, "rbac-config/permissions"),
 	}
 }
 
@@ -64,7 +87,7 @@ func RBACRoleDefinitionsConfigMap(cfg *costv1alpha1.CostManagementServiceConfig)
 			Namespace: cfg.Namespace,
 			Labels:    Labels(cfg, "rbac-seed"),
 		},
-		Data: embeddedConfigMapData(rbacDefinitionConfig, "rbac-config/definitions"),
+		Data: mustEmbeddedConfigMapData(rbacDefinitionConfig, "rbac-config/definitions"),
 	}
 }
 
@@ -93,8 +116,8 @@ func appendRBACSeedConfigVolumes(
 		},
 	)
 	mounts = append(mounts,
-		corev1.VolumeMount{Name: rbacRolePermissionsVolume, MountPath: rbacRolePermissionsMountPath},
-		corev1.VolumeMount{Name: rbacRoleDefinitionsVolume, MountPath: rbacRoleDefinitionsMountPath},
+		corev1.VolumeMount{Name: rbacRolePermissionsVolume, MountPath: rbacRolePermissionsMountPath, ReadOnly: true},
+		corev1.VolumeMount{Name: rbacRoleDefinitionsVolume, MountPath: rbacRoleDefinitionsMountPath, ReadOnly: true},
 	)
 	return vols, mounts
 }

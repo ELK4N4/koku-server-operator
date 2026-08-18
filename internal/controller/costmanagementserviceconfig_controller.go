@@ -390,11 +390,11 @@ func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.C
 		imageTag: resources.RBACSeedJobTag(cfg.Spec.RBAC.Image.Tag),
 		build:    func() *batchv1.Job { return resources.RBACMigrationJob(cfg, cfg.Spec.RBAC.Image.Tag) },
 	})
-	if resources.AdminBootstrapJob(cfg, cfg.Spec.RBAC.Image.Tag) != nil {
+	if adminBootstrapJob := resources.AdminBootstrapJob(cfg, cfg.Spec.RBAC.Image.Tag); adminBootstrapJob != nil {
 		steps = append(steps, migStep{
-			name:     resources.NameRBACAdminBootstrap(cfg),
+			name:     adminBootstrapJob.Name,
 			imageTag: resources.RBACSeedJobTag(cfg.Spec.RBAC.Image.Tag),
-			build:    func() *batchv1.Job { return resources.AdminBootstrapJob(cfg, cfg.Spec.RBAC.Image.Tag) },
+			build:    func() *batchv1.Job { return adminBootstrapJob },
 		})
 	} else if cfg.Spec.RBAC.BootstrapAdmin.Enabled {
 		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "BootstrapAdminSkipped",
