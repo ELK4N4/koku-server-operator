@@ -146,6 +146,7 @@ func TestAdminBootstrapJob_SecretKeyRefKeys(t *testing.T) {
 	job := AdminBootstrapJob(cfg, "rbac-tag")
 	if job == nil {
 		t.Fatal("expected AdminBootstrapJob when enabled with secretRef set")
+		return
 	}
 
 	envSecrets := map[string]string{}

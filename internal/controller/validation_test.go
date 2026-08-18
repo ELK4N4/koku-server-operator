@@ -500,6 +500,7 @@ func TestReconcileValidationChecksS3Secret(t *testing.T) {
 	found := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionStorageReady)
 	if found == nil {
 		t.Fatal("StorageReady condition not set — reconcileValidation does not validate objectStorage.secretName")
+		return
 	}
 	if found.Status != metav1.ConditionFalse {
 		t.Errorf("StorageReady = %s, want False (secret-key is missing)", found.Status)
