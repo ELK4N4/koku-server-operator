@@ -45,8 +45,8 @@ func TestRBACMigrationJobEnvEnablesSeeding(t *testing.T) {
 		},
 	}
 	job := RBACMigrationJob(cfg, "test")
-	if got := job.Annotations["koku.costmanagement.io/image-tag"]; got != "test-cmseed2" {
-		t.Errorf("image-tag annotation = %q, want test-cmseed2", got)
+	if got := job.Annotations["koku.costmanagement.io/image-tag"]; got != "test-cmseed1" {
+		t.Errorf("image-tag annotation = %q, want test-cmseed1", got)
 	}
 	env := map[string]string{}
 	for _, e := range job.Spec.Template.Spec.Containers[0].Env {

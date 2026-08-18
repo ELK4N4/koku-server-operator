@@ -36,7 +36,7 @@ func NameRBACAdminBootstrap(cfg *costv1alpha1.CostManagementServiceConfig) strin
 
 // rbacSeedRevision bumps when the migrate/seed script changes so completed
 // Jobs are recreated (runMigrationStep keys off the image-tag annotation).
-const rbacSeedRevision = "cmseed2"
+const rbacSeedRevision = "cmseed1"
 
 // RBACSeedJobTag returns the annotation value used for RBAC migrate/bootstrap
 // Jobs (image tag + seed revision).
