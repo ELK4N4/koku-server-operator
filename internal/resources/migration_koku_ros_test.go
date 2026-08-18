@@ -176,6 +176,7 @@ func TestMigrationJobExternalDB(t *testing.T) {
 	}
 	if waitInit == nil {
 		t.Fatal("no wait-for init container found")
+		return
 	}
 	wc := initC[*waitInit]
 	// External DB path uses /wait-for binary (waitForTCP), not pg_isready.
@@ -248,6 +249,7 @@ func TestROSMigrationJobBuildsValidJob(t *testing.T) {
 
 	if job == nil {
 		t.Fatal("ROSMigrationJob returned nil")
+		return
 	}
 	if job.Name != "cost-onprem-ros-migrate" {
 		t.Errorf("Name = %q, want cost-onprem-ros-migrate", job.Name)
