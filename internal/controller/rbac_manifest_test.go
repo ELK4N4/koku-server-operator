@@ -31,18 +31,29 @@ func decodeYAMLFile(t *testing.T, path string, into any) {
 	}
 }
 
-// olmCSVClusterPermissions is the CSV fragment we round-trip. Avoids adding
-// operator-framework/api just to inspect install.spec.clusterPermissions.
-type olmCSVClusterPermissions struct {
+// olmCSVInstallPermissions is the CSV fragment we round-trip. Avoids adding
+// operator-framework/api just to inspect install.spec.{permissions,clusterPermissions}.
+type olmCSVInstallPermissions struct {
 	Spec struct {
 		Install struct {
 			Spec struct {
-				ClusterPermissions []struct {
-					Rules []rbacv1.PolicyRule `json:"rules"`
-				} `json:"clusterPermissions"`
+				ClusterPermissions []olmCSVPermissionRules `json:"clusterPermissions"`
+				Permissions        []olmCSVPermissionRules `json:"permissions"`
 			} `json:"spec"`
 		} `json:"install"`
 	} `json:"spec"`
+}
+
+type olmCSVPermissionRules struct {
+	Rules []rbacv1.PolicyRule `json:"rules"`
+}
+
+func csvPolicyRules(perms []olmCSVPermissionRules) []rbacv1.PolicyRule {
+	var rules []rbacv1.PolicyRule
+	for _, p := range perms {
+		rules = append(rules, p.Rules...)
+	}
+	return rules
 }
 
 func assertObjectBucketClaimGetList(t *testing.T, source string, rules []rbacv1.PolicyRule) {
@@ -159,17 +170,23 @@ func TestManagerRole_GrantsObjectBucketClaimGetList(t *testing.T) {
 	}
 
 	// OLM installs from the CSV, not role.yaml. CI does not regenerate the
-	// bundle, so lock clusterPermissions to the same get+list grant.
-	var csv olmCSVClusterPermissions
+	// bundle, so lock namespaced permissions to the same get+list grant.
+	// ObjectBucketClaim is namespace-scoped, so the grant belongs in
+	// permissions (OwnNamespace), not clusterPermissions.
+	var csv olmCSVInstallPermissions
 	decodeYAMLFile(t, bundleCSVPath(t), &csv)
-	var csvRules []rbacv1.PolicyRule
-	for _, p := range csv.Spec.Install.Spec.ClusterPermissions {
-		csvRules = append(csvRules, p.Rules...)
+	if len(csv.Spec.Install.Spec.Permissions) == 0 {
+		t.Fatal("CSV spec.install.spec.permissions is empty (unmarshal failed or field moved)")
 	}
 	if len(csv.Spec.Install.Spec.ClusterPermissions) == 0 {
 		t.Fatal("CSV spec.install.spec.clusterPermissions is empty (unmarshal failed or field moved)")
 	}
-	assertObjectBucketClaimGetList(t, "CSV clusterPermissions", csvRules)
+	assertObjectBucketClaimGetList(t, "CSV permissions", csvPolicyRules(csv.Spec.Install.Spec.Permissions))
+	for _, rule := range csvPolicyRules(csv.Spec.Install.Spec.ClusterPermissions) {
+		if slices.Contains(rule.APIGroups, "objectbucket.io") {
+			t.Errorf("CSV clusterPermissions must not grant objectbucket.io: %+v", rule)
+		}
+	}
 }
 
 func TestManagerRole_StillGrantsNamespacedSecrets(t *testing.T) {
