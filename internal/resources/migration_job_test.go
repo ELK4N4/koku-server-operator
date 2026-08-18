@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"slices"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -154,6 +155,8 @@ func TestMigrationJob_ContainerSecurityContext(t *testing.T) {
 	}
 	if container.SecurityContext.Capabilities == nil || len(container.SecurityContext.Capabilities.Drop) == 0 {
 		t.Error("expected Capabilities.Drop to include ALL")
+	} else if !slices.Contains(container.SecurityContext.Capabilities.Drop, "ALL") {
+		t.Errorf("expected Capabilities.Drop to include ALL, got %v", container.SecurityContext.Capabilities.Drop)
 	}
 }
 
