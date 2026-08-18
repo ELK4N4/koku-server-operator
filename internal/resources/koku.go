@@ -219,10 +219,10 @@ func CeleryWorkerDeployments(cfg *costv1alpha1.CostManagementServiceConfig) []*a
 		CeleryWorkerDeployment(cfg, "ocp", w.OCP),
 		CeleryWorkerDeployment(cfg, "cost_model", w.CostModel),
 		CeleryWorkerDeployment(cfg, "refresh", w.Refresh),
-		CeleryWorkerDeployment(cfg, "hcs", w.HCS),
+		CeleryWorkerDeployment(cfg, "hcs", w.HCS.CeleryWorkerSpec()),
 		CeleryWorkerDeployment(cfg, "download", w.Download),
-		CeleryWorkerDeployment(cfg, "subs_extraction", w.SubsExtraction),
-		CeleryWorkerDeployment(cfg, "subs_transmission", w.SubsTransmission),
+		CeleryWorkerDeployment(cfg, "subs_extraction", w.SubsExtraction.CeleryWorkerSpec()),
+		CeleryWorkerDeployment(cfg, "subs_transmission", w.SubsTransmission.CeleryWorkerSpec()),
 	}
 }
 

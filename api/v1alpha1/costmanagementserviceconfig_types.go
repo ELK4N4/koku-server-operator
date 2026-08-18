@@ -26,7 +26,17 @@ const (
 	ConditionKafkaReady        = "KafkaReady"
 	ConditionAuthReady         = "AuthenticationReady"
 	ConditionSchemaUpToDate    = "SchemaUpToDate"
-	ConditionUIReady           = "UIReady"
+	// ConditionRBACReady reports RBAC API Deployment readiness (not the worker).
+	ConditionRBACReady = "RBACReady"
+	// ConditionRBACWorkerReady reports the RBAC Celery worker Deployment. It
+	// does not gate Available — Koku/Envoy call the API, not the worker.
+	ConditionRBACWorkerReady = "RBACWorkerReady"
+	ConditionUIReady         = "UIReady"
+	// ConditionGatewayReady reports Envoy Deployment + API Route readiness.
+	// Distinct from AuthenticationReady, which is the OIDC JWKS probe.
+	ConditionGatewayReady = "GatewayReady"
+	// ConditionIngressReady reports insights-ingress-go Deployment readiness.
+	ConditionIngressReady = "IngressReady"
 	// ConditionROSEnabled reports whether ROS/Kruize are active per spec.ros.enabled.
 	ConditionROSEnabled = "ROSEnabled"
 	// ConditionPaused is True when reconciliation is halted via the pause annotation.
@@ -226,6 +236,15 @@ type ObjectStorageConfig struct {
 	Port int32 `json:"port,omitempty"`
 	// +kubebuilder:default:=true
 	UseSSL *bool `json:"useSSL,omitempty"`
+	// InsecureSkipVerify disables TLS certificate verification for the S3
+	// endpoint. Use for dev/CRC setups with self-signed certs.
+	// Prefer CACertSecretName for production.
+	// +kubebuilder:default:=false
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+	// CACertSecretName names a Secret with key ca.crt containing the CA
+	// certificate used to verify the S3 endpoint TLS. Required for on-prem
+	// S3 endpoints (MinIO, Ceph RGW, NooBaa HTTPS) using private CAs.
+	CACertSecretName string `json:"caCertSecretName,omitempty"`
 	// Name of an existing Secret with keys: access-key, secret-key.
 	// When empty the operator creates or detects the secret via ODF/NooBaa.
 	SecretName string    `json:"secretName,omitempty"`
@@ -326,6 +345,8 @@ type KeycloakSyncSpec struct {
 	Schedule         string `json:"schedule,omitempty"`
 	OrgGroupPrefix   string `json:"orgGroupPrefix,omitempty"`
 	OrgAdminSubgroup string `json:"orgAdminSubgroup,omitempty"`
+	// PruneOrphans deletes RBAC Principals that no longer exist in the
+	// org's Keycloak group. Matches the Helm chart default (true).
 	// +kubebuilder:default:=true
 	PruneOrphans *bool `json:"pruneOrphans,omitempty"`
 	// +kubebuilder:default:="rbac-keycloak-sync"
@@ -508,12 +529,12 @@ type CeleryWorkersSpec struct {
 	Summary   CeleryWorkerSpec `json:"summary,omitempty"`
 	OCP       CeleryWorkerSpec `json:"ocp,omitempty"`
 	CostModel CeleryWorkerSpec `json:"costModel,omitempty"`
-	// Cloud-provider workers — typically 0 replicas for OCP-only deployments.
-	Refresh          CeleryWorkerSpec `json:"refresh,omitempty"`
-	HCS              CeleryWorkerSpec `json:"hcs,omitempty"`
-	Download         CeleryWorkerSpec `json:"download,omitempty"`
-	SubsExtraction   CeleryWorkerSpec `json:"subsExtraction,omitempty"`
-	SubsTransmission CeleryWorkerSpec `json:"subsTransmission,omitempty"`
+	Refresh   CeleryWorkerSpec `json:"refresh,omitempty"`
+	Download  CeleryWorkerSpec `json:"download,omitempty"`
+	// SaaS-only queues — disabled by default for on-prem (COST-7687).
+	HCS              SaaSCeleryWorkerSpec `json:"hcs,omitempty"`
+	SubsExtraction   SaaSCeleryWorkerSpec `json:"subsExtraction,omitempty"`
+	SubsTransmission SaaSCeleryWorkerSpec `json:"subsTransmission,omitempty"`
 }
 
 type CeleryWorkerSpec struct {
@@ -522,6 +543,21 @@ type CeleryWorkerSpec struct {
 	// +kubebuilder:default:=5
 	Concurrency int32                       `json:"concurrency,omitempty"`
 	Resources   corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// SaaSCeleryWorkerSpec configures cloud/SaaS Celery queues (hcs, subs_*).
+// On-prem installs should leave these at the default of 0 replicas.
+type SaaSCeleryWorkerSpec struct {
+	// +kubebuilder:default:=0
+	Replicas int32 `json:"replicas,omitempty"`
+	// +kubebuilder:default:=5
+	Concurrency int32                       `json:"concurrency,omitempty"`
+	Resources   corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// CeleryWorkerSpec returns the shared worker shape used by resource builders.
+func (s SaaSCeleryWorkerSpec) CeleryWorkerSpec() CeleryWorkerSpec {
+	return CeleryWorkerSpec(s)
 }
 
 // -----------------------------------------------------------------------------
@@ -564,8 +600,10 @@ type GatewayRouteConfig struct {
 }
 
 type RouteTLSSpec struct {
+	// Envoy's backend listener is plaintext HTTP, so only edge termination
+	// is valid — passthrough/reencrypt would break the TLS handshake.
 	// +kubebuilder:default:=edge
-	// +kubebuilder:validation:Enum=edge;passthrough;reencrypt
+	// +kubebuilder:validation:Enum=edge
 	Termination string `json:"termination,omitempty"`
 	// +kubebuilder:default:=Redirect
 	// +kubebuilder:validation:Enum=Allow;Redirect;None
@@ -660,7 +698,8 @@ type CostManagementServiceConfigStatus struct {
 	// Conditions is the canonical status API.
 	// Standard conditions: Available, Progressing, Degraded.
 	// Component conditions: DatabaseReady, CacheReady, StorageReady,
-	// KafkaReady, AuthenticationReady, SchemaUpToDate, DiscoveryComplete.
+	// KafkaReady, AuthenticationReady, SchemaUpToDate, DiscoveryComplete,
+	// GatewayReady, IngressReady, UIReady.
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
