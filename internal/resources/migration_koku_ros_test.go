@@ -33,6 +33,7 @@ func TestMigrationJobBuildsValidJob(t *testing.T) {
 
 	if job == nil {
 		t.Fatal("MigrationJob returned nil")
+		return
 	}
 	if job.Name != "cost-onprem-koku-migrate" {
 		t.Errorf("Name = %q, want cost-onprem-koku-migrate", job.Name)
@@ -175,11 +176,13 @@ func TestMigrationJobExternalDB(t *testing.T) {
 	}
 	if waitInit == nil {
 		t.Fatal("no wait-for init container found")
+		return
 	}
 	wc := initC[*waitInit]
 	// External DB path uses /wait-for binary (waitForTCP), not pg_isready.
 	if len(wc.Command) == 0 {
 		t.Fatal("wait init container has empty Command")
+		return
 	}
 	if wc.Command[0] != "/wait-for" {
 		t.Errorf("external DB wait command[0] = %q, want /wait-for", wc.Command[0])
@@ -247,6 +250,7 @@ func TestROSMigrationJobBuildsValidJob(t *testing.T) {
 
 	if job == nil {
 		t.Fatal("ROSMigrationJob returned nil")
+		return
 	}
 	if job.Name != "cost-onprem-ros-migrate" {
 		t.Errorf("Name = %q, want cost-onprem-ros-migrate", job.Name)
