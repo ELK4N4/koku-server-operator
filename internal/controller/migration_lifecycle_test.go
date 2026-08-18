@@ -138,6 +138,12 @@ func TestReconcileMigration_AllComplete_SchemaUpToDateTrue(t *testing.T) {
 	if cond == nil || cond.Status != metav1.ConditionTrue || cond.Reason != "MigrationComplete" {
 		t.Fatalf("expected SchemaUpToDate=True MigrationComplete, got %+v", cond)
 	}
+
+	// Degraded should be cleared on success (controller.go:411 sets Degraded=False MigrationSucceeded)
+	degraded := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
+	if degraded == nil || degraded.Status != metav1.ConditionFalse || degraded.Reason != "MigrationSucceeded" {
+		t.Fatalf("expected Degraded=False MigrationSucceeded, got %+v", degraded)
+	}
 }
 
 func TestReconcileMigration_JobFailed_DegradedAndStop(t *testing.T) {
