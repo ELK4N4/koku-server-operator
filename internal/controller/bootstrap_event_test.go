@@ -104,7 +104,6 @@ func TestAdminBootstrapJobCreated_WithSecretRef(t *testing.T) {
 	job := resources.AdminBootstrapJob(cfg, "v1")
 	if job == nil {
 		t.Fatal("AdminBootstrapJob should not be nil when enabled with secretRef")
-		return
 	}
 	if job.Name != resources.NameRBACAdminBootstrap(cfg) {
 		t.Errorf("job name = %q", job.Name)
