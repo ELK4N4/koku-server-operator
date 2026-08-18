@@ -35,9 +35,9 @@ func TestRBACRoleDefinitionsConfigMap(t *testing.T) {
 	}
 
 	type roleDef struct {
-		Name           string `json:"name"`
-		AdminDefault   bool   `json:"admin_default"`
-		PlatformDefault bool  `json:"platform_default"`
+		Name            string `json:"name"`
+		AdminDefault    bool   `json:"admin_default"`
+		PlatformDefault bool   `json:"platform_default"`
 	}
 	type rolesFile struct {
 		Roles []roleDef `json:"roles"`
