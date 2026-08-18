@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -434,17 +435,12 @@ type testRecorder struct {
 func (t *testRecorder) Event(obj runtime.Object, eventtype, reason, message string) {
 	t.Events = append(t.Events, reason)
 }
-func (t *testRecorder) Eventf(obj runtime.Object, eventtype, reason, message string, args ...interface{}) {
+func (t *testRecorder) Eventf(obj runtime.Object, eventtype, reason, message string, args ...any) {
 	t.Events = append(t.Events, reason)
 }
-func (t *testRecorder) AnnotatedEventf(obj runtime.Object, annotations map[string]string, eventtype, reason, message string, args ...interface{}) {
+func (t *testRecorder) AnnotatedEventf(obj runtime.Object, annotations map[string]string, eventtype, reason, message string, args ...any) {
 	t.Events = append(t.Events, reason)
 }
 func (t *testRecorder) hasEvent(reason string) bool {
-	for _, e := range t.Events {
-		if e == reason {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(t.Events, reason)
 }
