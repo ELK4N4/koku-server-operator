@@ -32,6 +32,11 @@ const (
 	// does not gate Available — Koku/Envoy call the API, not the worker.
 	ConditionRBACWorkerReady = "RBACWorkerReady"
 	ConditionUIReady         = "UIReady"
+	// ConditionGatewayReady reports Envoy Deployment + API Route readiness.
+	// Distinct from AuthenticationReady, which is the OIDC JWKS probe.
+	ConditionGatewayReady = "GatewayReady"
+	// ConditionIngressReady reports insights-ingress-go Deployment readiness.
+	ConditionIngressReady = "IngressReady"
 	// ConditionROSEnabled reports whether ROS/Kruize are active per spec.ros.enabled.
 	ConditionROSEnabled = "ROSEnabled"
 	// ConditionPaused is True when reconciliation is halted via the pause annotation.
@@ -231,6 +236,15 @@ type ObjectStorageConfig struct {
 	Port int32 `json:"port,omitempty"`
 	// +kubebuilder:default:=true
 	UseSSL *bool `json:"useSSL,omitempty"`
+	// InsecureSkipVerify disables TLS certificate verification for the S3
+	// endpoint. Use for dev/CRC setups with self-signed certs.
+	// Prefer CACertSecretName for production.
+	// +kubebuilder:default:=false
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+	// CACertSecretName names a Secret with key ca.crt containing the CA
+	// certificate used to verify the S3 endpoint TLS. Required for on-prem
+	// S3 endpoints (MinIO, Ceph RGW, NooBaa HTTPS) using private CAs.
+	CACertSecretName string `json:"caCertSecretName,omitempty"`
 	// Name of an existing Secret with keys: access-key, secret-key.
 	// When empty the operator creates or detects the secret via ODF/NooBaa.
 	SecretName string    `json:"secretName,omitempty"`
@@ -331,6 +345,8 @@ type KeycloakSyncSpec struct {
 	Schedule         string `json:"schedule,omitempty"`
 	OrgGroupPrefix   string `json:"orgGroupPrefix,omitempty"`
 	OrgAdminSubgroup string `json:"orgAdminSubgroup,omitempty"`
+	// PruneOrphans deletes RBAC Principals that no longer exist in the
+	// org's Keycloak group. Matches the Helm chart default (true).
 	// +kubebuilder:default:=true
 	PruneOrphans *bool `json:"pruneOrphans,omitempty"`
 	// +kubebuilder:default:="rbac-keycloak-sync"
@@ -584,8 +600,10 @@ type GatewayRouteConfig struct {
 }
 
 type RouteTLSSpec struct {
+	// Envoy's backend listener is plaintext HTTP, so only edge termination
+	// is valid — passthrough/reencrypt would break the TLS handshake.
 	// +kubebuilder:default:=edge
-	// +kubebuilder:validation:Enum=edge;passthrough;reencrypt
+	// +kubebuilder:validation:Enum=edge
 	Termination string `json:"termination,omitempty"`
 	// +kubebuilder:default:=Redirect
 	// +kubebuilder:validation:Enum=Allow;Redirect;None
@@ -680,7 +698,8 @@ type CostManagementServiceConfigStatus struct {
 	// Conditions is the canonical status API.
 	// Standard conditions: Available, Progressing, Degraded.
 	// Component conditions: DatabaseReady, CacheReady, StorageReady,
-	// KafkaReady, AuthenticationReady, SchemaUpToDate, DiscoveryComplete.
+	// KafkaReady, AuthenticationReady, SchemaUpToDate, DiscoveryComplete,
+	// GatewayReady, IngressReady, UIReady.
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
