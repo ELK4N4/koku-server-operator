@@ -111,3 +111,16 @@ func TestGatewayAPIRoute_EmptyTerminationDefaultsToEdge(t *testing.T) {
 		t.Errorf("termination = %q, want edge", got)
 	}
 }
+
+func TestGatewayAPIRoute_PreExistingNonEdgeCoercedToEdge(t *testing.T) {
+	cfg := testCfg()
+	cfg.Status.DiscoveredConfig = &costv1alpha1.DiscoveredConfig{ClusterDomain: "apps.example.com"}
+	for _, term := range []string{"passthrough", "reencrypt"} {
+		cfg.Spec.GatewayRoute.TLS.Termination = term
+		route := GatewayAPIRoute(cfg)
+		got, _, _ := unstructured.NestedString(route.Object, "spec", "tls", "termination")
+		if got != "edge" {
+			t.Errorf("pre-existing termination %q must be coerced to edge (Envoy is plaintext HTTP), got %q", term, got)
+		}
+	}
+}
