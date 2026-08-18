@@ -43,11 +43,12 @@ func TestReconcileMigration_FirstReconcileCreatesKokuJob(t *testing.T) {
 	if !jobExists(c, testNamespace, kokuJobName) {
 		t.Fatalf("expected Koku migration Job %q to exist", kokuJobName)
 	}
-	if getJobAnnotation(t, c, testNamespace, kokuJobName, "koku.costmanagement.io/image-tag") != cfg.Spec.CostManagement.API.Image.Tag {
+	if getJobAnnotation(t, c, testNamespace, kokuJobName, resources.MigrationImageTagAnnotation) != cfg.Spec.CostManagement.API.Image.Tag {
 		t.Errorf("Koku Job missing image-tag annotation")
 	}
 
-	// RBAC and ROS jobs should NOT exist yet (sequential creation)
+	// RBAC Job should NOT exist yet (sequential: always after Koku)
+	// ROS Job should NOT exist yet (defaults to disabled via spec.ros.enabled=false)
 	if jobExists(c, testNamespace, resources.NameRBACMigration(cfg)) {
 		t.Fatal("expected RBAC Job to NOT exist on first pass (sequential)")
 	}
@@ -93,7 +94,7 @@ func TestReconcileMigration_KokuComplete_CreatesRBACJob(t *testing.T) {
 	if !jobExists(c, testNamespace, rbacJobName) {
 		t.Fatalf("expected RBAC migration Job %q to exist", rbacJobName)
 	}
-	if getJobAnnotation(t, c, testNamespace, rbacJobName, "koku.costmanagement.io/image-tag") != "rbac-tag-cmseed1" {
+	if getJobAnnotation(t, c, testNamespace, rbacJobName, resources.MigrationImageTagAnnotation) != "rbac-tag-cmseed1" {
 		t.Errorf("RBAC Job image-tag should include cmseed1 suffix")
 	}
 
@@ -234,7 +235,7 @@ func TestReconcileMigration_ImageTagChange_RecreatesJob(t *testing.T) {
 	if !jobExists(c, testNamespace, kokuJobName) {
 		t.Fatal("expected new Job to be created on requeue")
 	}
-	newAnnotation := getJobAnnotation(t, c, testNamespace, kokuJobName, "koku.costmanagement.io/image-tag")
+	newAnnotation := getJobAnnotation(t, c, testNamespace, kokuJobName, resources.MigrationImageTagAnnotation)
 	if newAnnotation != "v2" {
 		t.Errorf("expected Job recreated with v2 annotation, got %q", newAnnotation)
 	}
@@ -422,13 +423,22 @@ func TestReconcileMigration_AdminBootstrapEnabledNoSecret_WarningEvent(t *testin
 		t.Fatalf("bootstrap: %v", err)
 	}
 
-	select {
-	case event := <-rec.Events:
-		if !strings.Contains(event, "BootstrapAdminSkipped") {
-			t.Fatalf("expected BootstrapAdminSkipped warning event, got: %s", event)
+	found := false
+	for range 20 {
+		select {
+		case event := <-rec.Events:
+			if strings.Contains(event, "BootstrapAdminSkipped") {
+				found = true
+			}
+		default:
 		}
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("expected BootstrapAdminSkipped event but channel was empty")
+		if found {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !found {
+		t.Fatal("expected BootstrapAdminSkipped warning event in events channel")
 	}
 
 	if jobExists(c, testNamespace, resources.NameRBACAdminBootstrap(cfg)) {
