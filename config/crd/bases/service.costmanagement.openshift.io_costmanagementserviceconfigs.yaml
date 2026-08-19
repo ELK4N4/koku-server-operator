@@ -1856,6 +1856,12 @@ spec:
                       endpoint. Use for dev/CRC setups with self-signed certs.
                       Prefer CACertSecretName for production.
                     type: boolean
+                  noobaaNamespace:
+                    default: openshift-storage
+                    description: |-
+                      Namespace of the noobaa-admin Secret used by NooBaa auto-detection.
+                      Ignored when secretName is set.
+                    type: string
                   port:
                     default: 443
                     format: int32

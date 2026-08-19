@@ -46,7 +46,8 @@ func objectBucketClaimListGVK() schema.GroupVersionKind {
 // resolveS3 resolves object storage with strict precedence:
 //  1. User-provided Spec.ObjectStorage.SecretName
 //  2. Bound ObjectBucketClaim (Direct Ceph RGW) in the CR namespace
-//  3. NooBaa admin credentials in openshift-storage
+//  3. NooBaa admin credentials in spec.objectStorage.noobaaNamespace
+//     (default openshift-storage)
 func (r *CostManagementServiceConfigReconciler) resolveS3(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (*costv1alpha1.DiscoveredS3, error) {
 	if cfg.Spec.ObjectStorage.SecretName != "" {
 		return userProvidedS3(cfg), nil
@@ -155,16 +156,38 @@ func (r *CostManagementServiceConfigReconciler) findBoundOBC(ctx context.Context
 	return "", fmt.Errorf("no bound ObjectBucketClaim found")
 }
 
+func noobaaNamespace(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	if ns := cfg.Spec.ObjectStorage.NoobaaNamespace; ns != "" {
+		return ns
+	}
+	return noobaaAdminNamespace
+}
+
+// noobaaEndpoint is the discovered S3 URL for path 3.
+// Default: https://s3.<noobaa-namespace>.svc.cluster.local:443.
+// A non-empty spec.objectStorage.endpoint that is not the CRD default host
+// (s3.openshift-storage.svc.cluster.local) is treated as a custom route and
+// wins, using spec port/SSL. The CRD default host is ignored so that setting
+// noobaaNamespace still produces s3.<ns>.svc DNS.
+func noobaaEndpoint(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	host := cfg.Spec.ObjectStorage.Endpoint
+	if host != "" && host != noobaaDefaultEndpoint {
+		return resources.S3EndpointFromSpec(cfg)
+	}
+	return fmt.Sprintf("https://s3.%s.svc.cluster.local:443", noobaaNamespace(cfg))
+}
+
 func (r *CostManagementServiceConfigReconciler) discoverNooBaa(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (*costv1alpha1.DiscoveredS3, error) {
 	src := &corev1.Secret{}
-	// Use APIReader: noobaa-admin lives in openshift-storage, outside the
-	// OwnNamespace informer cache (Cache.DefaultNamespaces).
+	ns := noobaaNamespace(cfg)
+	// Use APIReader: noobaa-admin lives outside the OwnNamespace informer
+	// cache (Cache.DefaultNamespaces), typically in openshift-storage.
 	reader := r.APIReader
 	if reader == nil {
 		reader = r.Client
 	}
-	if err := reader.Get(ctx, types.NamespacedName{Namespace: noobaaAdminNamespace, Name: noobaaAdminSecretName}, src); err != nil {
-		return nil, fmt.Errorf("noobaa-admin secret: %w", err)
+	if err := reader.Get(ctx, types.NamespacedName{Namespace: ns, Name: noobaaAdminSecretName}, src); err != nil {
+		return nil, fmt.Errorf("noobaa-admin secret %s/%s: %w", ns, noobaaAdminSecretName, err)
 	}
 	accessKey := string(src.Data["AWS_ACCESS_KEY_ID"])
 	secretKey := string(src.Data["AWS_SECRET_ACCESS_KEY"])
@@ -178,7 +201,7 @@ func (r *CostManagementServiceConfigReconciler) discoverNooBaa(ctx context.Conte
 	}
 
 	return &costv1alpha1.DiscoveredS3{
-		Endpoint:   fmt.Sprintf("https://%s:443", noobaaDefaultEndpoint),
+		Endpoint:   noobaaEndpoint(cfg),
 		SecretName: destName,
 		Region:     s3Region(cfg),
 		Bucket:     cfg.Spec.CostManagement.Storage.BucketName,

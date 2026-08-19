@@ -247,8 +247,12 @@ type ObjectStorageConfig struct {
 	CACertSecretName string `json:"caCertSecretName,omitempty"`
 	// Name of an existing Secret with keys: access-key, secret-key.
 	// When empty the operator creates or detects the secret via ODF/NooBaa.
-	SecretName string    `json:"secretName,omitempty"`
-	S3         S3Options `json:"s3,omitempty"`
+	SecretName string `json:"secretName,omitempty"`
+	// Namespace of the noobaa-admin Secret used by NooBaa auto-detection.
+	// Ignored when secretName is set.
+	// +kubebuilder:default:="openshift-storage"
+	NoobaaNamespace string    `json:"noobaaNamespace,omitempty"`
+	S3              S3Options `json:"s3,omitempty"`
 }
 
 type S3Options struct {
