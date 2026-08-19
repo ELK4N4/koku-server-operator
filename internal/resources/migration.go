@@ -17,6 +17,10 @@ const (
 	MigrationBackoffLimit = int32(3)
 	// MigrationDeadlineSeconds is the hard timeout per migration Job.
 	MigrationDeadlineSeconds = int64(600)
+
+	// MigrationImageTagAnnotation is the annotation key used to track the
+	// image tag for upgrade detection.
+	MigrationImageTagAnnotation = "koku.costmanagement.io/image-tag"
 )
 
 // NameROSMigration returns the ROS migration Job name.
@@ -427,7 +431,7 @@ func migrationJob(
 			Namespace: cfg.Namespace,
 			Labels:    Labels(cfg, component),
 			Annotations: map[string]string{
-				"koku.costmanagement.io/image-tag": imageTag,
+				MigrationImageTagAnnotation: imageTag,
 			},
 		},
 		Spec: batchv1.JobSpec{

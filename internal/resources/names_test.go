@@ -125,6 +125,7 @@ func TestROSAPINetworkPolicyExists(t *testing.T) {
 	np := ROSAPINetworkPolicy(cfg)
 	if np == nil {
 		t.Fatal("ROSAPINetworkPolicy returned nil")
+		return
 	}
 	if np.Name == "" {
 		t.Error("ROSAPINetworkPolicy has no name")
