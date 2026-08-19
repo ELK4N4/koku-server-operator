@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -17,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
+	"github.com/project-koku/koku-service-operator/internal/resources"
 )
 
 // TestMonitoringRealApplyErrorSurfaces verifies that non-CRD-absent errors
@@ -173,6 +175,7 @@ func TestMonitoringDisabledDeletesManagedResources(t *testing.T) {
 		testCRName + "-gateway-metrics":  false,
 		testCRName + "-operator-metrics": false,
 		testCRName + "-alerts":           false,
+		testCRName + "-kruize-metrics":   false, // not applied yet (COST-8054); cleanup on disable
 	}
 	for _, name := range deleted {
 		if _, ok := wantDelete[name]; ok {
@@ -183,6 +186,50 @@ func TestMonitoringDisabledDeletesManagedResources(t *testing.T) {
 		if !ok {
 			t.Errorf("expected delete of %s, got deleted=%v", name, deleted)
 		}
+	}
+}
+
+// TestMonitoringDisabledDeletesKruizeServiceMonitor ensures disable removes
+// the Kruize ServiceMonitor by name even though it is not applied in beta
+// (ROS scrape lands in COST-8054).
+func TestMonitoringDisabledDeletesKruizeServiceMonitor(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = costv1alpha1.AddToScheme(scheme)
+
+	enabled := false
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			Monitoring: costv1alpha1.MonitoringConfig{Enabled: &enabled},
+		},
+	}
+
+	legacy := resources.KruizeServiceMonitor(cfg)
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(legacy).
+		Build()
+
+	r := &CostManagementServiceConfigReconciler{
+		Client:   fakeClient,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileMonitoring(context.Background(), cfg); err != nil {
+		t.Fatalf("reconcileMonitoring: %v", err)
+	}
+
+	got := legacy.DeepCopy()
+	err := fakeClient.Get(context.Background(), client.ObjectKey{
+		Namespace: testNamespace,
+		Name:      testCRName + "-kruize-metrics",
+	}, got)
+	if err == nil {
+		t.Fatal("expected Kruize ServiceMonitor to be deleted on monitoring disable")
+	}
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected NotFound after disable cleanup, got %v", err)
 	}
 }
 

@@ -35,3 +35,17 @@ func TestSetMigrationJobFailed(t *testing.T) {
 		t.Fatalf("cleared gauge = %v, want 0", got)
 	}
 }
+
+func TestClearManagedPodRestarts(t *testing.T) {
+	ManagedPodRestarts.WithLabelValues("ns", "cm", "pod-a", "app").Set(3)
+	ManagedPodRestarts.WithLabelValues("ns", "cm", "pod-b", "app").Set(1)
+	if n := ClearManagedPodRestarts("ns", "cm"); n != 2 {
+		t.Fatalf("ClearManagedPodRestarts deleted %d, want 2", n)
+	}
+	if ManagedPodRestarts.DeleteLabelValues("ns", "cm", "pod-a", "app") {
+		t.Fatal("expected pod-a series deleted")
+	}
+	if ManagedPodRestarts.DeleteLabelValues("ns", "cm", "pod-b", "app") {
+		t.Fatal("expected pod-b series deleted")
+	}
+}

@@ -196,6 +196,9 @@ func (r *CostManagementServiceConfigReconciler) reconcileDelete(ctx context.Cont
 		}
 	}
 
+	// Drop UWM series for this CMSC so deleted instances cannot keep alerts firing.
+	opmetrics.ClearManagedPodRestarts(cfg.Namespace, cfg.Name)
+
 	controllerutil.RemoveFinalizer(cfg, finalizerName)
 	if err := r.Update(ctx, cfg); err != nil {
 		return ctrl.Result{}, fmt.Errorf("removing finalizer: %w", err)
@@ -833,7 +836,10 @@ func (r *CostManagementServiceConfigReconciler) reconcileUI(ctx context.Context,
 // reconcileMonitoring applies App/Gateway/Operator ServiceMonitors and
 // PrometheusRules when spec.monitoring.enabled is true (the default). When
 // disabled, best-effort deletes those managed objects so Alerting/scrape
-// targets do not linger. CRDs absent → skip one resource and continue.
+// targets do not linger. Kruize ServiceMonitor is not applied here yet
+// (ROS scrape → COST-8054) but is still deleted on disable so a future or
+// manually present object does not linger. CRDs absent → skip one resource
+// and continue.
 func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
 	logger := log.FromContext(ctx)
 	objs := []client.Object{
@@ -844,7 +850,10 @@ func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.
 	}
 
 	if !costv1alpha1.BoolVal(cfg.Spec.Monitoring.Enabled, true) {
-		for _, obj := range objs {
+		// Kruize SM is not in the apply set yet (COST-8054); still delete by
+		// name so disable cleans it up once ROS scrape lands (or if present).
+		toDelete := append(objs, resources.KruizeServiceMonitor(cfg))
+		for _, obj := range toDelete {
 			obj.SetNamespace(cfg.Namespace)
 			if err := r.Delete(ctx, obj); err != nil && !errors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
 				gvk := obj.GetObjectKind().GroupVersionKind()
@@ -1050,6 +1059,8 @@ func (r *CostManagementServiceConfigReconciler) syncConditionMetrics(cfg *costv1
 
 // syncManagedPodRestarts publishes restart counts for instance-labeled pods so
 // CostManagementPodRestarting can evaluate under UWM without kube-state metrics.
+// After a successful list, existing series for this CMSC are cleared so deleted
+// or replaced pods cannot leave stale gauges that keep the alert firing.
 func (r *CostManagementServiceConfigReconciler) syncManagedPodRestarts(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) error {
 	var pods corev1.PodList
 	if err := r.List(ctx, &pods, client.InNamespace(cfg.Namespace), client.MatchingLabels{
@@ -1058,6 +1069,7 @@ func (r *CostManagementServiceConfigReconciler) syncManagedPodRestarts(ctx conte
 	}); err != nil {
 		return err
 	}
+	opmetrics.ClearManagedPodRestarts(cfg.Namespace, cfg.Name)
 	for i := range pods.Items {
 		p := &pods.Items[i]
 		for _, cs := range p.Status.ContainerStatuses {

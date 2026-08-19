@@ -101,3 +101,13 @@ func SetMigrationJobFailed(namespace, name, job string, failed bool) {
 	}
 	MigrationJobFailed.WithLabelValues(namespace, name, job).Set(v)
 }
+
+// ClearManagedPodRestarts removes all restart gauges for a CMSC instance
+// (namespace + name), including series for pods that no longer exist.
+// Returns how many series were deleted.
+func ClearManagedPodRestarts(namespace, name string) int {
+	return ManagedPodRestarts.DeletePartialMatch(prometheus.Labels{
+		labelNamespace: namespace,
+		labelName:      name,
+	})
+}
