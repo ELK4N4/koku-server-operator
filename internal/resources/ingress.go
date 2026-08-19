@@ -76,7 +76,8 @@ func IngressDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.De
 	}
 	stagingBucket := spec.StagingBucket
 	if stagingBucket == "" {
-		stagingBucket = cfg.Spec.CostManagement.Storage.BucketName
+		// Same resolution as Koku REQUESTED_BUCKET: discovered S3 bucket, then spec.
+		stagingBucket = S3Bucket(cfg)
 	}
 	if stagingBucket == "" {
 		stagingBucket = "koku-bucket"

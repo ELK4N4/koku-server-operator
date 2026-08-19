@@ -111,10 +111,11 @@ func TestIngressDeployment(t *testing.T) {
 
 func TestIngressDeploymentStageBucket(t *testing.T) {
 	tests := []struct {
-		name          string
-		stagingBucket string
-		bucketName    string
-		want          string
+		name             string
+		stagingBucket    string
+		bucketName       string
+		discoveredBucket string
+		want             string
 	}{
 		{
 			name: "omitted staging and bucketName falls back to koku-bucket",
@@ -126,10 +127,23 @@ func TestIngressDeploymentStageBucket(t *testing.T) {
 			want:       "my-data",
 		},
 		{
+			name:             "omitted staging prefers discovered S3 bucket over spec",
+			bucketName:       "koku-bucket",
+			discoveredBucket: "obc-provisioned-bucket",
+			want:             "obc-provisioned-bucket",
+		},
+		{
 			name:          "explicit stagingBucket is honored over bucketName",
 			stagingBucket: "insights-upload-perma",
 			bucketName:    "koku-bucket",
 			want:          "insights-upload-perma",
+		},
+		{
+			name:             "explicit stagingBucket is honored over discovered bucket",
+			stagingBucket:    "insights-upload-perma",
+			bucketName:       "koku-bucket",
+			discoveredBucket: "obc-provisioned-bucket",
+			want:             "insights-upload-perma",
 		},
 	}
 	for _, tt := range tests {
@@ -137,6 +151,11 @@ func TestIngressDeploymentStageBucket(t *testing.T) {
 			cfg := ingressCfg()
 			cfg.Spec.Ingress.StagingBucket = tt.stagingBucket
 			cfg.Spec.CostManagement.Storage.BucketName = tt.bucketName
+			if tt.discoveredBucket != "" {
+				cfg.Status.DiscoveredConfig = &costv1alpha1.DiscoveredConfig{
+					S3: &costv1alpha1.DiscoveredS3{Bucket: tt.discoveredBucket},
+				}
+			}
 			env := envValues(IngressDeployment(cfg).Spec.Template.Spec.Containers[0])
 			if got := env["INGRESS_STAGEBUCKET"]; got != tt.want {
 				t.Errorf("INGRESS_STAGEBUCKET = %q, want %q", got, tt.want)

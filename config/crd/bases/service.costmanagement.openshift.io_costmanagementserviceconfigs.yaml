@@ -1625,7 +1625,8 @@ spec:
                   stagingBucket:
                     description: |-
                       Staging bucket name for uploads.
-                      When empty, the operator uses spec.costManagement.storage.bucketName,
+                      When empty, the operator uses the same bucket as Koku REQUESTED_BUCKET
+                      (status.discoveredConfig.s3.bucket, else spec.costManagement.storage.bucketName),
                       then "koku-bucket".
                     type: string
                   validTypes:
