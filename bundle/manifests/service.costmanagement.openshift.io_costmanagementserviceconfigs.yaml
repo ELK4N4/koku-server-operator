@@ -1,9 +1,9 @@
----
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
+  creationTimestamp: null
   name: costmanagementserviceconfigs.service.costmanagement.openshift.io
 spec:
   group: service.costmanagement.openshift.io
@@ -632,13 +632,15 @@ spec:
                                 type: object
                             type: object
                           hcs:
+                            description: SaaS-only queues — disabled by default for
+                              on-prem (COST-7687).
                             properties:
                               concurrency:
                                 default: 5
                                 format: int32
                                 type: integer
                               replicas:
-                                default: 1
+                                default: 0
                                 format: int32
                                 type: integer
                               resources:
@@ -848,8 +850,6 @@ spec:
                                 type: object
                             type: object
                           refresh:
-                            description: Cloud-provider workers — typically 0 replicas
-                              for OCP-only deployments.
                             properties:
                               concurrency:
                                 default: 5
@@ -922,13 +922,16 @@ spec:
                                 type: object
                             type: object
                           subsExtraction:
+                            description: |-
+                              SaaSCeleryWorkerSpec configures cloud/SaaS Celery queues (hcs, subs_*).
+                              On-prem installs should leave these at the default of 0 replicas.
                             properties:
                               concurrency:
                                 default: 5
                                 format: int32
                                 type: integer
                               replicas:
-                                default: 1
+                                default: 0
                                 format: int32
                                 type: integer
                               resources:
@@ -994,13 +997,16 @@ spec:
                                 type: object
                             type: object
                           subsTransmission:
+                            description: |-
+                              SaaSCeleryWorkerSpec configures cloud/SaaS Celery queues (hcs, subs_*).
+                              On-prem installs should leave these at the default of 0 replicas.
                             properties:
                               concurrency:
                                 default: 5
                                 format: int32
                                 type: integer
                               replicas:
-                                default: 1
+                                default: 0
                                 format: int32
                                 type: integer
                               resources:
@@ -1487,10 +1493,11 @@ spec:
                         type: string
                       termination:
                         default: edge
+                        description: |-
+                          Envoy's backend listener is plaintext HTTP, so only edge termination
+                          is valid — passthrough/reencrypt would break the TLS handshake.
                         enum:
                         - edge
-                        - passthrough
-                        - reencrypt
                         type: string
                     type: object
                 type: object
@@ -1827,12 +1834,25 @@ spec:
                 type: object
               objectStorage:
                 properties:
+                  caCertSecretName:
+                    description: |-
+                      CACertSecretName names a Secret with key ca.crt containing the CA
+                      certificate used to verify the S3 endpoint TLS. Required for on-prem
+                      S3 endpoints (MinIO, Ceph RGW, NooBaa HTTPS) using private CAs.
+                    type: string
                   endpoint:
                     default: s3.openshift-storage.svc.cluster.local
                     description: |-
                       S3 endpoint hostname (without protocol or port).
                       Auto-detected by the Discovery phase (OBC → NooBaa → user-provided).
                     type: string
+                  insecureSkipVerify:
+                    default: false
+                    description: |-
+                      InsecureSkipVerify disables TLS certificate verification for the S3
+                      endpoint. Use for dev/CRC setups with self-signed certs.
+                      Prefer CACertSecretName for production.
+                    type: boolean
                   port:
                     default: 443
                     format: int32
@@ -1864,11 +1884,11 @@ spec:
               profile:
                 default: standard
                 description: |-
-                  Profile selects pre-defined resource sizing. Defaults to standard.
-                  NOT YET IMPLEMENTED — accepted but not read by the reconciler (COST-7678).
-                  Use per-component resources fields until profile sizing is wired.
+                  Profile selects a pre-defined resource sizing tier.
+                  Currently applies to UI containers only; other workloads use per-component spec.*.resources fields.
                 enum:
                 - standard
+                - ha
                 type: string
               rbac:
                 properties:
@@ -1978,6 +1998,7 @@ spec:
                   keycloakSync:
                     properties:
                       clientId:
+                        default: rbac-keycloak-sync
                         type: string
                       clientSecretRef:
                         description: SecretKeyRef points to a key inside a named Secret.
@@ -1997,6 +2018,10 @@ spec:
                       orgGroupPrefix:
                         type: string
                       pruneOrphans:
+                        default: true
+                        description: |-
+                          PruneOrphans deletes RBAC Principals that no longer exist in the
+                          org's Keycloak group. Matches the Helm chart default (true).
                         type: boolean
                       resources:
                         description: ResourceRequirements describes the compute resource
@@ -2699,7 +2724,8 @@ spec:
                   Conditions is the canonical status API.
                   Standard conditions: Available, Progressing, Degraded.
                   Component conditions: DatabaseReady, CacheReady, StorageReady,
-                  KafkaReady, AuthenticationReady, SchemaUpToDate, DiscoveryComplete.
+                  KafkaReady, AuthenticationReady, SchemaUpToDate, DiscoveryComplete,
+                  GatewayReady, IngressReady, UIReady.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -2805,3 +2831,9 @@ spec:
     storage: true
     subresources:
       status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions: null

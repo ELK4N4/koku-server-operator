@@ -72,6 +72,8 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// ObjectBucketClaims: namespaced Get/List during reconcile (findBoundOBC), not a watcher.
+// +kubebuilder:rbac:groups=objectbucket.io,resources=objectbucketclaims,verbs=get;list
 // Cluster-scoped resources (ingresses, storageclasses, consolelinks, clusterroles,
 // clusterrolebindings, noobaa-admin secret) live in cluster_access_role.yaml
 // (hand-maintained, bound via ClusterRoleBinding) — not here.
@@ -450,7 +452,7 @@ func (r *CostManagementServiceConfigReconciler) runMigrationStep(
 	}
 
 	// Upgrade: image tag changed → delete and let next reconcile recreate.
-	if existing.Annotations["koku.costmanagement.io/image-tag"] != imageTag {
+	if existing.Annotations[resources.MigrationImageTagAnnotation] != imageTag {
 		if delErr := r.Delete(ctx, existing, client.PropagationPolicy(metav1.DeletePropagationBackground)); delErr != nil && !errors.IsNotFound(delErr) {
 			return Result{}, fmt.Errorf("delete stale %s: %w", jobName, delErr)
 		}
@@ -659,6 +661,17 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		}
 	}
 
+	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameIngress(cfg))
+	if err != nil {
+		return Result{}, err
+	}
+	if !ready {
+		r.setCondition(cfg, costv1alpha1.ConditionIngressReady, metav1.ConditionFalse,
+			"WaitingForIngress", "waiting for Ingress upload Deployment")
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionIngressReady, metav1.ConditionTrue,
+		"IngressReady", "Ingress upload Deployment is ready")
 	return Result{}, nil
 }
 
@@ -694,18 +707,18 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		return Result{}, err
 	}
 	if !ready {
-		r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionFalse,
+		r.setCondition(cfg, costv1alpha1.ConditionGatewayReady, metav1.ConditionFalse,
 			"WaitingForGateway", "waiting for Envoy gateway Deployment")
 		return Result{RequeueAfter: requeueSlow}, nil
 	}
 
 	if route == nil {
-		r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionFalse,
+		r.setCondition(cfg, costv1alpha1.ConditionGatewayReady, metav1.ConditionFalse,
 			"ClusterDomainPending", "Envoy gateway ready; API Route deferred until cluster domain is available")
 		return Result{RequeueAfter: requeueSlow}, nil
 	}
 
-	r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionTrue,
+	r.setCondition(cfg, costv1alpha1.ConditionGatewayReady, metav1.ConditionTrue,
 		"GatewayReady", "Envoy JWT gateway and API Route are ready")
 
 	if err := r.reconcileUI(ctx, cfg); err != nil {
