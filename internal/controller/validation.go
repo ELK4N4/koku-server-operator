@@ -13,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -155,9 +156,32 @@ func (r *CostManagementServiceConfigReconciler) reconcileValidation(ctx context.
 	}
 
 	if !allReady {
+		// Blocking DB/Cache failures must not leave stale Available=True /
+		// Degraded=False from a prior Ready pass (COST-8107).
+		msg := blockingDependencyMessage(cfg)
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse,
+			"DependencyNotReady", msg)
+		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue,
+			"DependencyUnreachable", msg)
+		cfg.Status.Phase = costv1alpha1.PhaseDegraded
 		return Result{RequeueAfter: requeueSlow}, nil
 	}
 	return Result{}, nil
+}
+
+// blockingDependencyMessage summarizes why DB/Cache validation blocked reconcile.
+func blockingDependencyMessage(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	var parts []string
+	for _, typ := range []string{costv1alpha1.ConditionDatabaseReady, costv1alpha1.ConditionCacheReady} {
+		c := apimeta.FindStatusCondition(cfg.Status.Conditions, typ)
+		if c != nil && c.Status == metav1.ConditionFalse {
+			parts = append(parts, fmt.Sprintf("%s: %s", typ, c.Message))
+		}
+	}
+	if len(parts) == 0 {
+		return "blocking dependency validation failed"
+	}
+	return strings.Join(parts, "; ")
 }
 
 // tcpProbe opens and immediately closes a TCP connection to addr.

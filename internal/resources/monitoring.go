@@ -210,18 +210,19 @@ func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 				"description": "CostManagementServiceConfig {{ $labels.customresource_name }} has Available=False for 30 minutes.",
 			},
 		},
-		// Koku API /metrics scrape target down (requires App ServiceMonitor)
+		// Koku API /metrics scrape target down or missing (requires App ServiceMonitor; COST-8109)
 		map[string]any{
 			"alert": "CostManagementAPIDown",
-			"expr":  `up{namespace="` + ns + `",service="` + kokuAPIService + `"} == 0`,
-			"for":   "5m",
+			"expr": `(up{namespace="` + ns + `",service="` + kokuAPIService + `"} == 0)` +
+				` or (absent(up{namespace="` + ns + `",service="` + kokuAPIService + `"}) == 1)`,
+			"for": "5m",
 			"labels": map[string]any{
 				"severity": "critical",
 				"instance": instance,
 			},
 			"annotations": map[string]any{
 				"summary":     "Cost Management API metrics endpoint unreachable",
-				"description": "Prometheus cannot scrape /metrics on Service {{ $labels.service }} in namespace {{ $labels.namespace }} for more than 5 minutes.",
+				"description": "Prometheus cannot scrape /metrics on Service {{ $labels.service }} in namespace {{ $labels.namespace }} (down or absent) for more than 5 minutes.",
 			},
 		},
 	}
