@@ -8,6 +8,8 @@
 # Pre-create these Secrets before applying this CR:
 #
 #   kubectl create secret generic my-db-credentials \
+#     --from-literal=postgres-user=postgres \
+#     --from-literal=postgres-password=<password> \
 #     --from-literal=koku-user=koku \
 #     --from-literal=koku-password=<password> \
 #     --from-literal=ros-user=ros_user \

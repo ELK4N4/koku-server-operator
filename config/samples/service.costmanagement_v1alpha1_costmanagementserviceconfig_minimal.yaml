@@ -2,8 +2,9 @@
 #
 # Smallest operationally useful CostManagementServiceConfig for production-style
 # (external DB, cache, Kafka, S3, OIDC). Omits optional tuning: no celery worker
-# overrides (CRD defaults apply, including SaaS queues at replicas: 0), no
-# monitoring, no resource overrides, no ROS/Kruize (ros.enabled defaults false).
+# overrides (CRD defaults apply, including SaaS queues at replicas: 0),
+# monitoring.enabled: false (CRD default is true), no resource overrides,
+# no ROS/Kruize (ros.enabled defaults false).
 #
 # Schema note: spec: {} is OpenAPI-valid today but cannot reconcile — images,
 # connection endpoints, and referenced Secrets are required in practice.
@@ -21,6 +22,7 @@
 #     --from-literal=rbac-password=<password> \
 #     --from-literal=kruize-user=kruize_user \
 #     --from-literal=kruize-password=<password>
+#   (ros-* and kruize-* keys match the CRD credential list; unused while ros.enabled is false.)
 #
 #   kubectl create secret generic my-cache-credentials \
 #     --from-literal=password=<password>
@@ -89,6 +91,7 @@ spec:
       tag: "73870d8"
 
   ingress:
+    # Pin a release tag for production — master is mutable (dev-only).
     image:
       repository: quay.io/iop/ingress
       tag: "master"
@@ -102,3 +105,6 @@ spec:
       image:
         repository: registry.redhat.io/rhceph/oauth2-proxy-rhel9
         tag: "v7.6.0"
+
+  monitoring:
+    enabled: false
