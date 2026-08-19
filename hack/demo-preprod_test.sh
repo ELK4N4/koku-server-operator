@@ -64,7 +64,7 @@ assert_contains "$cr" 'clusterDomain: "apps.example.test"' "clusterDomain patche
 assert_not_contains "$cr" "apps.cluster.example.com" "placeholder domain gone"
 assert_contains "$cr" 'issuerURL: "https://keycloak-keycloak.apps.example.test"' "issuerURL set"
 assert_contains "$cr" "insecureSkipVerify: true" "skip-verify for lab router CA"
-assert_contains "$cr" "enabled: false" "ROS stays off"
+assert_contains "$cr" $'  ros:\n    enabled: false' "ROS stays off (sample CR, not a demo env var)"
 rm -f "$tmp"
 
 # --- Chart root: worktree ROOT is not the sibling of cost-onprem-chart ---
