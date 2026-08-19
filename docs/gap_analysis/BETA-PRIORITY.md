@@ -6,7 +6,7 @@
 
 **Scope note (2026-08-10):** ROS and Kruize are **out of beta**. Name them separately in gaps (different secrets, migrate, readiness). Optional install, independent Kruize enablement, and day-2 enablement are owned by **[COST-8054](../jira/COST-8054.md)** — not by COST-7678–7692 closure.
 
-**Code progress since first draft:** `spec.ros.enabled` (`*bool`, **default `false`** for Cost-only beta) + `ROSEnabled()` gate Deployments/CronJobs/migrate/Envoy ROS routes/NPs; `reconcileROSFeature` sets condition `ROSEnabled` and cleans up when flipped off. Samples keep `ros.enabled: false`. **ServiceMonitors are not fully gated:** `reconcileMonitoring` still applies `KruizeServiceMonitor` (and `AppServiceMonitor` always lists `ros-api`) after cleanup — see [COST-7686](COST-7686.md) G1 leftover / [COST-7692](COST-7692.md). **Still open for Cost-only honesty:** Validation **always** requires `ros-user` / `ros-password` (not conditional; not Kruize keys); Kruize is not independently toggleable (tied to ROS today). Opt in with `ros.enabled: true` + images. “Out of beta scope” means *do not treat ROS or Kruize readiness/hardening as Cost beta blockers*.
+**Code progress since first draft:** `spec.ros.enabled` (`*bool`, **default `false`** for Cost-only beta) + `ROSEnabled()` gate Deployments/CronJobs/migrate/Envoy ROS routes/NPs; `reconcileROSFeature` sets condition `ROSEnabled` and cleans up when flipped off. Samples keep `ros.enabled: false`. **ServiceMonitors are not fully gated:** `reconcileMonitoring` still applies `KruizeServiceMonitor` after cleanup (Cost-only installs get a Kruize SM CR; `ros-api` on the App SM is a dead selector, not a live target) — see [COST-7686](COST-7686.md) G1 leftover / [COST-7692](COST-7692.md). **Still open for Cost-only honesty:** Validation **always** requires `ros-user` / `ros-password` (not conditional; not Kruize keys); Kruize is not independently toggleable (tied to ROS today). Opt in with `ros.enabled: true` + images. “Out of beta scope” means *do not treat ROS or Kruize readiness/hardening as Cost beta blockers*.
 
 Per-ticket detail stays in the linked audits. This doc is the cross-cut ranking.
 
@@ -207,7 +207,7 @@ Track separately; do not conflate the two components. **Partial progress already
 |----------|--------|
 | Skip `ROSMigrationJob` when `ros.enabled=false` | Done (`reconcileMigration` + `ROSEnabled()`) |
 | Skip ROS/Kruize Deployments, CronJobs, Envoy ROS routes, Kruize NP | Done (gated apply + `reconcileROSFeature` cleanup) |
-| Skip Kruize ServiceMonitor / omit `ros-api` from App SM when ROS off | **Not done** — `reconcileMonitoring` re-applies `KruizeServiceMonitor` after cleanup ([COST-7686](COST-7686.md) G1 leftover) |
+| Skip Kruize ServiceMonitor when ROS off | **Not done** — `reconcileMonitoring` re-applies `KruizeServiceMonitor` after cleanup ([COST-7686](COST-7686.md) G1 leftover). `ros-api` on the App SM is a dead `In` value, not a live scrape. |
 | `ROSEnabled` condition | Done |
 | BYOI samples + CRD / `ROSEnabled()` default `ros.enabled: false` | Done |
 | Default when unset | **Disabled** (`+kubebuilder:default:=false`, `BoolVal(..., false)`) |
