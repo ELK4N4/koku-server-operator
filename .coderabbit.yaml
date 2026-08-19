@@ -64,11 +64,16 @@ reviews:
     - path: "api/v1alpha1/**/*.go"
       instructions: |
         CRD API is the user contract. Flag field removal, rename, or type
-        change as breaking. New optional fields must be pointers with
-        +optional, godoc, and kubebuilder markers.
+        change as breaking.
 
-        Opt-out / default-true booleans MUST be *bool. Plain
-        bool+omitempty+default:true drops false on round-trip.
+        Pointers are only for values whose Go zero value is a valid user
+        choice. Opt-out / default-true booleans MUST be *bool (plain
+        bool+omitempty+default:true drops false on round-trip). Optional
+        strings — including those with +kubebuilder:default — stay string
+        + omitempty. Empty means unset / use the default. Do not flag
+        string fields as needing *string or +optional; match Endpoint,
+        SecretName, and KeycloakSpec.Namespace. +optional is not required
+        on spec strings in this API.
 
         Never accept passwords, tokens, or raw credentials on the spec;
         use Secret references (secretName, credentialsSecretRef, SecretKeyRef).
@@ -79,8 +84,9 @@ reviews:
         conditions belong in status.conditions alongside the top-level
         Available/Progressing/Degraded set.
 
-        Ignore zz_generated.deepcopy.go (filtered). After type or marker
-        changes, the PR should include `make generate manifests` output.
+        Ignore zz_generated.deepcopy.go (filtered). Do not flag missing
+        CRD or bundle YAML in review — those paths are filtered; CI
+        check-generated owns `make generate manifests` drift.
 
     - path: "internal/controller/**/*.go"
       instructions: |
