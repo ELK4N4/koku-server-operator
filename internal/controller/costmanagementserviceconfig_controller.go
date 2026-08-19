@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
+	opmetrics "github.com/project-koku/koku-service-operator/internal/metrics"
 	"github.com/project-koku/koku-service-operator/internal/resources"
 )
 
@@ -65,6 +66,8 @@ type CostManagementServiceConfigReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=jobs;cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services;configmaps;secrets;serviceaccounts;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
+// Pods: read-only for syncManagedPodRestarts (CostManagementPodRestarting gauge).
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors;prometheusrules,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes/custom-host,verbs=create
@@ -121,6 +124,11 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 	r.clearPaused(cfg)
 
 	result, reconcileErr := r.reconcile(ctx, cfg)
+	if reconcileErr != nil {
+		opmetrics.ReconcileErrors.WithLabelValues(cfg.Namespace, cfg.Name).Inc()
+	}
+	_ = r.syncManagedPodRestarts(ctx, cfg)
+	r.syncConditionMetrics(cfg)
 
 	if patchErr := r.patchStatus(ctx, original, cfg); patchErr != nil {
 		logger.Error(patchErr, "failed to patch status")
@@ -472,10 +480,12 @@ func (r *CostManagementServiceConfigReconciler) runMigrationStep(
 		r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse, "MigrationFailed", msg)
 		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, "MigrationFailed", msg)
 		cfg.Status.Phase = costv1alpha1.PhaseDegraded
+		opmetrics.SetMigrationJobFailed(cfg.Namespace, cfg.Name, jobName, true)
 		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "MigrationFailed",
 			"Migration job %s exhausted retries — manual intervention required", jobName)
 		return Result{Stop: true}, nil
 	}
+	opmetrics.SetMigrationJobFailed(cfg.Namespace, cfg.Name, jobName, false)
 
 	progress("running")
 	return Result{RequeueAfter: requeueFast}, nil
@@ -735,6 +745,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		resources.IngressNetworkPolicy(cfg),
 		resources.RBACAPINetworkPolicy(cfg),
 		resources.KokuAPINetworkPolicy(cfg),
+		resources.MasuNetworkPolicy(cfg),
 	}
 	if costv1alpha1.ROSEnabled(cfg) {
 		netpols = append(netpols,
@@ -819,14 +830,16 @@ func (r *CostManagementServiceConfigReconciler) reconcileUI(ctx context.Context,
 // Stage 8 — Monitoring (PrometheusRules + App ServiceMonitor)
 // -----------------------------------------------------------------------------
 
-// reconcileMonitoring applies App ServiceMonitor and PrometheusRules when
-// spec.monitoring.enabled is true (the default). When disabled, best-effort
-// deletes those managed objects so Alerting/scrape targets do not linger.
-// CRDs absent → skip (IsNoMatchError).
+// reconcileMonitoring applies App/Gateway/Operator ServiceMonitors and
+// PrometheusRules when spec.monitoring.enabled is true (the default). When
+// disabled, best-effort deletes those managed objects so Alerting/scrape
+// targets do not linger. CRDs absent → skip one resource and continue.
 func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
 	logger := log.FromContext(ctx)
 	objs := []client.Object{
 		resources.AppServiceMonitor(cfg),
+		resources.GatewayServiceMonitor(cfg),
+		resources.OperatorServiceMonitor(cfg),
 		resources.PrometheusRules(cfg),
 	}
 
@@ -847,7 +860,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileMonitoring(ctx context.
 			if apimeta.IsNoMatchError(err) {
 				logger.Info("monitoring resource skipped (CRD absent)",
 					"kind", gvk.Kind, "name", obj.GetName())
-				return Result{}, nil
+				continue
 			}
 			return Result{}, fmt.Errorf("monitoring %s %s: %w", gvk.Kind, obj.GetName(), err)
 		}
@@ -1024,6 +1037,34 @@ func (r *CostManagementServiceConfigReconciler) setCondition(cfg *costv1alpha1.C
 		Message:            message,
 		ObservedGeneration: cfg.Generation,
 	})
+	opmetrics.SetCondition(cfg.Namespace, cfg.Name, condType, status)
+}
+
+// syncConditionMetrics mirrors all CMSC conditions into Prometheus gauges
+// (COST-8108). Safe to call after phases so applyPhaseError paths are included.
+func (r *CostManagementServiceConfigReconciler) syncConditionMetrics(cfg *costv1alpha1.CostManagementServiceConfig) {
+	for _, c := range cfg.Status.Conditions {
+		opmetrics.SetCondition(cfg.Namespace, cfg.Name, c.Type, c.Status)
+	}
+}
+
+// syncManagedPodRestarts publishes restart counts for instance-labeled pods so
+// CostManagementPodRestarting can evaluate under UWM without kube-state metrics.
+func (r *CostManagementServiceConfigReconciler) syncManagedPodRestarts(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) error {
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods, client.InNamespace(cfg.Namespace), client.MatchingLabels{
+		"app.kubernetes.io/instance":   cfg.Name,
+		"app.kubernetes.io/managed-by": "koku-service-operator",
+	}); err != nil {
+		return err
+	}
+	for i := range pods.Items {
+		p := &pods.Items[i]
+		for _, cs := range p.Status.ContainerStatuses {
+			opmetrics.ManagedPodRestarts.WithLabelValues(cfg.Namespace, cfg.Name, p.Name, cs.Name).Set(float64(cs.RestartCount))
+		}
+	}
+	return nil
 }
 
 // emitPhaseChanged emits PhaseChanged when the reconcile settles on a phase

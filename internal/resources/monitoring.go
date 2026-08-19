@@ -68,7 +68,8 @@ func KruizeServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstru
 }
 
 // OperatorServiceMonitor watches the controller-manager metrics endpoint.
-// Not applied in beta (scaffold HTTPS/port mismatch); retained for a later PR.
+// In-cluster metrics bind to :8443 over HTTP (SecureServing unset); the Service
+// port is still named "https". Scrape with scheme http on that port name.
 func OperatorServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
 	sm := &unstructured.Unstructured{}
 	sm.SetGroupVersionKind(serviceMonitorGVK)
@@ -81,31 +82,44 @@ func OperatorServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unst
 			"port":     "https",
 			"path":     "/metrics",
 			"interval": "30s",
-			"scheme":   "https",
-			"tlsConfig": map[string]any{
-				"insecureSkipVerify": true,
-			},
+			"scheme":   "http",
 		},
 	}, "spec", "endpoints")
 	_ = unstructured.SetNestedStringMap(sm.Object, map[string]string{
 		"control-plane": "controller-manager",
 	}, "spec", "selector", "matchLabels")
+	_ = unstructured.SetNestedSlice(sm.Object, []any{cfg.Namespace}, "spec", "namespaceSelector", "matchNames")
 
 	return sm
 }
 
-// PrometheusRules returns operator-centric alert rules plus scrape-up APIDown
-// once App ServiceMonitor targets are wired (PR2).
+// GatewayServiceMonitor scrapes Envoy admin Prometheus stats (G2 leftover).
+func GatewayServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
+	sm := serviceMonitor(cfg, cfg.Name+"-gateway-metrics", "admin", []string{"gateway"})
+	_ = unstructured.SetNestedSlice(sm.Object, []any{
+		map[string]any{
+			"port":     "admin",
+			"path":     "/stats/prometheus",
+			"interval": "30s",
+		},
+	}, "spec", "endpoints")
+	return sm
+}
+
+// PrometheusRules returns UWM-evaluable alert rules (COST-8108 option B gauges +
+// App/operator scrape series). Condition alerts use costmanagement_condition.
 func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
 	instance := cfg.Name
 	ns := cfg.Namespace
 	kokuAPIService := NameKokuAPI(cfg)
+	cond := func(typ, status string) string {
+		return `costmanagement_condition{namespace="` + ns + `",name="` + instance + `",type="` + typ + `",status="` + status + `"} == 1`
+	}
 
 	rules := []any{
-		// Migration Job failed
 		map[string]any{
 			"alert": "CostManagementMigrationFailed",
-			"expr":  `kube_job_status_failed{namespace="` + ns + `",job_name=~"` + instance + `-(koku|ros|rbac)-migrate"} > 0`,
+			"expr":  `costmanagement_migration_job_failed{namespace="` + ns + `",name="` + instance + `"} == 1`,
 			"for":   "1m",
 			"labels": map[string]any{
 				"severity": "critical",
@@ -113,75 +127,51 @@ func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 			},
 			"annotations": map[string]any{
 				"summary":     "Cost Management migration job failed",
-				"description": "Migration job {{ $labels.job_name }} has failed. Schema upgrades are blocked.",
+				"description": "Migration job {{ $labels.job }} has failed. Schema upgrades are blocked.",
 			},
 		},
-		// Schema not up to date long enough → stalled migration / upgrade
 		map[string]any{
 			"alert": "CostManagementMigrationStalled",
-			"expr": `kube_customresource_status_condition{` +
-				`customresource_kind="CostManagementServiceConfig",` +
-				`customresource_name="` + instance + `",` +
-				`namespace="` + ns + `",` +
-				`condition="SchemaUpToDate",status="false"} == 1`,
-			"for": "10m",
+			"expr":  cond("SchemaUpToDate", "False"),
+			"for":   "10m",
 			"labels": map[string]any{
 				"severity": "warning",
 				"instance": instance,
 			},
 			"annotations": map[string]any{
 				"summary":     "Cost Management schema migration stalled",
-				"description": "Database schema is not up to date for {{ $labels.customresource_name }} for more than 10 minutes.",
+				"description": "Database schema is not up to date for {{ $labels.name }} for more than 10 minutes.",
 			},
 		},
-		// Operator degraded (condition)
 		map[string]any{
 			"alert": "CostManagementDegraded",
-			"expr": `kube_customresource_status_condition{` +
-				`customresource_kind="CostManagementServiceConfig",` +
-				`customresource_name="` + instance + `",` +
-				`namespace="` + ns + `",` +
-				`condition="Degraded",status="true"} == 1`,
-			"for": "5m",
+			"expr":  cond("Degraded", "True"),
+			"for":   "5m",
 			"labels": map[string]any{
 				"severity": "critical",
 				"instance": instance,
 			},
 			"annotations": map[string]any{
 				"summary":     "Cost Management operator is degraded",
-				"description": "The CostManagementServiceConfig {{ $labels.customresource_name }} has been in Degraded state for 5 minutes.",
+				"description": "The CostManagementServiceConfig {{ $labels.name }} has been in Degraded state for 5 minutes.",
 			},
 		},
-		// Operator dependency validation failed (not BYOI exporter scrape)
 		map[string]any{
 			"alert": "CostManagementDependencyDown",
-			"expr": `(` +
-				`kube_customresource_status_condition{` +
-				`customresource_kind="CostManagementServiceConfig",` +
-				`customresource_name="` + instance + `",` +
-				`namespace="` + ns + `",` +
-				`condition="DatabaseReady",status="false"} == 1` +
-				`) or (` +
-				`kube_customresource_status_condition{` +
-				`customresource_kind="CostManagementServiceConfig",` +
-				`customresource_name="` + instance + `",` +
-				`namespace="` + ns + `",` +
-				`condition="CacheReady",status="false"} == 1` +
-				`)`,
-			"for": "5m",
+			"expr":  `(` + cond("DatabaseReady", "False") + `) or (` + cond("CacheReady", "False") + `)`,
+			"for":   "5m",
 			"labels": map[string]any{
 				"severity": "critical",
 				"instance": instance,
 			},
 			"annotations": map[string]any{
 				"summary":     "Cost Management dependency validation failed",
-				"description": "DatabaseReady or CacheReady is False on {{ $labels.customresource_name }} for more than 5 minutes (operator probe/validation).",
+				"description": "DatabaseReady or CacheReady is False on {{ $labels.name }} for more than 5 minutes.",
 			},
 		},
-		// Managed pod restart storm (operator-owned pod name prefix)
 		map[string]any{
 			"alert": "CostManagementPodRestarting",
-			"expr":  `increase(kube_pod_container_status_restarts_total{namespace="` + ns + `",pod=~"` + instance + `-.*"}[15m]) > 3`,
+			"expr":  `costmanagement_managed_pod_restarts{namespace="` + ns + `",name="` + instance + `"} > 3`,
 			"for":   "15m",
 			"labels": map[string]any{
 				"severity": "warning",
@@ -189,28 +179,22 @@ func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 			},
 			"annotations": map[string]any{
 				"summary":     "Cost Management managed pod restarting",
-				"description": "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} restarted more than 3 times in 15 minutes.",
+				"description": "Pod {{ $labels.pod }} container {{ $labels.container }} has restart count > 3 for 15 minutes.",
 			},
 		},
-		// Stack not available
 		map[string]any{
 			"alert": "CostManagementNotAvailable",
-			"expr": `kube_customresource_status_condition{` +
-				`customresource_kind="CostManagementServiceConfig",` +
-				`customresource_name="` + instance + `",` +
-				`namespace="` + ns + `",` +
-				`condition="Available",status="false"} == 1`,
-			"for": "30m",
+			"expr":  cond("Available", "False"),
+			"for":   "30m",
 			"labels": map[string]any{
 				"severity": "warning",
 				"instance": instance,
 			},
 			"annotations": map[string]any{
 				"summary":     "Cost Management stack is not available",
-				"description": "CostManagementServiceConfig {{ $labels.customresource_name }} has Available=False for 30 minutes.",
+				"description": "CostManagementServiceConfig {{ $labels.name }} has Available=False for 30 minutes.",
 			},
 		},
-		// Koku API /metrics scrape target down or missing (requires App ServiceMonitor; COST-8109)
 		map[string]any{
 			"alert": "CostManagementAPIDown",
 			"expr": `(up{namespace="` + ns + `",service="` + kokuAPIService + `"} == 0)` +
@@ -223,6 +207,64 @@ func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 			"annotations": map[string]any{
 				"summary":     "Cost Management API metrics endpoint unreachable",
 				"description": "Prometheus cannot scrape /metrics on Service {{ $labels.service }} in namespace {{ $labels.namespace }} (down or absent) for more than 5 minutes.",
+			},
+		},
+		map[string]any{
+			"alert": "CostManagementReconcileFailure",
+			"expr":  `increase(costmanagement_reconcile_errors_total{namespace="` + ns + `",name="` + instance + `"}[15m]) > 0`,
+			"for":   "15m",
+			"labels": map[string]any{
+				"severity": "warning",
+				"instance": instance,
+			},
+			"annotations": map[string]any{
+				"summary":     "Cost Management reconcile errors",
+				"description": "Operator reconcile errors for {{ $labels.name }} over the last 15 minutes.",
+			},
+		},
+		map[string]any{
+			"alert": "CostManagementCeleryBacklog",
+			"expr": `(` +
+				`download_backlog{namespace="` + ns + `"} > 1000) or (` +
+				`summary_backlog{namespace="` + ns + `"} > 1000) or (` +
+				`priority_backlog{namespace="` + ns + `"} > 1000) or (` +
+				`cost_model_backlog{namespace="` + ns + `"} > 1000) or (` +
+				`default_backlog{namespace="` + ns + `"} > 1000) or (` +
+				`ocp_backlog{namespace="` + ns + `"} > 1000)`,
+			"for": "10m",
+			"labels": map[string]any{
+				"severity": "warning",
+				"instance": instance,
+			},
+			"annotations": map[string]any{
+				"summary":     "Cost Management Celery backlog high",
+				"description": "A Celery/work queue backlog is above 1000 for more than 10 minutes in {{ $labels.namespace }}.",
+			},
+		},
+		map[string]any{
+			"alert": "CostManagementSecretRotated",
+			"expr":  `increase(costmanagement_secret_rotated_total{namespace="` + ns + `",name="` + instance + `"}[1h]) > 0`,
+			"for":   "0m",
+			"labels": map[string]any{
+				"severity": "info",
+				"instance": instance,
+			},
+			"annotations": map[string]any{
+				"summary":     "Cost Management secret rotated",
+				"description": "Managed Secret {{ $labels.secret }} was rotated (informational; align emit path with COST-7694).",
+			},
+		},
+		map[string]any{
+			"alert": "CostManagementDriftCorrected",
+			"expr":  `increase(costmanagement_drift_corrected_total{namespace="` + ns + `",name="` + instance + `"}[1h]) > 0`,
+			"for":   "0m",
+			"labels": map[string]any{
+				"severity": "info",
+				"instance": instance,
+			},
+			"annotations": map[string]any{
+				"summary":     "Cost Management drift corrected",
+				"description": "Operator re-applied desired state for {{ $labels.kind }} after detecting drift.",
 			},
 		},
 	}

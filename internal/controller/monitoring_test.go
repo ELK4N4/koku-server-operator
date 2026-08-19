@@ -117,8 +117,12 @@ func TestMonitoringAppliesServiceMonitorAndPrometheusRule(t *testing.T) {
 	if _, err := r.reconcileMonitoring(context.Background(), cfg); err != nil {
 		t.Fatalf("reconcileMonitoring: %v", err)
 	}
-	if len(patchKinds) != 2 || patchKinds[0] != "ServiceMonitor" || patchKinds[1] != "PrometheusRule" {
-		t.Errorf("expected ServiceMonitor then PrometheusRule patches, got %v", patchKinds)
+	if len(patchKinds) != 4 ||
+		patchKinds[0] != "ServiceMonitor" ||
+		patchKinds[1] != "ServiceMonitor" ||
+		patchKinds[2] != "ServiceMonitor" ||
+		patchKinds[3] != "PrometheusRule" {
+		t.Errorf("expected App+Gateway+Operator ServiceMonitors then PrometheusRule, got %v", patchKinds)
 	}
 }
 
@@ -165,8 +169,10 @@ func TestMonitoringDisabledDeletesManagedResources(t *testing.T) {
 		t.Error("disabled monitoring must not Patch/apply resources")
 	}
 	wantDelete := map[string]bool{
-		testCRName + "-app-metrics": false,
-		testCRName + "-alerts":      false,
+		testCRName + "-app-metrics":      false,
+		testCRName + "-gateway-metrics":  false,
+		testCRName + "-operator-metrics": false,
+		testCRName + "-alerts":           false,
 	}
 	for _, name := range deleted {
 		if _, ok := wantDelete[name]; ok {

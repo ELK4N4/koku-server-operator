@@ -241,3 +241,11 @@ func KokuAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networ
 		monitoringFrom(kokuMetricsPort),
 	})
 }
+
+// MasuNetworkPolicy allows Prometheus to scrape Masu /metrics (G2 / App SM).
+func MasuNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
+	const masuMetricsPort = int32(9000)
+	return netpol(cfg, cfg.Name+"-masu", "cost-processor", []networkingv1.NetworkPolicyIngressRule{
+		monitoringFrom(masuMetricsPort),
+	})
+}

@@ -64,6 +64,10 @@ func TestPrometheusRules_BetaOperatorCentricSet(t *testing.T) {
 		"CostManagementPodRestarting",
 		"CostManagementNotAvailable",
 		"CostManagementAPIDown",
+		"CostManagementReconcileFailure",
+		"CostManagementCeleryBacklog",
+		"CostManagementSecretRotated",
+		"CostManagementDriftCorrected",
 	}
 	for _, a := range want {
 		if !names[a] {
@@ -72,7 +76,6 @@ func TestPrometheusRules_BetaOperatorCentricSet(t *testing.T) {
 	}
 
 	absent := []string{
-		"CostManagementCeleryBacklog",
 		"CostManagementSchemaOutOfDate",
 		"CostManagementNotProgressing",
 	}
@@ -80,6 +83,35 @@ func TestPrometheusRules_BetaOperatorCentricSet(t *testing.T) {
 		if names[a] {
 			t.Errorf("unexpected alert %s (deferred or replaced)", a)
 		}
+	}
+}
+
+func TestPrometheusRules_ConditionAlertsUseOperatorGauges(t *testing.T) {
+	pr := PrometheusRules(testMonitoringCFG())
+	expr := prometheusRuleExpr(t, pr, "CostManagementDegraded")
+	if !strings.Contains(expr, `costmanagement_condition{`) || !strings.Contains(expr, `type="Degraded"`) {
+		t.Fatalf("Degraded should use costmanagement_condition gauges: %s", expr)
+	}
+	if strings.Contains(expr, "kube_customresource_status_condition") {
+		t.Fatalf("Degraded must not use kube_customresource_status_condition: %s", expr)
+	}
+}
+
+func TestOperatorServiceMonitor_HTTPScheme(t *testing.T) {
+	sm := OperatorServiceMonitor(testMonitoringCFG())
+	if sm.GetName() != "cost-management-operator-metrics" {
+		t.Errorf("name: got %q", sm.GetName())
+	}
+	endpoints, found, err := unstructured.NestedSlice(sm.Object, "spec", "endpoints")
+	if err != nil || !found || len(endpoints) != 1 {
+		t.Fatalf("endpoints: found=%v len=%d err=%v", found, len(endpoints), err)
+	}
+	ep := endpoints[0].(map[string]any)
+	if ep["scheme"] != "http" {
+		t.Errorf("scheme: got %v want http (SecureServing unset)", ep["scheme"])
+	}
+	if ep["port"] != "https" {
+		t.Errorf("port name: got %v want https (Service port name)", ep["port"])
 	}
 }
 

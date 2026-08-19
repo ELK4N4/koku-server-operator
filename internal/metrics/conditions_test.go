@@ -1,0 +1,37 @@
+package metrics
+
+import (
+	"testing"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+func TestSetCondition_MirrorsActiveStatus(t *testing.T) {
+	SetCondition("ns", "cm", "Degraded", metav1.ConditionTrue)
+	if got := testutil.ToFloat64(Condition.WithLabelValues("ns", "cm", "Degraded", "True")); got != 1 {
+		t.Fatalf("Degraded True = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(Condition.WithLabelValues("ns", "cm", "Degraded", "False")); got != 0 {
+		t.Fatalf("Degraded False = %v, want 0", got)
+	}
+
+	SetCondition("ns", "cm", "Degraded", metav1.ConditionFalse)
+	if got := testutil.ToFloat64(Condition.WithLabelValues("ns", "cm", "Degraded", "True")); got != 0 {
+		t.Fatalf("after flip True = %v, want 0", got)
+	}
+	if got := testutil.ToFloat64(Condition.WithLabelValues("ns", "cm", "Degraded", "False")); got != 1 {
+		t.Fatalf("after flip False = %v, want 1", got)
+	}
+}
+
+func TestSetMigrationJobFailed(t *testing.T) {
+	SetMigrationJobFailed("ns", "cm", "cm-koku-migrate", true)
+	if got := testutil.ToFloat64(MigrationJobFailed.WithLabelValues("ns", "cm", "cm-koku-migrate")); got != 1 {
+		t.Fatalf("failed gauge = %v, want 1", got)
+	}
+	ClearMigrationJobFailed("ns", "cm", "cm-koku-migrate")
+	if got := testutil.ToFloat64(MigrationJobFailed.WithLabelValues("ns", "cm", "cm-koku-migrate")); got != 0 {
+		t.Fatalf("cleared gauge = %v, want 0", got)
+	}
+}
