@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -115,6 +116,26 @@ func TestReconcileMigration_AllComplete_SchemaUpToDateTrue(t *testing.T) {
 	degraded := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
 	if degraded == nil || degraded.Status != metav1.ConditionFalse || degraded.Reason != "MigrationSucceeded" {
 		t.Fatalf("expected Degraded=False MigrationSucceeded, got %+v", degraded)
+	}
+
+	// Succeeded Jobs must not be re-created when image tags are unchanged.
+	uids := jobUIDs(c, testNamespace)
+	if len(uids) != 2 {
+		t.Fatalf("expected 2 Jobs after complete, got %d", len(uids))
+	}
+	result, err = r.reconcileMigration(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("idempotent pass: %v", err)
+	}
+	if !result.IsZero() {
+		t.Fatalf("expected zero Result on re-reconcile of succeeded Jobs, got %+v", result)
+	}
+	cond = findCondition(cfg.Status.Conditions, costv1alpha1.ConditionSchemaUpToDate)
+	if cond == nil || cond.Status != metav1.ConditionTrue || cond.Reason != "MigrationComplete" {
+		t.Fatalf("expected SchemaUpToDate to stay True, got %+v", cond)
+	}
+	if !maps.Equal(uids, jobUIDs(c, testNamespace)) {
+		t.Fatal("succeeded Jobs were recreated on re-reconcile")
 	}
 }
 
@@ -296,11 +317,40 @@ func TestReconcileMigration_AdminBootstrapEnabledWithSecret_CreatesJob(t *testin
 		markJobComplete(t, c, testNamespace, jobName)
 	}
 
+	bootstrapName := resources.NameRBACAdminBootstrap(cfg)
 	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
-	if !jobExists(c, testNamespace, resources.NameRBACAdminBootstrap(cfg)) {
+	if !jobExists(c, testNamespace, bootstrapName) {
 		t.Fatal("expected AdminBootstrap Job when enabled with secretRef")
+	}
+
+	markJobComplete(t, c, testNamespace, bootstrapName)
+	result, err := r.reconcileMigration(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("after bootstrap complete: %v", err)
+	}
+	if !result.IsZero() {
+		t.Fatalf("expected zero Result after 4-step complete, got %+v", result)
+	}
+	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionSchemaUpToDate)
+	if cond == nil || cond.Status != metav1.ConditionTrue || cond.Reason != "MigrationComplete" {
+		t.Fatalf("expected SchemaUpToDate=True MigrationComplete after bootstrap, got %+v", cond)
+	}
+	for _, name := range []string{
+		resources.NameKokuMigration(cfg),
+		resources.NameRBACMigration(cfg),
+		bootstrapName,
+	} {
+		if !jobExists(c, testNamespace, name) {
+			t.Errorf("expected Job %q after 4-step complete", name)
+		}
+	}
+	if jobExists(c, testNamespace, resources.NameROSMigration(cfg)) {
+		t.Fatal("expected no ROS Job when ROS is disabled")
+	}
+	if countJobs(c, testNamespace) != 3 {
+		t.Errorf("expected 3 Jobs (Koku + RBAC + admin-bootstrap), got %d", countJobs(c, testNamespace))
 	}
 }
 
@@ -392,16 +442,25 @@ func jobExists(c client.Client, ns, name string) bool {
 }
 
 func countJobs(c client.Client, ns string) int {
+	return len(jobUIDs(c, ns))
+}
+
+func jobUIDs(c client.Client, ns string) map[string]types.UID {
 	ctx := context.Background()
 	list := &batchv1.JobList{}
 	if err := c.List(ctx, list, client.InNamespace(ns)); err != nil {
-		return 0
+		return nil
 	}
-	return len(list.Items)
+	out := make(map[string]types.UID, len(list.Items))
+	for _, j := range list.Items {
+		out[j.Name] = j.UID
+	}
+	return out
 }
 
-// newMigrationTestReconciler returns a reconciler and CR configured with
-// bundled DB/Cache (so Validation passes) and a noopRecorder.
+// newMigrationTestReconciler returns a reconciler and CR with bundled DB/Cache
+// (so Job builders resolve in-cluster endpoints) and a noopRecorder.
+// Tests call reconcileMigration directly; Validation is not run.
 func newMigrationTestReconciler(t *testing.T) (*CostManagementServiceConfigReconciler, *costv1alpha1.CostManagementServiceConfig, client.Client) {
 	t.Helper()
 	scheme := ownershipScheme(t)
