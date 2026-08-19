@@ -216,6 +216,29 @@ func DatabaseNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *netwo
 // Koku API
 // -----------------------------------------------------------------------------
 
+// MasuNetworkPolicy restricts ingress to Masu (cost-processor) pods.
+// Masu is ClusterIP-only and is not fronted by the Envoy gateway or a public
+// Route (COST-8060). In normal runtime no other workload calls Masu over HTTP;
+// report processing is driven by Kafka and Celery. This policy blocks casual
+// same-namespace access to admin endpoints on port 9000; app-level auth is
+// tracked under COST-7841. Prometheus may scrape metrics on the same port.
+func MasuNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
+	const masuPort = int32(9000)
+	return netpol(cfg, cfg.Name+"-masu", "cost-processor", []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{
+				{NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"network.openshift.io/policy-group": "monitoring"},
+				}},
+				{NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"kubernetes.io/metadata.name": "openshift-monitoring"},
+				}},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{tcpPort(masuPort)},
+		},
+	})
+}
+
 // KokuAPINetworkPolicy allows the gateway and internal services to reach the
 // Koku API on its Service port (8000), and Prometheus to scrape the metrics
 // port (9000).

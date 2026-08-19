@@ -85,6 +85,30 @@ func TestRBACAPINetworkPolicy(t *testing.T) {
 	}
 }
 
+func TestMasuNetworkPolicy(t *testing.T) {
+	const masuPort = int32(9000)
+	cfg := testCfg()
+	np := MasuNetworkPolicy(cfg)
+	if np.Name != cfg.Name+"-masu" {
+		t.Errorf("Name = %q", np.Name)
+	}
+	assertIngressOnly(t, np)
+	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "cost-processor" {
+		t.Errorf("podSelector component = %q, want cost-processor", got)
+	}
+	if len(np.Spec.Ingress) != 1 {
+		t.Fatalf("expected single monitoring rule, got %d", len(np.Spec.Ingress))
+	}
+	if !ruleAllowsPort(np.Spec.Ingress, masuPort) {
+		t.Errorf("missing masu port %d", masuPort)
+	}
+	for _, from := range np.Spec.Ingress[0].From {
+		if from.PodSelector != nil {
+			t.Error("masu ingress must not allow arbitrary pod peers")
+		}
+	}
+}
+
 func TestKokuAPINetworkPolicy(t *testing.T) {
 	const (
 		kokuAPIPort     = int32(8000)
