@@ -76,7 +76,10 @@ func IngressDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.De
 	}
 	stagingBucket := spec.StagingBucket
 	if stagingBucket == "" {
-		stagingBucket = "insights-upload-perma"
+		stagingBucket = cfg.Spec.CostManagement.Storage.BucketName
+	}
+	if stagingBucket == "" {
+		stagingBucket = "koku-bucket"
 	}
 
 	env := []corev1.EnvVar{

@@ -1623,8 +1623,10 @@ spec:
                         type: object
                     type: object
                   stagingBucket:
-                    default: insights-upload-perma
-                    description: Staging bucket name for uploads.
+                    description: |-
+                      Staging bucket name for uploads.
+                      When empty, the operator uses spec.costManagement.storage.bucketName,
+                      then "koku-bucket".
                     type: string
                   validTypes:
                     default: hccm

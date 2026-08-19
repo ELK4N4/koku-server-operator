@@ -368,7 +368,8 @@ type IngressConfig struct {
 	// +kubebuilder:default:="hccm"
 	ValidTypes string `json:"validTypes,omitempty"`
 	// Staging bucket name for uploads.
-	// +kubebuilder:default:="insights-upload-perma"
+	// When empty, the operator uses spec.costManagement.storage.bucketName,
+	// then "koku-bucket".
 	StagingBucket string                      `json:"stagingBucket,omitempty"`
 	Resources     corev1.ResourceRequirements `json:"resources,omitempty"`
 }
