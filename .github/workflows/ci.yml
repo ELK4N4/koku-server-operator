@@ -249,6 +249,7 @@ jobs:
             type=raw,value={{sha}}
 
       - name: Build and push bundle image
+        id: bundle-push
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -263,7 +264,7 @@ jobs:
       - name: Build and push catalog image
         run: |
           make catalog-build \
-            BUNDLE_IMGS=quay.io/project-koku/koku-service-operator-bundle:${{ github.sha }} \
+            BUNDLE_IMGS=quay.io/project-koku/koku-service-operator-bundle@${{ steps.bundle-push.outputs.digest }} \
             CATALOG_IMG=quay.io/project-koku/koku-service-operator-catalog:${{ github.sha }}
           docker tag \
             quay.io/project-koku/koku-service-operator-catalog:${{ github.sha }} \
@@ -271,9 +272,7 @@ jobs:
           docker tag \
             quay.io/project-koku/koku-service-operator-catalog:${{ github.sha }} \
             quay.io/project-koku/koku-service-operator-catalog:main
-          docker push quay.io/project-koku/koku-service-operator-catalog:${{ github.sha }}
-          docker push quay.io/project-koku/koku-service-operator-catalog:latest
-          docker push quay.io/project-koku/koku-service-operator-catalog:main
+          docker push -a quay.io/project-koku/koku-service-operator-catalog
 
   e2e:
     name: E2E
