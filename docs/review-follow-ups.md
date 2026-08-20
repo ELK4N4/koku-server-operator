@@ -5,40 +5,15 @@ or deferred — not a blocker for the PR that surfaced it.
 
 ---
 
-## 1. `ResolveBootstrapAdmin` silently substitutes test-fixture IDs
+## 1. ~~`ResolveBootstrapAdmin` silently substitutes test-fixture IDs~~ — **CLOSED**
 
 **Source:** [inline comment on migration.go:359](https://github.com/project-koku/koku-service-operator/pull/22#discussion_r2940893206)
 
-**Problem:** `ResolveBootstrapAdmin` (migration.go:319) falls back to
-`OrgID = "org1234567"` / `AccountNumber = "7890123"` when
-`RealmUser.OrgID`/`AccountNumber` are empty. These are Koku's own
-well-known internal test fixtures — not safe defaults for production.
-
-Because `SYNC_ORG_ID`/`SYNC_ACCOUNT_NUMBER` feed directly into
-`Tenant.objects.get_or_create(org_id=...)` in `rbacAdminBootstrapScript()`,
-an operator deployed with an incomplete CR will silently provision a real
-tenant under test-fixture IDs in the customer's database instead of
-failing loudly on missing config.
-
-The `orgId` and `accountNumber` fields are optional in the CRD with no
-validation tying them to `orgAdmin: true`. `TestResolveBootstrapAdmin`
-only exercises the explicit-value path (`OrgID: "org9"`), and
-`TestAdminBootstrapJobGated` happens to pass `OrgID: "org1234567"`
-explicitly — which looks like it tests the fallback but doesn't.
-(`ResolveBootstrapAdmin` coverage: 75%, fallback branches uncovered.)
-
-**Suggested fix (pick one):**
-
-- **CRD validation:** require `orgId` + `accountNumber` when
-  `orgAdmin: true` via `+kubebuilder:validation:XValidation`.
-- **Go-level guard:** have `ResolveBootstrapAdmin` return `ok=false`
-  when `OrgID` or `AccountNumber` are empty, rather than substituting
-  values that coincide with this project's test fixtures.
-
-Either way, add test cases that exercise the fallback branches and
-confirm the chosen behavior (fail vs. default).
-
-**Pre-existing gap** — not introduced by PR #22.
+**Fixed:** `ResolveBootstrapAdmin` no longer exists. `AdminBootstrapJob`
+now reads org-id/account-number from a Secret via `EnvFromSecret` and
+returns `nil` when `secretRef.name` is empty. No fallback to
+`org1234567`/`7890123`. The code path is gated by
+`ba.Enabled && ba.SecretRef.Name != ""`.
 
 ---
 
@@ -148,17 +123,13 @@ Follow the same pattern used by the Envoy gateway and oauth2-proxy.
 
 ---
 
-## 8. Keycloak sync: enable/disable lifecycle test
+## 8. ~~Keycloak sync: enable/disable lifecycle test~~ — **CLOSED**
 
 **Source:** Code review finding.
 
-**Problem:** The Keycloak sync CronJob (now implemented in [PR #53](https://github.com/project-koku/koku-service-operator/pull/53)) needs a
-fake-client test covering the enable → apply → disable → delete lifecycle
-(same pattern as `TestKruizeCronJobDeletedWhenDisabled`). Without it,
-disabling the sync could leave orphaned CronJobs running.
-
-**Suggested fix:** Add a test following the Kruize CronJob disable pattern
-in `ros_cleanup_test.go`.
+**Fixed:** `TestKeycloakSyncDeletedWhenDisabled` exists at
+`internal/controller/keycloak_sync_disable_test.go:21`, following the
+same pattern as `TestKruizeCronJobDeletedWhenDisabled`.
 
 ---
 
