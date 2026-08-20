@@ -60,6 +60,23 @@ func TestS3BucketFallsBackToSpec(t *testing.T) {
 	}
 }
 
+func TestS3EndpointFromSpecIgnoresDiscovered(t *testing.T) {
+	useSSL := true
+	cfg := &costv1alpha1.CostManagementServiceConfig{}
+	cfg.Spec.ObjectStorage.Endpoint = "s3.apps.example.com"
+	cfg.Spec.ObjectStorage.Port = 443
+	cfg.Spec.ObjectStorage.UseSSL = &useSSL
+	cfg.Status.DiscoveredConfig = &costv1alpha1.DiscoveredConfig{
+		S3: &costv1alpha1.DiscoveredS3{Endpoint: "https://s3.openshift-storage.svc.cluster.local:443"},
+	}
+	if got := S3EndpointFromSpec(cfg); got != "https://s3.apps.example.com:443" {
+		t.Errorf("S3EndpointFromSpec = %q, want spec host", got)
+	}
+	if got := S3Endpoint(cfg); got != "https://s3.openshift-storage.svc.cluster.local:443" {
+		t.Errorf("S3Endpoint = %q, want discovered (secretName unset)", got)
+	}
+}
+
 func TestDNS1123Label(t *testing.T) {
 	tests := []struct {
 		in, want string
