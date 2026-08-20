@@ -910,11 +910,14 @@ func (r *CostManagementServiceConfigReconciler) applyStatefulSet(ctx context.Con
 
 	// Check if VolumeClaimTemplates differ (immutable field).
 	if !volumeClaimTemplatesEqual(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates) {
-		msg := "immutable VolumeClaimTemplates change detected; manual intervention required"
+		diff := volumeClaimTemplateDiff(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates)
+		msg := fmt.Sprintf("immutable VolumeClaimTemplates change (%s); revert spec.database.storage.size or spec.global.storageClass to match the live volume, or delete the StatefulSet and PVC to recreate", diff)
 		r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionFalse, "StorageConfigChanged", msg)
 		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "StorageConfigChanged", msg)
 		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, "StorageConfigChanged", msg)
+		r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "StorageConfigChanged", msg)
 		cfg.Status.Phase = costv1alpha1.PhaseDegraded
+		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "StorageConfigChanged", "%s", msg)
 		return ErrStorageConfigChanged
 	}
 
@@ -926,6 +929,41 @@ func (r *CostManagementServiceConfigReconciler) applyStatefulSet(ctx context.Con
 // ErrStorageConfigChanged signals that VolumeClaimTemplates differ and
 // reconciliation should stop to avoid overwriting the StorageConfigChanged condition.
 var ErrStorageConfigChanged = fmt.Errorf("storage config changed: VolumeClaimTemplates are immutable")
+
+// volumeClaimTemplateDiff summarizes live vs desired VolumeClaimTemplate
+// changes for status messages. Size and storageClass are the CR-driven fields.
+func volumeClaimTemplateDiff(live, desired []corev1.PersistentVolumeClaim) string {
+	if len(live) != len(desired) {
+		return fmt.Sprintf("count %d -> %d", len(live), len(desired))
+	}
+	var parts []string
+	for i := range live {
+		name := live[i].Name
+		if live[i].Name != desired[i].Name {
+			parts = append(parts, fmt.Sprintf("name %q -> %q", live[i].Name, desired[i].Name))
+			name = desired[i].Name
+		}
+		liveSize := live[i].Spec.Resources.Requests[corev1.ResourceStorage]
+		desiredSize := desired[i].Spec.Resources.Requests[corev1.ResourceStorage]
+		if !liveSize.Equal(desiredSize) {
+			parts = append(parts, fmt.Sprintf("%s size %s -> %s", name, liveSize.String(), desiredSize.String()))
+		}
+		if !ptrEqual(live[i].Spec.StorageClassName, desired[i].Spec.StorageClassName) {
+			parts = append(parts, fmt.Sprintf("%s storageClass %s -> %s", name, pvcStorageClass(live[i]), pvcStorageClass(desired[i])))
+		}
+	}
+	if len(parts) == 0 {
+		return "other immutable fields differ"
+	}
+	return strings.Join(parts, "; ")
+}
+
+func pvcStorageClass(pvc corev1.PersistentVolumeClaim) string {
+	if pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName == "" {
+		return "<unset>"
+	}
+	return *pvc.Spec.StorageClassName
+}
 
 // volumeClaimTemplatesEqual compares two VolumeClaimTemplate slices for equality
 // of the immutable fields. It normalizes defaulted values per Kubernetes API

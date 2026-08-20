@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -10,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -99,10 +101,11 @@ func TestApplyStatefulSet_UpdatePreservesVolumeClaimTemplates(t *testing.T) {
 	replicas := int32(1)
 	existing.Spec.Replicas = &replicas
 
+	rec := record.NewFakeRecorder(10)
 	r := &CostManagementServiceConfigReconciler{
 		Client:   fakeClientWithApplySupport(scheme, existing),
 		Scheme:   scheme,
-		Recorder: &noopRecorder{},
+		Recorder: rec,
 	}
 
 	desired := resources.DatabaseStatefulSet(cfg)
@@ -121,6 +124,13 @@ func TestApplyStatefulSet_UpdatePreservesVolumeClaimTemplates(t *testing.T) {
 	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "StorageConfigChanged" {
 		t.Fatalf("expected DatabaseReady=False StorageConfigChanged, got %+v", cond)
 	}
+	if !strings.Contains(cond.Message, "10Gi") || !strings.Contains(cond.Message, "99Gi") {
+		t.Errorf("condition message should include size diff 10Gi -> 99Gi, got %q", cond.Message)
+	}
+	if !strings.Contains(cond.Message, "revert") || !strings.Contains(cond.Message, "delete") {
+		t.Errorf("condition message should say revert the CR field vs delete STS/PVC, got %q", cond.Message)
+	}
+	assertEvent(t, rec, "StorageConfigChanged")
 	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
 	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != "StorageConfigChanged" {
 		t.Fatalf("expected Available=False StorageConfigChanged, got %+v", avail)
@@ -738,6 +748,66 @@ func TestVolumeAttributesClassNameEqual(t *testing.T) {
 	}
 }
 
+func TestVolumeClaimTemplateDiff(t *testing.T) {
+	stringPtr := func(s string) *string { return &s }
+	tests := []struct {
+		name string
+		live []corev1.PersistentVolumeClaim
+		want []corev1.PersistentVolumeClaim
+		sub  string
+	}{
+		{
+			name: "size change",
+			live: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{Name: "postgres-storage"},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")},
+					},
+				},
+			}},
+			want: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{Name: "postgres-storage"},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("20Gi")},
+					},
+				},
+			}},
+			sub: "postgres-storage size 10Gi -> 20Gi",
+		},
+		{
+			name: "storage class change",
+			live: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{Name: "postgres-storage"},
+				Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: stringPtr("gp2")},
+			}},
+			want: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{Name: "postgres-storage"},
+				Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: stringPtr("gp3")},
+			}},
+			sub: "postgres-storage storageClass gp2 -> gp3",
+		},
+		{
+			name: "count change",
+			live: []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "a"}}},
+			want: []corev1.PersistentVolumeClaim{
+				{ObjectMeta: metav1.ObjectMeta{Name: "a"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "b"}},
+			},
+			sub: "count 1 -> 2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := volumeClaimTemplateDiff(tt.live, tt.want)
+			if !strings.Contains(got, tt.sub) {
+				t.Errorf("volumeClaimTemplateDiff() = %q, want substring %q", got, tt.sub)
+			}
+		})
+	}
+}
+
 func TestPtrEqual(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -884,6 +954,13 @@ func TestReconcile_VCTMismatchPersistsStatus(t *testing.T) {
 	}
 	if updated.Status.Phase != costv1alpha1.PhaseDegraded {
 		t.Errorf("phase = %q, want %q", updated.Status.Phase, costv1alpha1.PhaseDegraded)
+	}
+	if !strings.Contains(cond.Message, "10Gi") || !strings.Contains(cond.Message, "20Gi") {
+		t.Errorf("persisted message should include size diff, got %q", cond.Message)
+	}
+	prog := findCondition(updated.Status.Conditions, costv1alpha1.ConditionProgressing)
+	if prog == nil || prog.Status != metav1.ConditionFalse || prog.Reason != "StorageConfigChanged" {
+		t.Fatalf("expected Progressing=False StorageConfigChanged, got %+v", prog)
 	}
 }
 
