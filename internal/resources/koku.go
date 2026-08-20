@@ -88,9 +88,23 @@ func MasuDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deplo
 	)
 }
 
-// MasuService exposes Masu internally.
+// MasuService exposes Masu internally with HTTP (8000) and metrics (9000) ports.
 func MasuService(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.Service {
-	return appService(cfg, NameMasu(cfg), "cost-processor", 9000)
+	return &corev1.Service{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Service"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      NameMasu(cfg),
+			Namespace: cfg.Namespace,
+			Labels:    Labels(cfg, "cost-processor"),
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: SelectorLabels(cfg, "cost-processor"),
+			Ports: []corev1.ServicePort{
+				{Name: "http", Port: 8000, Protocol: corev1.ProtocolTCP},
+				{Name: "metrics", Port: 9000, Protocol: corev1.ProtocolTCP},
+			},
+		},
+	}
 }
 
 // -----------------------------------------------------------------------------

@@ -42,12 +42,16 @@ func TestMasuService(t *testing.T) {
 	if svc.Spec.Selector[labelComponent] != "cost-processor" {
 		t.Errorf("selector component = %q", svc.Spec.Selector[labelComponent])
 	}
-	if len(svc.Spec.Ports) != 1 {
-		t.Fatalf("ports = %+v", svc.Spec.Ports)
+	if len(svc.Spec.Ports) != 2 {
+		t.Fatalf("ports = %+v, want 2 ports", svc.Spec.Ports)
 	}
-	port := svc.Spec.Ports[0]
-	if port.Name != "http" || port.Port != 9000 || port.Protocol != corev1.ProtocolTCP {
-		t.Errorf("port = %+v, want http/9000/TCP", port)
+	httpPort := svc.Spec.Ports[0]
+	if httpPort.Name != "http" || httpPort.Port != 8000 || httpPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("port[0] = %+v, want http/8000/TCP", httpPort)
+	}
+	metricsPort := svc.Spec.Ports[1]
+	if metricsPort.Name != "metrics" || metricsPort.Port != 9000 || metricsPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("port[1] = %+v, want metrics/9000/TCP", metricsPort)
 	}
 }
 

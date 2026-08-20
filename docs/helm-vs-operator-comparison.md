@@ -1,6 +1,6 @@
 # Helm Chart vs Operator Comparison Report
 
-Updated: 2026-08-20 (validated against `main` + feat/helm_gaps: ENHANCED_ORG_ADMIN, Celery beat resources)
+Updated: 2026-08-20 (validated against `main` + feat/helm_gaps: ENHANCED_ORG_ADMIN, Celery beat resources, Masu Service ports)
 
 Systematic comparison of `cost-onprem-chart/cost-onprem/` (Helm chart) against
 `koku-service-operator` (operator) — identifying deviations, missing pieces,
@@ -27,7 +27,7 @@ a `CostManagementServiceConfig` CR + Go reconciler.
 | CA Combine ConfigMap | yes | yes | match |
 | Service CA ConfigMap | yes | yes | match |
 | Koku API Deployment + Service | yes | yes | match |
-| Masu Deployment + Service | yes | yes | **port mismatch** |
+| Masu Deployment + Service | yes | yes | **fixed** (8000 http, 9000 metrics) |
 | Listener Deployment | yes | yes | match |
 | Koku ServiceAccount | yes | yes | match |
 | Koku Migration Job | yes | yes | match |
@@ -94,14 +94,13 @@ a `CostManagementServiceConfig` CR + Go reconciler.
 (empty). The chart sets requests `{cpu: 50m, mem: 200Mi}` and limits
 `{cpu: 100m, mem: 400Mi}`. **Now fixed** — operator matches chart defaults.
 
-### 2.2 Masu Service port mismatch
+### 2.2 Masu Service port mismatch **FIXED** (feat/helm_gaps)
 
 **Severity: MEDIUM — metrics scraping may break**
 
-Operator `MasuService()` exposes port 9000 (the metrics port). The Helm
-chart's Masu service exposes port 8000 (the Gunicorn HTTP port). This should
-be a two-port service (8000 for http, 9000 for metrics) or at minimum match
-the chart's port 8000.
+Operator `MasuService()` previously exposed only port 9000 (metrics). The Helm
+chart's Masu service exposes port 8000 (HTTP). **Now fixed** — operator exposes
+both ports: 8000 (http) and 9000 (metrics).
 
 ---
 
@@ -292,7 +291,7 @@ OpenShift Route annotation default should also be set for consistency.
 
 1. ~~**Set `ENHANCED_ORG_ADMIN=False`** in `KokuCommonEnv()` — critical for RBAC scoping~~ **DONE** (feat/helm_gaps)
 2. ~~**Add Celery beat resources** (`koku.go`): set `{cpu: 50m, mem: 200Mi}` / `{cpu: 100m, mem: 400Mi}`~~ **DONE** (feat/helm_gaps)
-3. **Fix Masu Service port** (`koku.go`): expose port 8000 (http) + 9000 (metrics)
+3. ~~**Fix Masu Service port** (`koku.go`): expose port 8000 (http) + 9000 (metrics)~~ **DONE** (feat/helm_gaps)
 4. **Add ROS Processor + Poller Services**: needed for Prometheus metrics scraping
 5. **Add ROS metrics-scraping NetworkPolicies**: ros-api-metrics, processor-metrics, poller-metrics (Gateway, Koku API, and Masu now covered)
 6. **Add RBAC + ROS components to ServiceMonitors**: rbac-api, ros-processor, ros-recommendation-poller, gateway still missing
