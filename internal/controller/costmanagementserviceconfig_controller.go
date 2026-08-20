@@ -36,21 +36,33 @@ const (
 	pauseAnnotation = "costmanagementserviceconfigs.service.costmanagement.openshift.io/pause"
 	// annotationTrue is the canonical truthy value for Kubernetes-style annotations
 	// (pause, default StorageClass, etc.). Shared to satisfy goconst.
-	annotationTrue = "true"
-	requeueFast    = 10 * time.Second
-	requeueSlow    = 30 * time.Second
-	requeueDrift   = 5 * time.Minute
+	annotationTrue   = "true"
+	requeueFast      = 10 * time.Second
+	requeueSlow      = 30 * time.Second
+	requeueDrift     = 5 * time.Minute
+	readinessTimeout = 5 * time.Minute
 
 	// Status condition reasons shared with tests so the strings cannot drift.
-	reasonWaitingForRBAC       = "WaitingForRBAC"
-	reasonRBACAvailable        = "RBACAvailable"
-	reasonWaitingForRBACWorker = "WaitingForRBACWorker"
-	reasonRBACWorkerAvailable  = "RBACWorkerAvailable"
-	reasonWaitingForAPI        = "WaitingForAPI"
-	reasonKokuAvailable        = "KokuAvailable"
-	msgWaitingForRBACAPI       = "waiting for RBAC API"
-	msgWaitingForRBACWorker    = "waiting for RBAC worker"
-	msgWaitingForKokuAPI       = "waiting for Koku API"
+	reasonWaitingForRBAC         = "WaitingForRBAC"
+	reasonRBACAvailable          = "RBACAvailable"
+	reasonWaitingForRBACWorker   = "WaitingForRBACWorker"
+	reasonRBACWorkerAvailable    = "RBACWorkerAvailable"
+	reasonWaitingForAPI          = "WaitingForAPI"
+	reasonWaitingForMasu         = "WaitingForMasu"
+	reasonWaitingForListener     = "WaitingForListener"
+	reasonWaitingForKruize       = "WaitingForKruize"
+	reasonWaitingForROSAPI       = "WaitingForROSAPI"
+	reasonWaitingForROSProcessor = "WaitingForROSProcessor"
+	reasonKokuAvailable          = "KokuAvailable"
+	reasonDeploymentNotReady     = "DeploymentNotReady"
+	msgWaitingForRBACAPI         = "waiting for RBAC API"
+	msgWaitingForRBACWorker      = "waiting for RBAC worker"
+	msgWaitingForKokuAPI         = "waiting for Koku API"
+	msgWaitingForMasu            = "waiting for Masu"
+	msgWaitingForListener        = "waiting for Listener"
+	msgWaitingForKruize          = "waiting for Kruize"
+	msgWaitingForROSAPI          = "waiting for ROS API"
+	msgWaitingForROSProcessor    = "waiting for ROS Processor"
 )
 
 type CostManagementServiceConfigReconciler struct {
@@ -574,15 +586,22 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 	}
 	r.setCondition(cfg, costv1alpha1.ConditionRBACReady, metav1.ConditionTrue, reasonRBACAvailable, "")
 
-	// Gate on the API being available.
-	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameKokuAPI(cfg))
-	if err != nil {
-		return Result{}, err
+	return r.waitForCoreServiceReadiness(ctx, cfg)
+}
+
+func (r *CostManagementServiceConfigReconciler) waitForCoreServiceReadiness(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	waits := []deploymentWait{
+		{resources.NameKokuAPI(cfg), reasonWaitingForAPI, msgWaitingForKokuAPI, "Koku API"},
+		{resources.NameMasu(cfg), reasonWaitingForMasu, msgWaitingForMasu, "Masu"},
+		{resources.NameListener(cfg), reasonWaitingForListener, msgWaitingForListener, "Listener"},
 	}
-	if !ready {
-		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, reasonWaitingForAPI, msgWaitingForKokuAPI)
-		return Result{RequeueAfter: requeueSlow}, nil
+	if costv1alpha1.ROSEnabled(cfg) {
+		waits = append(waits, deploymentWait{resources.NameKruize(cfg), reasonWaitingForKruize, msgWaitingForKruize, "Kruize"})
 	}
+	if result, err := r.waitForDeployments(ctx, cfg, waits); err != nil || !result.IsZero() {
+		return result, err
+	}
+
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionAvailable) {
 		r.Recorder.Event(cfg, corev1.EventTypeNormal, "CoreServicesAvailable", "Koku API is ready")
 	}
@@ -667,6 +686,10 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		}
 	}
 
+	return r.waitForWorkerReadiness(ctx, cfg)
+}
+
+func (r *CostManagementServiceConfigReconciler) waitForWorkerReadiness(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
 	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameIngress(cfg))
 	if err != nil {
 		return Result{}, err
@@ -678,6 +701,16 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 	}
 	r.setCondition(cfg, costv1alpha1.ConditionIngressReady, metav1.ConditionTrue,
 		"IngressReady", "Ingress upload Deployment is ready")
+
+	if costv1alpha1.ROSEnabled(cfg) {
+		rosWaits := []deploymentWait{
+			{resources.NameROSAPI(cfg), reasonWaitingForROSAPI, msgWaitingForROSAPI, "ROS API"},
+			{resources.NameROSProcessor(cfg), reasonWaitingForROSProcessor, msgWaitingForROSProcessor, "ROS Processor"},
+		}
+		if result, err := r.waitForDeployments(ctx, cfg, rosWaits); err != nil || !result.IsZero() {
+			return result, err
+		}
+	}
 	return Result{}, nil
 }
 
@@ -1206,6 +1239,63 @@ func (r *CostManagementServiceConfigReconciler) isDeploymentReady(ctx context.Co
 		return true, nil // 0 replicas = intentionally off
 	}
 	return d.Status.AvailableReplicas >= *d.Spec.Replicas, nil
+}
+
+type deploymentWait struct {
+	name, reason, message, component string
+}
+
+func (r *CostManagementServiceConfigReconciler) waitForDeployments(
+	ctx context.Context,
+	cfg *costv1alpha1.CostManagementServiceConfig,
+	waits []deploymentWait,
+) (Result, error) {
+	for _, w := range waits {
+		ready, err := r.isDeploymentReady(ctx, cfg.Namespace, w.name)
+		if err != nil {
+			return Result{}, err
+		}
+		if !ready {
+			return r.notReadyWait(cfg, w.reason, w.message, w.component), nil
+		}
+	}
+	return Result{}, nil
+}
+
+// notReadyWait records Available=False for a named Deployment. After
+// readinessTimeout it sets Degraded=True reason DeploymentNotReady and
+// switches to exponential backoff.
+func (r *CostManagementServiceConfigReconciler) notReadyWait(
+	cfg *costv1alpha1.CostManagementServiceConfig,
+	reason, message, component string,
+) Result {
+	existing := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if existing != nil && (existing.Status != metav1.ConditionFalse || existing.Reason != reason) {
+		apimeta.RemoveStatusCondition(&cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, reason, message)
+	existing = apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if existing != nil && time.Since(existing.LastTransitionTime.Time) >= readinessTimeout {
+		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, reasonDeploymentNotReady,
+			fmt.Sprintf("%s is not ready", component))
+		cfg.Status.Phase = costv1alpha1.PhaseDegraded
+		return Result{RequeueAfter: readinessBackoff(existing.LastTransitionTime.Time)}
+	}
+	return Result{RequeueAfter: requeueSlow}
+}
+
+func readinessBackoff(since time.Time) time.Duration {
+	waited := time.Since(since) - readinessTimeout
+	switch {
+	case waited < 30*time.Second:
+		return 30 * time.Second
+	case waited < time.Minute:
+		return time.Minute
+	case waited < 3*time.Minute:
+		return 2 * time.Minute
+	default:
+		return 5 * time.Minute
+	}
 }
 
 func (r *CostManagementServiceConfigReconciler) isStatefulSetReady(ctx context.Context, ns, name string) (bool, error) {
