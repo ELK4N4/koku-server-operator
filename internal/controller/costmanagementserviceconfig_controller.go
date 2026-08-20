@@ -605,6 +605,8 @@ func (r *CostManagementServiceConfigReconciler) waitForCoreServiceReadiness(ctx 
 	// A later phase (ROS API/Processor) may already own Available=False.
 	// Promoting to KokuAvailable here would stamp a new LastTransitionTime
 	// and reset the 5-minute DeploymentNotReady clock on every pass.
+	// CoreServicesAvailable is skipped on this path; reconcile() emits
+	// AllComponentsReady when the wait clears.
 	if holdingWorkerReadinessWait(cfg) {
 		return Result{}, nil
 	}
@@ -1254,7 +1256,8 @@ type deploymentWait struct {
 
 // holdingWorkerReadinessWait is true when a later phase already set
 // Available=False for a worker Deployment. Core must not overwrite that
-// wait clock.
+// wait clock. Keep this reason list in sync with waitForWorkerReadiness
+// (docs/review-follow-ups.md #12 if Ingress is routed through notReadyWait).
 func holdingWorkerReadinessWait(cfg *costv1alpha1.CostManagementServiceConfig) bool {
 	existing := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
 	if existing == nil || existing.Status != metav1.ConditionFalse {
@@ -1287,7 +1290,7 @@ func (r *CostManagementServiceConfigReconciler) waitForDeployments(
 
 // notReadyWait records Available=False for a named Deployment. After
 // readinessTimeout it sets Degraded=True reason DeploymentNotReady and
-// switches to exponential backoff.
+// switches to stepped backoff (30s → 1m → 2m → 5m).
 func (r *CostManagementServiceConfigReconciler) notReadyWait(
 	cfg *costv1alpha1.CostManagementServiceConfig,
 	reason, message, component string,
