@@ -116,3 +116,63 @@ func TestErrorSetsDegradedTrue(t *testing.T) {
 		t.Errorf("Phase = %q, want Degraded", cfg.Status.Phase)
 	}
 }
+
+func TestClearDeploymentNotReady_OnlyDeploymentNotReady(t *testing.T) {
+	tests := []struct {
+		name       string
+		reason     string
+		message    string
+		wantStatus metav1.ConditionStatus
+		wantReason string
+		wantPhase  costv1alpha1.Phase
+	}{
+		{
+			name:       "clears DeploymentNotReady",
+			reason:     reasonDeploymentNotReady,
+			message:    "Masu is not ready",
+			wantStatus: metav1.ConditionFalse,
+			wantReason: reasonDeploymentReady,
+			wantPhase:  costv1alpha1.PhaseProgressing,
+		},
+		{
+			name:       "leaves ReconcileError",
+			reason:     "ReconcileError",
+			message:    "apply failed",
+			wantStatus: metav1.ConditionTrue,
+			wantReason: "ReconcileError",
+			wantPhase:  costv1alpha1.PhaseDegraded,
+		},
+		{
+			name:       "leaves MigrationFailed",
+			reason:     "MigrationFailed",
+			message:    "koku exhausted retries",
+			wantStatus: metav1.ConditionTrue,
+			wantReason: "MigrationFailed",
+			wantPhase:  costv1alpha1.PhaseDegraded,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &costv1alpha1.CostManagementServiceConfig{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+			}
+			r := &CostManagementServiceConfigReconciler{Recorder: &noopRecorder{}}
+			r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, tt.reason, tt.message)
+			cfg.Status.Phase = costv1alpha1.PhaseDegraded
+
+			r.clearDeploymentNotReady(cfg)
+
+			cond := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
+			if cond == nil {
+				t.Fatal("Degraded condition missing")
+			}
+			if cond.Status != tt.wantStatus || cond.Reason != tt.wantReason {
+				t.Fatalf("Degraded = %s %s (%q), want %s %s",
+					cond.Status, cond.Reason, cond.Message, tt.wantStatus, tt.wantReason)
+			}
+			if cfg.Status.Phase != tt.wantPhase {
+				t.Fatalf("Phase = %q, want %q", cfg.Status.Phase, tt.wantPhase)
+			}
+		})
+	}
+}

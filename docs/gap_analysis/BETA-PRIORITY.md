@@ -127,7 +127,7 @@ UI already reads `spec.profile` when `spec.ui.*.resources` are unset ([#65](http
 | Ticket | Summary | Suggested beta rank |
 |--------|---------|---------------------|
 | [COST-7695](https://redhat.atlassian.net/browse/COST-7695) | OLM bundle | **P0** if beta is delivered via OLM; else P1 |
-| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | App services — 5m readiness → Degraded; Masu/Listener gates | Readiness timeout **P1** (G2/G3); profile sizing → [COST-8095](../jira/COST-8095.md) **P2** |
+| [COST-7686](https://redhat.atlassian.net/browse/COST-7686) | App services — 5m readiness → Degraded; Masu/Listener gates | G2/G3 **closed** in PR #105; profile sizing → [COST-8095](../jira/COST-8095.md) **P2** |
 | [COST-7693](https://redhat.atlassian.net/browse/COST-7693) | Upgrade/scaling/rollback | **P2** (basic image-tag migrate exists) |
 | [COST-7694](https://redhat.atlassian.net/browse/COST-7694) | Secret rotation annotation | **P2** (day-2); CA merge overlaps [7691 G3](COST-7691.md) **P1** |
 | [COST-7696](https://redhat.atlassian.net/browse/COST-7696)–[7699](https://redhat.atlassian.net/browse/COST-7699) | Bundle CI / E2E / OpenShift CI | **P2** for beta; **P1** if beta needs automated install proof |
@@ -160,7 +160,7 @@ Tickets marked ✅ in `tasks.md` that gap audits found incomplete: **7683, 7684,
 14. User/proxy CA merge into combined bundle ([7691 G3](COST-7691.md) / COST-7694 overlap).
 15. S3 connectivity probe (ListBuckets/HeadBucket) ([7684 G1](COST-7684.md)).
 16. NetworkPolicies for UI + Masu/Listener (start of [7691 G1](COST-7691.md); skip ROS and Kruize).
-17. App readiness timeout → Degraded for **core** Deployments only (COST-7686 note in tasks.md).
+17. App readiness timeout → Degraded for **core** Deployments only (COST-7686) — **closed** in PR #105 (Ingress/Envoy/UI still 30s; [follow-up #12](../review-follow-ups.md)).
 18. BYOI install/config quickstart: `ros.enabled: false`, ROS/Kruize unsupported in beta (COST-7700); remaining optionality → COST-8054.
 19. Admission webhook scaffold for rules CEL cannot express ([7678 G1](COST-7678.md)).
 20. **Conditional `ros-*` Validation keys** when `ros.enabled=false` ([COST-8054](../jira/COST-8054.md)) — required for honest Cost-only BYOI secrets (otherwise customers must still provision unused ROS DB keys).
@@ -239,7 +239,7 @@ S3/OBC items stay relevant either way — Ingress/uploads still need object stor
 | [COST-7683](COST-7683.md) | Not fully done | OBC RBAC (P0 if OBC in scope) |
 | [COST-7684](COST-7684.md) | Not fully done | S3 keys + Auth overwrite + OIDC (P0); always-required `ros-*` keys + Kruize keys R3 → [COST-8054](../jira/COST-8054.md) |
 | [COST-7685](COST-7685.md) | Done | Tests only (G1); ROS migrate skip already gated by `ros.enabled` |
-| [COST-7686](COST-7686.md) | Not fully done | Workloads + ROS opt-out **done**; 5m timeout → Degraded (**G2 P1**); Masu/Listener not readiness-gated (**G3**); profile → [COST-8095](../jira/COST-8095.md) **P2** |
+| [COST-7686](COST-7686.md) | Largely done | Workloads + ROS opt-out + G2 timeout + G3 gates **done**; profile → [COST-8095](../jira/COST-8095.md) **P2**; SM leftover → COST-7692 |
 | [COST-7687](COST-7687.md) | Not fully done | SaaS queue exclusion (P0); ROS/Kruize workloads gated when disabled; sizing → [COST-8054](../jira/COST-8054.md) |
 | [COST-7688](COST-7688.md) | Largely done | Auth condition collision (P0) |
 | [COST-7689](COST-7689.md) | Done | Readiness closed; sizing → [COST-8095](../jira/COST-8095.md) |
@@ -248,7 +248,7 @@ S3/OBC items stay relevant either way — Ingress/uploads still need object stor
 | [COST-7692](COST-7692.md) | Not done | Monitoring completeness (P2); Kruize SM is **not** ROS-gated on apply ([COST-7686](COST-7686.md) G1 leftover); ROS/Kruize SM → [COST-8054](../jira/COST-8054.md) |
 | [COST-8054](../jira/COST-8054.md) | In progress (partial) | Conditional Validation keys; independent Kruize; day-2; hardening gaps |
 
-**COST-7686** gap doc: [COST-7686.md](COST-7686.md). Remaining for that ticket: readiness timeout **P1** (G2) and Masu/Listener gates (G3). Profile sizing → [COST-8095](../jira/COST-8095.md) (T5).
+**COST-7686** gap doc: [COST-7686.md](COST-7686.md). G2/G3 closed in PR #105. Remaining for that ticket: profile sizing → [COST-8095](../jira/COST-8095.md) (T5); ServiceMonitor ROS gating → COST-7692 / COST-8054.
 
 ---
 

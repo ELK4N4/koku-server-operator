@@ -199,6 +199,30 @@ func markDeploymentReady(t *testing.T, c client.Client, ns, name string) {
 	}
 }
 
+// markStatefulSetReady sets status so isStatefulSetReady returns true: the
+// observed generation matches, replicas are ready, and current==update revision.
+// Requires a client built with WithStatusSubresource(&appsv1.StatefulSet{}).
+func markStatefulSetReady(t *testing.T, c client.Client, ns, name string) {
+	t.Helper()
+	sts := &appsv1.StatefulSet{}
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: name}, sts); err != nil {
+		t.Fatalf("get statefulset %s: %v", name, err)
+	}
+	replicas := int32(1)
+	if sts.Spec.Replicas != nil {
+		replicas = *sts.Spec.Replicas
+	}
+	sts.Status.ObservedGeneration = sts.Generation
+	sts.Status.ReadyReplicas = replicas
+	sts.Status.Replicas = replicas
+	sts.Status.UpdatedReplicas = replicas
+	sts.Status.CurrentRevision = "rev-current"
+	sts.Status.UpdateRevision = "rev-current"
+	if err := c.Status().Update(context.Background(), sts); err != nil {
+		t.Fatalf("mark statefulset %s ready: %v", name, err)
+	}
+}
+
 func TestReconcileSharedConfig_CreatesStorageCredentialsPlaceholder(t *testing.T) {
 	const ns = "test"
 	cfg := &costv1alpha1.CostManagementServiceConfig{

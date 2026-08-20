@@ -247,8 +247,16 @@ type ObjectStorageConfig struct {
 	CACertSecretName string `json:"caCertSecretName,omitempty"`
 	// Name of an existing Secret with keys: access-key, secret-key.
 	// When empty the operator creates or detects the secret via ODF/NooBaa.
-	SecretName string    `json:"secretName,omitempty"`
-	S3         S3Options `json:"s3,omitempty"`
+	SecretName string `json:"secretName,omitempty"`
+	// Namespace of the noobaa-admin Secret used by NooBaa auto-detection.
+	// Ignored when secretName is set. Allowed values are openshift-storage
+	// (ODF) and noobaa (standalone noobaa-operator). Other namespaces must
+	// use secretName instead — the operator must not fetch noobaa-admin
+	// from an arbitrary namespace chosen in the CR.
+	// +kubebuilder:default:="openshift-storage"
+	// +kubebuilder:validation:Enum=openshift-storage;noobaa
+	NoobaaNamespace string    `json:"noobaaNamespace,omitempty"`
+	S3              S3Options `json:"s3,omitempty"`
 }
 
 type S3Options struct {
@@ -371,6 +379,7 @@ type IngressConfig struct {
 	// When empty, the operator uses the same bucket as Koku REQUESTED_BUCKET
 	// (status.discoveredConfig.s3.bucket, else spec.costManagement.storage.bucketName),
 	// then "koku-bucket".
+	// The bucket must already exist; the operator will not create it.
 	StagingBucket string                      `json:"stagingBucket,omitempty"`
 	Resources     corev1.ResourceRequirements `json:"resources,omitempty"`
 }
@@ -484,8 +493,12 @@ type CostManagementConfig struct {
 }
 
 type CostManagementStorageSpec struct {
+	// Bucket name for Cost Management object storage (Koku REQUESTED_BUCKET).
+	// The bucket must already exist; the operator will not create it.
 	// +kubebuilder:default:="koku-bucket"
 	BucketName string `json:"bucketName,omitempty"`
+	// ROS object-storage bucket. Required when ros.enabled is true.
+	// The bucket must already exist; the operator will not create it.
 	// +kubebuilder:default:="ros-data"
 	ROSBucketName string `json:"rosBucketName,omitempty"`
 }
