@@ -418,9 +418,9 @@ func TestVolumeClaimTemplatesEqual(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "nil vs empty labels",
-			a:    []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test"}}},
-			b:    []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test", Labels: map[string]string{}}}},
+			name:     "nil vs empty labels",
+			a:        []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test"}}},
+			b:        []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test", Labels: map[string]string{}}}},
 			expected: true,
 		},
 		{
@@ -434,9 +434,9 @@ func TestVolumeClaimTemplatesEqual(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "nil vs empty annotations",
-			a:    []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test"}}},
-			b:    []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test", Annotations: map[string]string{}}}},
+			name:     "nil vs empty annotations",
+			a:        []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test"}}},
+			b:        []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test", Annotations: map[string]string{}}}},
 			expected: true,
 		},
 		{
