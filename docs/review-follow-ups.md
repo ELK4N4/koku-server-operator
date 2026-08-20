@@ -327,3 +327,25 @@ API, Ingress, Envoy, Valkey), not just COST-7686.
 **Source:** [PR #105 CodeRabbit](https://github.com/project-koku/koku-service-operator/pull/105); João's [request-changes review](https://github.com/project-koku/koku-service-operator/pull/105#issuecomment-5354975468).
 
 **Closed:** `TestReconcileWorkers_ROSProcessorNotReady_BlocksProgress` marks Ingress + ROS API ready, leaves Processor down, and asserts `Available=False` `WaitingForROSProcessor`.
+
+---
+
+## 15. RBAC API wait has no 5-minute `DeploymentNotReady` timeout
+
+**Source:** João's [PR #105 review](https://github.com/project-koku/koku-service-operator/pull/105#issuecomment-5354975468).
+
+**Problem:** `reconcileCoreServices` still gates the RBAC API with a constant
+`requeueSlow` (30s). It sets `Available=False` `WaitingForRBAC` but never
+calls `notReadyWait`, so a stuck RBAC API never becomes
+`Degraded=True` `DeploymentNotReady` and never backs off.
+
+**Impact:** Same shape as Ingress/Envoy in #12: the CR stays
+`Progressing` and requeues every 30s forever. COST-7689 closed the
+`RBACReady` gate; it did not add the 5-minute named-component Degraded
+clock that COST-7686 added for Koku/Masu/Listener/ROS.
+
+**Suggested fix:** Route the RBAC API wait through `notReadyWait` (same
+reasons `WaitingForRBAC` / component `"RBAC API"`). Leave the RBAC
+worker as condition-only (it does not block `Available` today).
+
+**Out of scope for PR #105** — COST-7689 leftover, not a COST-7686 AC.
