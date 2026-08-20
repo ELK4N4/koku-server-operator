@@ -96,6 +96,7 @@ func TestReconcileEdge_EnvoyReady_WithDomain_NoOAuth(t *testing.T) {
 		t.Fatalf("first pass: %v", err)
 	}
 	markDeploymentReady(t, c, testNamespace, resources.NameEnvoy(cfg))
+	markRouteAdmitted(t, c, testNamespace, resources.NameAPIRoute(cfg))
 
 	result, err := r.reconcileEdge(context.Background(), cfg)
 	if err != nil {
@@ -106,7 +107,7 @@ func TestReconcileEdge_EnvoyReady_WithDomain_NoOAuth(t *testing.T) {
 	}
 
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionGatewayReady) {
-		t.Fatal("expected GatewayReady=True once Envoy is ready and route exists")
+		t.Fatal("expected GatewayReady=True once Envoy is ready and route is admitted")
 	}
 	gwCond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionGatewayReady)
 	if gwCond == nil || gwCond.Reason != "GatewayReady" {
@@ -156,6 +157,7 @@ func TestReconcileEdge_DoesNotOverwriteOIDCUnreachable(t *testing.T) {
 		t.Fatalf("first pass: %v", err)
 	}
 	markDeploymentReady(t, c, testNamespace, resources.NameEnvoy(cfg))
+	markRouteAdmitted(t, c, testNamespace, resources.NameAPIRoute(cfg))
 	if _, err := r.reconcileEdge(context.Background(), cfg); err != nil {
 		t.Fatalf("second pass: %v", err)
 	}
@@ -209,8 +211,9 @@ func TestReconcileUI_ValidOAuthSecret(t *testing.T) {
 	cl.SetGroupVersionKind(schema.GroupVersionKind{Group: "console.openshift.io", Version: "v1", Kind: "ConsoleLink"})
 	mustExist(t, r.Client, "", resources.NameConsoleLink(cfg), cl)
 
-	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionUIReady) {
-		t.Fatal("expected UIReady=True")
+	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionUIReady)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "RouteNotAdmitted" {
+		t.Fatalf("expected UIReady=False RouteNotAdmitted until the UI Route is admitted, got %+v", cond)
 	}
 }
 
@@ -247,5 +250,177 @@ func TestReconcileUI_InvalidOAuthSecret(t *testing.T) {
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionUIReady)
 	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "OAuthClientSecretInvalid" {
 		t.Fatalf("expected UIReady=False OAuthClientSecretInvalid, got %+v", cond)
+	}
+}
+
+func TestReconcileEdge_RouteNotAdmitted_Requeues(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	cfg.Status.DiscoveredConfig = &costv1alpha1.DiscoveredConfig{ClusterDomain: "apps.example.com"}
+	c := fakeClientPreservingStatus(scheme)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileEdge(context.Background(), cfg); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	markDeploymentReady(t, c, testNamespace, resources.NameEnvoy(cfg))
+
+	result, err := r.reconcileEdge(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected RequeueAfter while the API Route is not admitted")
+	}
+
+	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionGatewayReady)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "RouteNotAdmitted" {
+		t.Fatalf("expected GatewayReady=False RouteNotAdmitted, got %+v", cond)
+	}
+
+	route := &unstructured.Unstructured{}
+	route.SetGroupVersionKind(routeGVK())
+	mustExist(t, r.Client, testNamespace, resources.NameAPIRoute(cfg), route)
+	ingress, found, nerr := unstructured.NestedSlice(route.Object, "status", "ingress")
+	if nerr != nil {
+		t.Fatalf("NestedSlice status.ingress: %v", nerr)
+	}
+	if found && len(ingress) > 0 {
+		t.Fatalf("expected empty status.ingress before admission, got %#v", ingress)
+	}
+
+	// UI and NPs run only after the gateway Route is admitted.
+	mustNotExist(t, r.Client, testNamespace, resources.NameUICookieSecret(cfg), &corev1.Secret{})
+}
+
+func TestReconcileEdge_RouteAdmitted_GatewayReady(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	cfg.Status.DiscoveredConfig = &costv1alpha1.DiscoveredConfig{ClusterDomain: "apps.example.com"}
+	c := fakeClientPreservingStatus(scheme)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileEdge(context.Background(), cfg); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	markDeploymentReady(t, c, testNamespace, resources.NameEnvoy(cfg))
+	markRouteAdmitted(t, c, testNamespace, resources.NameAPIRoute(cfg))
+
+	if _, err := r.reconcileEdge(context.Background(), cfg); err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+
+	live := &unstructured.Unstructured{}
+	live.SetGroupVersionKind(routeGVK())
+	mustExist(t, r.Client, testNamespace, resources.NameAPIRoute(cfg), live)
+	if !routeAdmitted(live) {
+		t.Fatal("seeded API Route should be admitted")
+	}
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionGatewayReady) {
+		t.Fatalf("expected GatewayReady=True after admission, got %+v",
+			findCondition(cfg.Status.Conditions, costv1alpha1.ConditionGatewayReady))
+	}
+}
+
+func TestReconcileEdge_UIRouteNotAdmitted(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	cfg.Status.DiscoveredConfig = &costv1alpha1.DiscoveredConfig{ClusterDomain: "apps.example.com"}
+
+	oauth := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resources.NameUIOAuthClientSecret(cfg),
+			Namespace: testNamespace,
+		},
+		Data: map[string][]byte{
+			"client-id":     []byte("cost-ui"),
+			"client-secret": []byte("s3cret"),
+		},
+	}
+	c := fakeClientPreservingStatus(scheme, oauth)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileEdge(context.Background(), cfg); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	markDeploymentReady(t, c, testNamespace, resources.NameEnvoy(cfg))
+	markRouteAdmitted(t, c, testNamespace, resources.NameAPIRoute(cfg))
+
+	result, err := r.reconcileEdge(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected RequeueAfter while the UI Route is not admitted")
+	}
+
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionGatewayReady) {
+		t.Fatalf("expected GatewayReady=True, got %+v",
+			findCondition(cfg.Status.Conditions, costv1alpha1.ConditionGatewayReady))
+	}
+	uiCond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionUIReady)
+	if uiCond == nil || uiCond.Status != metav1.ConditionFalse || uiCond.Reason != "RouteNotAdmitted" {
+		t.Fatalf("expected UIReady=False RouteNotAdmitted, got %+v", uiCond)
+	}
+
+	uiRoute := &unstructured.Unstructured{}
+	uiRoute.SetGroupVersionKind(routeGVK())
+	mustExist(t, r.Client, testNamespace, cfg.Name+"-ui", uiRoute)
+	mustExist(t, r.Client, testNamespace, resources.NameUI(cfg), &appsv1.Deployment{})
+}
+
+func TestReconcileUI_AdmittedRoute_SetsUIReady(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	cfg.Status.DiscoveredConfig = &costv1alpha1.DiscoveredConfig{ClusterDomain: "apps.example.com"}
+
+	oauth := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resources.NameUIOAuthClientSecret(cfg),
+			Namespace: testNamespace,
+		},
+		Data: map[string][]byte{
+			"client-id":     []byte("cost-ui"),
+			"client-secret": []byte("s3cret"),
+		},
+	}
+	uiRoute := resources.UIRoute(cfg)
+	if uiRoute == nil {
+		t.Fatal("expected UI Route")
+	}
+	if err := unstructured.SetNestedSlice(uiRoute.Object, []any{
+		map[string]any{
+			"host": "ui.apps.example.com",
+			"conditions": []any{
+				map[string]any{"type": "Admitted", "status": "True"},
+			},
+		},
+	}, "status", "ingress"); err != nil {
+		t.Fatalf("seed UI Route status: %v", err)
+	}
+
+	r := &CostManagementServiceConfigReconciler{
+		Client:   fakeClientPreservingStatus(scheme, oauth, uiRoute),
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+	if err := r.reconcileUI(context.Background(), cfg); err != nil {
+		t.Fatalf("reconcileUI: %v", err)
+	}
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionUIReady) {
+		t.Fatalf("expected UIReady=True after UI Route admission, got %+v",
+			findCondition(cfg.Status.Conditions, costv1alpha1.ConditionUIReady))
 	}
 }

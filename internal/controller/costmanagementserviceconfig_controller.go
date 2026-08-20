@@ -14,7 +14,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -738,6 +740,16 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		return Result{RequeueAfter: requeueSlow}, nil
 	}
 
+	live, err := r.getRoute(ctx, cfg.Namespace, route.GetName())
+	if err != nil {
+		return Result{}, fmt.Errorf("get gateway route %s: %w", route.GetName(), err)
+	}
+	if !routeAdmitted(live) {
+		r.setCondition(cfg, costv1alpha1.ConditionGatewayReady, metav1.ConditionFalse,
+			"RouteNotAdmitted", "waiting for API Route admission")
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+
 	r.setCondition(cfg, costv1alpha1.ConditionGatewayReady, metav1.ConditionTrue,
 		"GatewayReady", "Envoy JWT gateway and API Route are ready")
 
@@ -809,9 +821,6 @@ func (r *CostManagementServiceConfigReconciler) reconcileUI(ctx context.Context,
 		return nil
 	}
 
-	r.setCondition(cfg, costv1alpha1.ConditionUIReady, metav1.ConditionTrue,
-		"OAuthClientSecretReady", "UI OAuth client Secret is present")
-
 	for _, obj := range []client.Object{
 		resources.UIDeployment(cfg),
 		resources.UIService(cfg),
@@ -825,7 +834,22 @@ func (r *CostManagementServiceConfigReconciler) reconcileUI(ctx context.Context,
 		if err := r.apply(ctx, cfg, uiRoute); err != nil {
 			return fmt.Errorf("ui route: %w", err)
 		}
+		live, err := r.getRoute(ctx, cfg.Namespace, uiRoute.GetName())
+		if err != nil {
+			return fmt.Errorf("get ui route %s: %w", uiRoute.GetName(), err)
+		}
+		if !routeAdmitted(live) {
+			r.setCondition(cfg, costv1alpha1.ConditionUIReady, metav1.ConditionFalse,
+				"RouteNotAdmitted", "waiting for UI Route admission")
+			if err := r.applyClusterScoped(ctx, resources.ConsoleLink(cfg)); err != nil {
+				return fmt.Errorf("consolelink: %w", err)
+			}
+			return nil
+		}
 	}
+
+	r.setCondition(cfg, costv1alpha1.ConditionUIReady, metav1.ConditionTrue,
+		"OAuthClientSecretReady", "UI OAuth client Secret is present")
 
 	if err := r.applyClusterScoped(ctx, resources.ConsoleLink(cfg)); err != nil {
 		return fmt.Errorf("consolelink: %w", err)
@@ -882,6 +906,19 @@ func (r *CostManagementServiceConfigReconciler) apply(ctx context.Context, cfg *
 	obj.SetNamespace(cfg.Namespace)
 	setOwnerRef(cfg, obj)
 	return r.Patch(ctx, obj, client.Apply, client.ForceOwnership, client.FieldOwner(fieldOwner))
+}
+
+func routeGVK() schema.GroupVersionKind {
+	return schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: "Route"}
+}
+
+func (r *CostManagementServiceConfigReconciler) getRoute(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error) {
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(routeGVK())
+	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, u); err != nil {
+		return nil, err
+	}
+	return u, nil
 }
 
 // ensureServiceAccount applies sa when spec.Create is true (the default).
