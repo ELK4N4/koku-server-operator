@@ -17,14 +17,15 @@ import (
 )
 
 const (
-	defaultOBCName         = "ros-data-ceph"
-	defaultS3Region        = "us-east-1"
-	objectBucketAPIGroup   = "objectbucket.io"
-	objectBucketAPIVersion = "v1alpha1"
-	noobaaAdminNamespace   = "openshift-storage"
-	noobaaAdminSecretName  = "noobaa-admin"
-	noobaaDefaultEndpoint  = "s3.openshift-storage.svc.cluster.local"
-	s3SourceAnnotation     = "koku.costmanagement.io/s3-source"
+	defaultOBCName            = "ros-data-ceph"
+	defaultS3Region           = "us-east-1"
+	objectBucketAPIGroup      = "objectbucket.io"
+	objectBucketAPIVersion    = "v1alpha1"
+	noobaaAdminNamespace      = "openshift-storage"
+	noobaaStandaloneNamespace = "noobaa"
+	noobaaAdminSecretName     = "noobaa-admin"
+	noobaaDefaultEndpoint     = "s3.openshift-storage.svc.cluster.local"
+	s3SourceAnnotation        = "koku.costmanagement.io/s3-source"
 )
 
 func objectBucketClaimGVK() schema.GroupVersionKind {
@@ -163,6 +164,10 @@ func noobaaNamespace(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	return noobaaAdminNamespace
 }
 
+func noobaaNamespaceAllowed(ns string) bool {
+	return ns == noobaaAdminNamespace || ns == noobaaStandaloneNamespace
+}
+
 // noobaaEndpoint is the discovered S3 URL for path 3.
 // Default: https://s3.<noobaa-namespace>.svc.cluster.local:443.
 // A non-empty spec.objectStorage.endpoint that is not the CRD default host
@@ -180,6 +185,9 @@ func noobaaEndpoint(cfg *costv1alpha1.CostManagementServiceConfig) string {
 func (r *CostManagementServiceConfigReconciler) discoverNooBaa(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (*costv1alpha1.DiscoveredS3, error) {
 	src := &corev1.Secret{}
 	ns := noobaaNamespace(cfg)
+	if !noobaaNamespaceAllowed(ns) {
+		return nil, fmt.Errorf("spec.objectStorage.noobaaNamespace %q is not allowed (want %s or %s); for other namespaces set spec.objectStorage.secretName", ns, noobaaAdminNamespace, noobaaStandaloneNamespace)
+	}
 	// Use APIReader: noobaa-admin lives outside the OwnNamespace informer
 	// cache (Cache.DefaultNamespaces), typically in openshift-storage.
 	reader := r.APIReader

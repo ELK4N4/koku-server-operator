@@ -449,6 +449,56 @@ func TestResolveS3_NooBaaUnsetNamespaceMissesOtherNS(t *testing.T) {
 	}
 }
 
+func TestNoobaaNamespaceAllowed(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		ns   string
+		want bool
+	}{
+		{ns: "openshift-storage", want: true},
+		{ns: "noobaa", want: true},
+		{ns: "kube-system", want: false},
+		{ns: "openshift-monitoring", want: false},
+		{ns: testNamespace, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.ns, func(t *testing.T) {
+			t.Parallel()
+			if got := noobaaNamespaceAllowed(tt.ns); got != tt.want {
+				t.Errorf("noobaaNamespaceAllowed(%q) = %v, want %v", tt.ns, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveS3_NooBaaDisallowedNamespaceDoesNotCopySecret(t *testing.T) {
+	const foreignNS = "kube-system"
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(noobaaAdminSecretIn(foreignNS, "ak-stolen", "sk-stolen")).
+		Build()
+
+	r := &CostManagementServiceConfigReconciler{Client: c, Recorder: record.NewFakeRecorder(10)}
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			ObjectStorage: costv1alpha1.ObjectStorageConfig{
+				NoobaaNamespace: foreignNS,
+			},
+		},
+	}
+
+	got, err := r.resolveS3(context.Background(), cfg)
+	if err == nil {
+		t.Fatalf("expected disallowed noobaaNamespace to fail, got %+v", got)
+	}
+	wantSecret := testCRName + "-storage-credentials"
+	sec := &corev1.Secret{}
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: testNamespace, Name: wantSecret}, sec); err == nil {
+		t.Fatalf("must not copy noobaa-admin from %s into %s/%s", foreignNS, testNamespace, wantSecret)
+	}
+}
+
 func TestResolveS3_NooBaaCustomEndpoint(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(testScheme(t)).
