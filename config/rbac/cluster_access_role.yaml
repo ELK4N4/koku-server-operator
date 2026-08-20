@@ -27,8 +27,10 @@ rules:
 - apiGroups: [rbac.authorization.k8s.io]
   resources: [clusterroles, clusterrolebindings]
   verbs: [create, delete, get, patch, update]
-# NooBaa discovery: read only the named admin Secret (any namespace with that
-# name — typically openshift-storage). Not a blanket secrets grant.
+# NooBaa discovery: read only the named admin Secret in an allowlisted
+# namespace (openshift-storage or noobaa). Not a blanket secrets grant.
+# The CR may select between those namespaces; discoverNooBaa rejects others
+# before Get. Other install namespaces use spec.objectStorage.secretName.
 - apiGroups: [""]
   resources: [secrets]
   resourceNames: [noobaa-admin]

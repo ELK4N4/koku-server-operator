@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -23,6 +24,8 @@ import (
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 	"github.com/project-koku/koku-service-operator/internal/resources"
+
+	stderrors "errors"
 )
 
 const (
@@ -33,27 +36,41 @@ const (
 	pauseAnnotation = "costmanagementserviceconfigs.service.costmanagement.openshift.io/pause"
 	// annotationTrue is the canonical truthy value for Kubernetes-style annotations
 	// (pause, default StorageClass, etc.). Shared to satisfy goconst.
-	annotationTrue = "true"
-	requeueFast    = 10 * time.Second
-	requeueSlow    = 30 * time.Second
-	requeueDrift   = 5 * time.Minute
+	annotationTrue   = "true"
+	requeueFast      = 10 * time.Second
+	requeueSlow      = 30 * time.Second
+	requeueDrift     = 5 * time.Minute
+	readinessTimeout = 5 * time.Minute
 
 	// Status condition reasons shared with tests so the strings cannot drift.
-	reasonWaitingForRBAC       = "WaitingForRBAC"
-	reasonRBACAvailable        = "RBACAvailable"
-	reasonWaitingForRBACWorker = "WaitingForRBACWorker"
-	reasonRBACWorkerAvailable  = "RBACWorkerAvailable"
-	reasonWaitingForAPI        = "WaitingForAPI"
-	reasonKokuAvailable        = "KokuAvailable"
-	msgWaitingForRBACAPI       = "waiting for RBAC API"
-	msgWaitingForRBACWorker    = "waiting for RBAC worker"
-	msgWaitingForKokuAPI       = "waiting for Koku API"
+	reasonWaitingForRBAC         = "WaitingForRBAC"
+	reasonRBACAvailable          = "RBACAvailable"
+	reasonWaitingForRBACWorker   = "WaitingForRBACWorker"
+	reasonRBACWorkerAvailable    = "RBACWorkerAvailable"
+	reasonWaitingForAPI          = "WaitingForAPI"
+	reasonWaitingForMasu         = "WaitingForMasu"
+	reasonWaitingForListener     = "WaitingForListener"
+	reasonWaitingForKruize       = "WaitingForKruize"
+	reasonWaitingForROSAPI       = "WaitingForROSAPI"
+	reasonWaitingForROSProcessor = "WaitingForROSProcessor"
+	reasonKokuAvailable          = "KokuAvailable"
+	reasonDeploymentNotReady     = "DeploymentNotReady"
+	reasonDeploymentReady        = "DeploymentReady"
+	msgWaitingForRBACAPI         = "waiting for RBAC API"
+	msgWaitingForRBACWorker      = "waiting for RBAC worker"
+	msgWaitingForKokuAPI         = "waiting for Koku API"
+	msgWaitingForMasu            = "waiting for Masu"
+	msgWaitingForListener        = "waiting for Listener"
+	msgWaitingForKruize          = "waiting for Kruize"
+	msgWaitingForROSAPI          = "waiting for ROS API"
+	msgWaitingForROSProcessor    = "waiting for ROS Processor"
 )
 
 type CostManagementServiceConfigReconciler struct {
 	client.Client
 	// APIReader is an uncached client for cross-namespace reads (e.g. NooBaa
-	// admin Secret in openshift-storage) that are outside Cache.DefaultNamespaces.
+	// admin Secret, typically in openshift-storage) that are outside
+	// Cache.DefaultNamespaces.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	Recorder  record.EventRecorder
@@ -309,6 +326,10 @@ func (r *CostManagementServiceConfigReconciler) reconcileInfrastructure(ctx cont
 			return Result{}, fmt.Errorf("database service: %w", err)
 		}
 		if err := r.applyStatefulSet(ctx, cfg, resources.DatabaseStatefulSet(cfg)); err != nil {
+			if stderrors.Is(err, ErrStorageConfigChanged) {
+				// VCT mismatch: condition already set, stop reconciliation to avoid overwriting it.
+				return Result{RequeueAfter: requeueFast}, nil
+			}
 			return Result{}, fmt.Errorf("database statefulset: %w", err)
 		}
 		// Gate: wait for the DB pod to be ready.
@@ -566,15 +587,31 @@ func (r *CostManagementServiceConfigReconciler) reconcileCoreServices(ctx contex
 	}
 	r.setCondition(cfg, costv1alpha1.ConditionRBACReady, metav1.ConditionTrue, reasonRBACAvailable, "")
 
-	// Gate on the API being available.
-	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameKokuAPI(cfg))
-	if err != nil {
-		return Result{}, err
+	return r.waitForCoreServiceReadiness(ctx, cfg)
+}
+
+func (r *CostManagementServiceConfigReconciler) waitForCoreServiceReadiness(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
+	waits := []deploymentWait{
+		{resources.NameKokuAPI(cfg), reasonWaitingForAPI, msgWaitingForKokuAPI, "Koku API"},
+		{resources.NameMasu(cfg), reasonWaitingForMasu, msgWaitingForMasu, "Masu"},
+		{resources.NameListener(cfg), reasonWaitingForListener, msgWaitingForListener, "Listener"},
 	}
-	if !ready {
-		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, reasonWaitingForAPI, msgWaitingForKokuAPI)
-		return Result{RequeueAfter: requeueSlow}, nil
+	if costv1alpha1.ROSEnabled(cfg) {
+		waits = append(waits, deploymentWait{resources.NameKruize(cfg), reasonWaitingForKruize, msgWaitingForKruize, "Kruize"})
 	}
+	if result, err := r.waitForDeployments(ctx, cfg, waits); err != nil || !result.IsZero() {
+		return result, err
+	}
+
+	// A later phase (ROS API/Processor) may already own Available=False.
+	// Promoting to KokuAvailable here would stamp a new LastTransitionTime
+	// and reset the 5-minute DeploymentNotReady clock on every pass.
+	// CoreServicesAvailable is skipped on this path; reconcile() emits
+	// AllComponentsReady when the wait clears.
+	if holdingWorkerReadinessWait(cfg) {
+		return Result{}, nil
+	}
+
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionAvailable) {
 		r.Recorder.Event(cfg, corev1.EventTypeNormal, "CoreServicesAvailable", "Koku API is ready")
 	}
@@ -659,6 +696,10 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 		}
 	}
 
+	return r.waitForWorkerReadiness(ctx, cfg)
+}
+
+func (r *CostManagementServiceConfigReconciler) waitForWorkerReadiness(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
 	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameIngress(cfg))
 	if err != nil {
 		return Result{}, err
@@ -670,6 +711,16 @@ func (r *CostManagementServiceConfigReconciler) reconcileWorkers(ctx context.Con
 	}
 	r.setCondition(cfg, costv1alpha1.ConditionIngressReady, metav1.ConditionTrue,
 		"IngressReady", "Ingress upload Deployment is ready")
+
+	if costv1alpha1.ROSEnabled(cfg) {
+		rosWaits := []deploymentWait{
+			{resources.NameROSAPI(cfg), reasonWaitingForROSAPI, msgWaitingForROSAPI, "ROS API"},
+			{resources.NameROSProcessor(cfg), reasonWaitingForROSProcessor, msgWaitingForROSProcessor, "ROS Processor"},
+		}
+		if result, err := r.waitForDeployments(ctx, cfg, rosWaits); err != nil || !result.IsZero() {
+			return result, err
+		}
+	}
 	return Result{}, nil
 }
 
@@ -729,6 +780,7 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		resources.IngressNetworkPolicy(cfg),
 		resources.RBACAPINetworkPolicy(cfg),
 		resources.KokuAPINetworkPolicy(cfg),
+		resources.MasuNetworkPolicy(cfg),
 	}
 	if costv1alpha1.ROSEnabled(cfg) {
 		netpols = append(netpols,
@@ -884,29 +936,264 @@ func (r *CostManagementServiceConfigReconciler) ensureServiceAccount(
 	return r.apply(ctx, cfg, sa)
 }
 
-// applyStatefulSet applies a StatefulSet, handling the VolumeClaimTemplate
-// immutability constraint by creating on first call and only patching spec
-// (not VCT) on subsequent calls.
+// applyStatefulSet applies a StatefulSet using Server-Side Apply (SSA).
+// VolumeClaimTemplates are immutable; if they differ from the existing
+// StatefulSet, we set DatabaseReady/Available=False and Degraded=True with
+// StorageConfigChanged and skip the SSA apply, returning ErrStorageConfigChanged
+// so the caller stops before later phases overwrite those conditions.
+// When VCT matches, the live templates are copied onto desired so SSA never
+// proposes a VCT update (API defaulting / managedFields must not 403).
 func (r *CostManagementServiceConfigReconciler) applyStatefulSet(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig, desired *appsv1.StatefulSet) error {
 	existing := &appsv1.StatefulSet{}
 	err := r.Get(ctx, types.NamespacedName{Namespace: desired.Namespace, Name: desired.Name}, existing)
 	if errors.IsNotFound(err) {
-		setOwnerRef(cfg, desired)
-		return r.Create(ctx, desired)
+		return r.apply(ctx, cfg, desired)
 	}
 	if err != nil {
 		return err
 	}
-	// Only update mutable fields (replicas, container image, resources, pull secrets).
-	patch := existing.DeepCopy()
-	patch.Spec.Replicas = desired.Spec.Replicas
-	patch.Spec.Template.Spec.ImagePullSecrets = desired.Spec.Template.Spec.ImagePullSecrets
-	if len(patch.Spec.Template.Spec.Containers) > 0 && len(desired.Spec.Template.Spec.Containers) > 0 {
-		patch.Spec.Template.Spec.Containers[0].Image = desired.Spec.Template.Spec.Containers[0].Image
-		patch.Spec.Template.Spec.Containers[0].Resources = desired.Spec.Template.Spec.Containers[0].Resources
-		patch.Spec.Template.Spec.Containers[0].Env = desired.Spec.Template.Spec.Containers[0].Env
+
+	// Check if VolumeClaimTemplates differ (immutable field).
+	if !volumeClaimTemplatesEqual(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates) {
+		diff := volumeClaimTemplateDiff(existing.Spec.VolumeClaimTemplates, desired.Spec.VolumeClaimTemplates)
+		msg := fmt.Sprintf("immutable VolumeClaimTemplates change (%s); revert spec.database.storage.size or spec.global.storageClass to match the live volume, or delete the StatefulSet and PVC to recreate", diff)
+		r.setCondition(cfg, costv1alpha1.ConditionDatabaseReady, metav1.ConditionFalse, "StorageConfigChanged", msg)
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "StorageConfigChanged", msg)
+		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, "StorageConfigChanged", msg)
+		r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "StorageConfigChanged", msg)
+		cfg.Status.Phase = costv1alpha1.PhaseDegraded
+		r.Recorder.Eventf(cfg, corev1.EventTypeWarning, "StorageConfigChanged", "%s", msg)
+		return ErrStorageConfigChanged
 	}
-	return r.Update(ctx, patch)
+
+	// Stamp live VCT onto desired so SSA only updates mutable fields.
+	desired.Spec.VolumeClaimTemplates = append([]corev1.PersistentVolumeClaim(nil), existing.Spec.VolumeClaimTemplates...)
+	return r.apply(ctx, cfg, desired)
+}
+
+// ErrStorageConfigChanged signals that VolumeClaimTemplates differ and
+// reconciliation should stop to avoid overwriting the StorageConfigChanged condition.
+var ErrStorageConfigChanged = fmt.Errorf("storage config changed: VolumeClaimTemplates are immutable")
+
+// volumeClaimTemplateDiff summarizes live vs desired VolumeClaimTemplate
+// changes for status messages. Size and storageClass are the CR-driven fields.
+func volumeClaimTemplateDiff(live, desired []corev1.PersistentVolumeClaim) string {
+	if len(live) != len(desired) {
+		return fmt.Sprintf("count %d -> %d", len(live), len(desired))
+	}
+	var parts []string
+	for i := range live {
+		name := live[i].Name
+		if live[i].Name != desired[i].Name {
+			parts = append(parts, fmt.Sprintf("name %q -> %q", live[i].Name, desired[i].Name))
+			name = desired[i].Name
+		}
+		liveSize := live[i].Spec.Resources.Requests[corev1.ResourceStorage]
+		desiredSize := desired[i].Spec.Resources.Requests[corev1.ResourceStorage]
+		if !liveSize.Equal(desiredSize) {
+			parts = append(parts, fmt.Sprintf("%s size %s -> %s", name, liveSize.String(), desiredSize.String()))
+		}
+		if !ptrEqual(live[i].Spec.StorageClassName, desired[i].Spec.StorageClassName) {
+			parts = append(parts, fmt.Sprintf("%s storageClass %s -> %s", name, pvcStorageClass(live[i]), pvcStorageClass(desired[i])))
+		}
+	}
+	if len(parts) == 0 {
+		return "other immutable fields differ"
+	}
+	return strings.Join(parts, "; ")
+}
+
+func pvcStorageClass(pvc corev1.PersistentVolumeClaim) string {
+	if pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName == "" {
+		return "<unset>"
+	}
+	return *pvc.Spec.StorageClassName
+}
+
+// volumeClaimTemplatesEqual compares two VolumeClaimTemplate slices for equality
+// of the immutable fields. It normalizes defaulted values per Kubernetes API
+// conventions before comparison to avoid false mismatches.
+// Compared fields: Name, Labels, Annotations, StorageClassName, Resources
+// (Requests & Limits), AccessModes, VolumeMode, Selector, VolumeName,
+// DataSource, DataSourceRef (including Namespace), VolumeAttributesClassName.
+func volumeClaimTemplatesEqual(a, b []corev1.PersistentVolumeClaim) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name {
+			return false
+		}
+		if !maps.Equal(a[i].Labels, b[i].Labels) {
+			return false
+		}
+		if !maps.Equal(a[i].Annotations, b[i].Annotations) {
+			return false
+		}
+		if !ptrEqual(a[i].Spec.StorageClassName, b[i].Spec.StorageClassName) {
+			return false
+		}
+		if !resourceRequirementsEqual(a[i].Spec.Resources, b[i].Spec.Resources) {
+			return false
+		}
+		if !accessModesEqual(a[i].Spec.AccessModes, b[i].Spec.AccessModes) {
+			return false
+		}
+		if !volumeModeEqual(a[i].Spec.VolumeMode, b[i].Spec.VolumeMode) {
+			return false
+		}
+		if !labelSelectorEqual(a[i].Spec.Selector, b[i].Spec.Selector) {
+			return false
+		}
+		if !volumeNameEqual(a[i].Spec.VolumeName, b[i].Spec.VolumeName) {
+			return false
+		}
+		if !dataSourceEqual(a[i].Spec.DataSource, b[i].Spec.DataSource) {
+			return false
+		}
+		if !dataSourceRefEqual(a[i].Spec.DataSourceRef, b[i].Spec.DataSourceRef) {
+			return false
+		}
+		if !volumeAttributesClassNameEqual(a[i].Spec.VolumeAttributesClassName, b[i].Spec.VolumeAttributesClassName) {
+			return false
+		}
+	}
+	return true
+}
+
+func resourceRequirementsEqual(a, b corev1.VolumeResourceRequirements) bool {
+	// Compare both Requests and Limits, treating nil and empty as equivalent
+	// to handle Kubernetes API defaulting.
+	if !resourceListEqual(a.Requests, b.Requests) {
+		return false
+	}
+	if !resourceListEqual(a.Limits, b.Limits) {
+		return false
+	}
+	return true
+}
+
+func resourceListEqual(a, b corev1.ResourceList) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if v2, ok := b[k]; !ok || !v.Equal(v2) {
+			return false
+		}
+	}
+	return true
+}
+
+func accessModesEqual(a, b []corev1.PersistentVolumeAccessMode) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func volumeModeEqual(a, b *corev1.PersistentVolumeMode) bool {
+	// PersistentVolumeClaimSpec.VolumeMode defaults to Filesystem when unset
+	// (Kubernetes API defaulting). Treat nil and Filesystem as equal so live
+	// vs desired comparisons do not false-mismatch after defaulting.
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil && b != nil && *b == corev1.PersistentVolumeFilesystem {
+		return true
+	}
+	if b == nil && a != nil && *a == corev1.PersistentVolumeFilesystem {
+		return true
+	}
+	if a != nil && b != nil {
+		return *a == *b
+	}
+	return false
+}
+
+func labelSelectorEqual(a, b *metav1.LabelSelector) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if len(a.MatchLabels) != len(b.MatchLabels) {
+		return false
+	}
+	for k, v := range a.MatchLabels {
+		if v2, ok := b.MatchLabels[k]; !ok || v != v2 {
+			return false
+		}
+	}
+	if len(a.MatchExpressions) != len(b.MatchExpressions) {
+		return false
+	}
+	for i := range a.MatchExpressions {
+		if a.MatchExpressions[i].Key != b.MatchExpressions[i].Key ||
+			a.MatchExpressions[i].Operator != b.MatchExpressions[i].Operator {
+			return false
+		}
+		if len(a.MatchExpressions[i].Values) != len(b.MatchExpressions[i].Values) {
+			return false
+		}
+		for j := range a.MatchExpressions[i].Values {
+			if a.MatchExpressions[i].Values[j] != b.MatchExpressions[i].Values[j] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func volumeNameEqual(a, b string) bool {
+	// Empty string and nil are equivalent (Kubernetes treats unset as empty)
+	return a == b
+}
+
+func dataSourceEqual(a, b *corev1.TypedLocalObjectReference) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return ptrEqual(a.APIGroup, b.APIGroup) && a.Kind == b.Kind && a.Name == b.Name
+}
+
+func dataSourceRefEqual(a, b *corev1.TypedObjectReference) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return ptrEqual(a.APIGroup, b.APIGroup) && a.Kind == b.Kind && a.Name == b.Name && ptrEqual(a.Namespace, b.Namespace)
+}
+
+func volumeAttributesClassNameEqual(a, b *string) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+func ptrEqual(a, b *string) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }
 
 // ensureSecret creates the secret only if it does not already exist.
@@ -964,6 +1251,95 @@ func (r *CostManagementServiceConfigReconciler) isDeploymentReady(ctx context.Co
 	return d.Status.AvailableReplicas >= *d.Spec.Replicas, nil
 }
 
+type deploymentWait struct {
+	name, reason, message, component string
+}
+
+// holdingWorkerReadinessWait is true when a later phase already set
+// Available=False for a worker Deployment. Core must not overwrite that
+// wait clock. Keep this reason list in sync with waitForWorkerReadiness
+// (docs/review-follow-ups.md #12 if Ingress is routed through notReadyWait).
+func holdingWorkerReadinessWait(cfg *costv1alpha1.CostManagementServiceConfig) bool {
+	existing := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if existing == nil || existing.Status != metav1.ConditionFalse {
+		return false
+	}
+	switch existing.Reason {
+	case reasonWaitingForROSAPI, reasonWaitingForROSProcessor:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *CostManagementServiceConfigReconciler) waitForDeployments(
+	ctx context.Context,
+	cfg *costv1alpha1.CostManagementServiceConfig,
+	waits []deploymentWait,
+) (Result, error) {
+	for _, w := range waits {
+		ready, err := r.isDeploymentReady(ctx, cfg.Namespace, w.name)
+		if err != nil {
+			return Result{}, err
+		}
+		if !ready {
+			return r.notReadyWait(cfg, w.reason, w.message, w.component), nil
+		}
+	}
+	r.clearDeploymentNotReady(cfg)
+	return Result{}, nil
+}
+
+// notReadyWait records Available=False for a named Deployment. After
+// readinessTimeout it sets Degraded=True reason DeploymentNotReady and
+// switches to stepped backoff (30s → 1m → 2m → 5m).
+func (r *CostManagementServiceConfigReconciler) notReadyWait(
+	cfg *costv1alpha1.CostManagementServiceConfig,
+	reason, message, component string,
+) Result {
+	existing := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if existing != nil && (existing.Status != metav1.ConditionFalse || existing.Reason != reason) {
+		apimeta.RemoveStatusCondition(&cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, reason, message)
+	existing = apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if existing != nil && time.Since(existing.LastTransitionTime.Time) >= readinessTimeout {
+		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, reasonDeploymentNotReady,
+			fmt.Sprintf("%s is not ready", component))
+		cfg.Status.Phase = costv1alpha1.PhaseDegraded
+		return Result{RequeueAfter: readinessBackoff(existing.LastTransitionTime.Time)}
+	}
+	r.clearDeploymentNotReady(cfg)
+	return Result{RequeueAfter: requeueSlow}
+}
+
+// clearDeploymentNotReady flips Degraded=False only when the reason is
+// DeploymentNotReady. ReconcileError and migration Degraded stay put.
+func (r *CostManagementServiceConfigReconciler) clearDeploymentNotReady(cfg *costv1alpha1.CostManagementServiceConfig) {
+	existing := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
+	if existing == nil || existing.Status != metav1.ConditionTrue || existing.Reason != reasonDeploymentNotReady {
+		return
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionFalse, reasonDeploymentReady, "")
+	if cfg.Status.Phase == costv1alpha1.PhaseDegraded {
+		cfg.Status.Phase = costv1alpha1.PhaseProgressing
+	}
+}
+
+func readinessBackoff(since time.Time) time.Duration {
+	waited := time.Since(since) - readinessTimeout
+	switch {
+	case waited < 30*time.Second:
+		return 30 * time.Second
+	case waited < time.Minute:
+		return time.Minute
+	case waited < 3*time.Minute:
+		return 2 * time.Minute
+	default:
+		return 5 * time.Minute
+	}
+}
+
 func (r *CostManagementServiceConfigReconciler) isStatefulSetReady(ctx context.Context, ns, name string) (bool, error) {
 	ss := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, ss); err != nil {
@@ -975,7 +1351,25 @@ func (r *CostManagementServiceConfigReconciler) isStatefulSetReady(ctx context.C
 	if ss.Spec.Replicas == nil || *ss.Spec.Replicas == 0 {
 		return true, nil
 	}
-	return ss.Status.ReadyReplicas >= *ss.Spec.Replicas, nil
+	want := *ss.Spec.Replicas
+	// ObservedGeneration lags metadata.generation until the controller has
+	// seen the SSA-applied spec. ReadyReplicas alone can still be the old
+	// revision's pods.
+	if ss.Status.ObservedGeneration < ss.Generation {
+		return false, nil
+	}
+	if ss.Status.ReadyReplicas < want {
+		return false, nil
+	}
+	if ss.Status.UpdateRevision != "" && ss.Status.CurrentRevision != ss.Status.UpdateRevision {
+		return false, nil
+	}
+	// UpdatedReplicas is 0 on first create until an update revision exists;
+	// once the controller reports any updated pods, all replicas must match.
+	if ss.Status.UpdatedReplicas > 0 && ss.Status.UpdatedReplicas < want {
+		return false, nil
+	}
+	return true, nil
 }
 
 func isJobComplete(j *batchv1.Job) bool {

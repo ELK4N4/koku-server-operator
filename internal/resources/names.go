@@ -169,6 +169,12 @@ func S3Endpoint(cfg *costv1alpha1.CostManagementServiceConfig) string {
 		cfg.Status.DiscoveredConfig.S3.Endpoint != "" {
 		return cfg.Status.DiscoveredConfig.S3.Endpoint
 	}
+	return S3EndpointFromSpec(cfg)
+}
+
+// S3EndpointFromSpec builds the S3 URL from spec.objectStorage host, port, and
+// UseSSL without consulting status.discoveredConfig.
+func S3EndpointFromSpec(cfg *costv1alpha1.CostManagementServiceConfig) string {
 	s := cfg.Spec.ObjectStorage
 	scheme := "http"
 	port := s.Port

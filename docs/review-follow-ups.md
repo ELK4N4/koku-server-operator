@@ -5,40 +5,15 @@ or deferred — not a blocker for the PR that surfaced it.
 
 ---
 
-## 1. `ResolveBootstrapAdmin` silently substitutes test-fixture IDs
+## 1. ~~`ResolveBootstrapAdmin` silently substitutes test-fixture IDs~~ — **CLOSED**
 
 **Source:** [inline comment on migration.go:359](https://github.com/project-koku/koku-service-operator/pull/22#discussion_r2940893206)
 
-**Problem:** `ResolveBootstrapAdmin` (migration.go:319) falls back to
-`OrgID = "org1234567"` / `AccountNumber = "7890123"` when
-`RealmUser.OrgID`/`AccountNumber` are empty. These are Koku's own
-well-known internal test fixtures — not safe defaults for production.
-
-Because `SYNC_ORG_ID`/`SYNC_ACCOUNT_NUMBER` feed directly into
-`Tenant.objects.get_or_create(org_id=...)` in `rbacAdminBootstrapScript()`,
-an operator deployed with an incomplete CR will silently provision a real
-tenant under test-fixture IDs in the customer's database instead of
-failing loudly on missing config.
-
-The `orgId` and `accountNumber` fields are optional in the CRD with no
-validation tying them to `orgAdmin: true`. `TestResolveBootstrapAdmin`
-only exercises the explicit-value path (`OrgID: "org9"`), and
-`TestAdminBootstrapJobGated` happens to pass `OrgID: "org1234567"`
-explicitly — which looks like it tests the fallback but doesn't.
-(`ResolveBootstrapAdmin` coverage: 75%, fallback branches uncovered.)
-
-**Suggested fix (pick one):**
-
-- **CRD validation:** require `orgId` + `accountNumber` when
-  `orgAdmin: true` via `+kubebuilder:validation:XValidation`.
-- **Go-level guard:** have `ResolveBootstrapAdmin` return `ok=false`
-  when `OrgID` or `AccountNumber` are empty, rather than substituting
-  values that coincide with this project's test fixtures.
-
-Either way, add test cases that exercise the fallback branches and
-confirm the chosen behavior (fail vs. default).
-
-**Pre-existing gap** — not introduced by PR #22.
+**Fixed:** `ResolveBootstrapAdmin` no longer exists. `AdminBootstrapJob`
+now reads org-id/account-number from a Secret via `EnvFromSecret` and
+returns `nil` when `secretRef.name` is empty. No fallback to
+`org1234567`/`7890123`. The code path is gated by
+`ba.Enabled && ba.SecretRef.Name != ""`.
 
 ---
 
@@ -148,17 +123,13 @@ Follow the same pattern used by the Envoy gateway and oauth2-proxy.
 
 ---
 
-## 8. Keycloak sync: enable/disable lifecycle test
+## 8. ~~Keycloak sync: enable/disable lifecycle test~~ — **CLOSED**
 
 **Source:** Code review finding.
 
-**Problem:** The Keycloak sync CronJob (now implemented in [PR #53](https://github.com/project-koku/koku-service-operator/pull/53)) needs a
-fake-client test covering the enable → apply → disable → delete lifecycle
-(same pattern as `TestKruizeCronJobDeletedWhenDisabled`). Without it,
-disabling the sync could leave orphaned CronJobs running.
-
-**Suggested fix:** Add a test following the Kruize CronJob disable pattern
-in `ros_cleanup_test.go`.
+**Fixed:** `TestKeycloakSyncDeletedWhenDisabled` exists at
+`internal/controller/keycloak_sync_disable_test.go:21`, following the
+same pattern as `TestKruizeCronJobDeletedWhenDisabled`.
 
 ---
 
@@ -266,3 +237,86 @@ Requires Secrets read RBAC in the validation phase.
 **Workaround:** set `insecureSkipVerify: true` alongside `caCertSecretName`
 to suppress the false negative (Envoy still validates properly with the
 mounted CA).
+
+---
+
+## 12. Ingress, Envoy, and UI skip the 5-minute `DeploymentNotReady` timeout
+
+**Source:** [PR #105 CodeRabbit](https://github.com/project-koku/koku-service-operator/pull/105) (COST-7686 G2).
+
+**Problem:** `notReadyWait` (5-minute `Available=False` clock →
+`Degraded=True` reason `DeploymentNotReady` + backoff) is used for Koku
+API, Masu, Listener, Kruize (when ROS is on), ROS API, and ROS
+Processor. Ingress, Envoy, and UI still requeue on a component condition
+only (`IngressReady` / `GatewayReady` / `UIReady`) and never start that
+clock.
+
+Kruize is **not** in this gap — it is on the core wait list and uses
+`notReadyWait`.
+
+**Impact:** A stuck Ingress/Envoy/UI Deployment leaves `Progressing=True`
+and requeues every 30s indefinitely. `Available` may stay `True`
+`KokuAvailable` (Ingress/Envoy wait after core has already promoted it)
+or keep a stale core wait reason if a later change stops promoting
+`Available`. Operators never get `Degraded=True` `DeploymentNotReady`
+for those components.
+
+**Suggested fix:** Route Ingress (and optionally Envoy/UI) through
+`notReadyWait` with dedicated wait reasons, same as ROS API. Add tests
+that a 6-minute Ingress wait degrades and names the component.
+
+**Out of scope for PR #105** — COST-7686 G2/G3 cover the ticket-owned
+app Deployments (Koku API, Masu, Listener, optional Kruize/ROS). Ingress
+is COST-7687; Envoy/UI are COST-7688.
+
+---
+
+## 13. `isDeploymentReady` accepts stale replicas during a rollout
+
+**Source:** [PR #105 CodeRabbit](https://github.com/project-koku/koku-service-operator/pull/105); already tracked as [D14](code-review-fixmes.md) in `docs/code-review-fixmes.md`.
+
+**Problem:** `isDeploymentReady` is `AvailableReplicas >= spec.replicas`
+(or 0 replicas). It does not require `status.observedGeneration >=
+metadata.generation` or `status.updatedReplicas >= spec.replicas`. After
+an image/spec change, old ready pods still satisfy the gate.
+
+**Impact:** The CR can go `Available=True` / `AllComponentsReady` while
+the current ReplicaSet has zero available pods. Pre-existing; this PR
+only added more callers (Masu, Listener, Kruize, ROS API/Processor).
+
+**Suggested fix:** Require observed generation + updated + available
+replicas. Update `TestIsDeploymentReady` and `markDeploymentReady`; add
+a stale-replica case.
+
+**Out of scope for PR #105** — changes every existing gate (RBAC, Koku
+API, Ingress, Envoy, Valkey), not just COST-7686.
+
+---
+
+## 14. No test that ROS Processor alone blocks worker readiness — **closed in PR #105**
+
+**Source:** [PR #105 CodeRabbit](https://github.com/project-koku/koku-service-operator/pull/105); João's [request-changes review](https://github.com/project-koku/koku-service-operator/pull/105#issuecomment-5354975468).
+
+**Closed:** `TestReconcileWorkers_ROSProcessorNotReady_BlocksProgress` marks Ingress + ROS API ready, leaves Processor down, and asserts `Available=False` `WaitingForROSProcessor`.
+
+---
+
+## 15. RBAC API wait has no 5-minute `DeploymentNotReady` timeout
+
+**Source:** João's [PR #105 review](https://github.com/project-koku/koku-service-operator/pull/105#issuecomment-5354975468).
+
+**Problem:** `reconcileCoreServices` still gates the RBAC API with a constant
+`requeueSlow` (30s). It sets `Available=False` `WaitingForRBAC` but never
+calls `notReadyWait`, so a stuck RBAC API never becomes
+`Degraded=True` `DeploymentNotReady` and never backs off.
+
+**Impact:** Same shape as Ingress/Envoy in #12: the CR stays
+`Progressing` and requeues every 30s forever. COST-7689 closed the
+`RBACReady` gate; it did not add the 5-minute named-component Degraded
+clock that COST-7686 added for Koku/Masu/Listener/ROS.
+
+**Suggested fix:** Route the RBAC API wait through `notReadyWait` (same
+reasons `WaitingForRBAC` / component `"RBAC API"`). Leave the RBAC
+worker as condition-only (it does not block `Available` today).
+
+**Out of scope for PR #105** — COST-7689 leftover, not a COST-7686 AC.

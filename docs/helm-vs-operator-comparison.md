@@ -1,6 +1,6 @@
 # Helm Chart vs Operator Comparison Report
 
-Updated: 2026-08-16 (validated against `main`)
+Updated: 2026-08-20 (validated against `main`)
 
 Systematic comparison of `cost-onprem-chart/cost-onprem/` (Helm chart) against
 `koku-service-operator` (operator) — identifying deviations, missing pieces,
@@ -49,7 +49,7 @@ a `CostManagementServiceConfig` CR + Go reconciler.
 | ROS Partition Cleaner CronJob | yes | yes | match |
 | ROS ServiceAccount | yes | yes | match |
 | ROS API NetworkPolicy (access) | yes | yes | match |
-| ROS/Koku metrics NetworkPolicies (4) | yes | **MISSING** | **gap** |
+| ROS/Koku metrics + access NPs (6) | yes | **partial** | **gap** (see §3.2) |
 | Cdapp ConfigMap (ROS/Kruize) | yes | yes | match |
 | Kruize Deployment + Service | yes | yes | match |
 | Kruize ServiceAccount | yes | yes | match |
@@ -63,7 +63,7 @@ a `CostManagementServiceConfig` CR + Go reconciler.
 | Envoy ConfigMap | yes | yes | routing differences |
 | Gateway CA ConfigMap | yes | handled via combined CA | equivalent |
 | Gateway NetworkPolicy | yes | yes | match |
-| Gateway Route | yes | yes | path difference |
+| Gateway Route | yes | yes | match |
 | UI Deployment (oauth-proxy + nginx) | yes | yes | match |
 | UI Service | yes | yes | match |
 | UI nginx ConfigMap | yes | yes | match |
@@ -75,9 +75,11 @@ a `CostManagementServiceConfig` CR + Go reconciler.
 | Gateway ServiceMonitor | yes | **MISSING** | **gap** |
 | ROS Processor/Poller ServiceMonitors | yes | **MISSING** | **gap** |
 | **PrometheusRules (5 alert rules)** | **no** | **yes** | **operator better** |
-| Koku API NetworkPolicy | no | yes | operator better |
+| Koku API NetworkPolicy | yes (cost-api-access) | yes | operator richer (adds monitoring peer) |
+| Masu NetworkPolicy | no | yes | operator better |
 | Cache NetworkPolicy | no | yes | operator better |
 | Database NetworkPolicy | no | yes | operator better |
+| Operator ServiceMonitor | no | yes | operator better |
 | Keycloak Debug ConfigMap | yes | no | not needed |
 
 ---
@@ -111,16 +113,22 @@ The chart creates Service objects for both with a metrics port (9000),
 enabling Prometheus scraping. The operator creates Deployments but no
 Services.
 
-### 3.2 Metrics-scraping NetworkPolicies
+### 3.2 Metrics-scraping NetworkPolicies (partially fixed)
 
-The chart has 4 NetworkPolicies allowing OpenShift Prometheus (via
-`openshift-monitoring` namespace selector) to reach metrics ports on
-ros-api, cost-api, ros-processor, and ros-recommendation-poller. The
-operator has none of these. In a default-deny environment, Prometheus
-can't scrape any application metrics.
+The chart's `ros/networkpolicies.yaml` contains 6 NetworkPolicies:
+4 metrics-scraping (ros-api-metrics, cost-api-metrics, processor-metrics,
+poller-metrics) and 2 access (ros-api-access, cost-api-access).
 
-The ROS API access NetworkPolicy was added (restricts traffic to gateway
-only) but these metrics-scraping policies are still missing.
+The operator now covers monitoring ingress for **Gateway** (admin port),
+**Koku API** (port 9000), and **Masu** (port 9000) via their respective
+NetworkPolicies. Still missing:
+
+- **ros-api-metrics** — ROSAPINetworkPolicy allows gateway only, no monitoring peer
+- **processor-metrics** — no NetworkPolicy for ROS Processor at all
+- **poller-metrics** — no NetworkPolicy for ROS Recommendation Poller at all
+
+These three gaps mean Prometheus still can't scrape ROS component
+metrics in a default-deny environment.
 
 ### 3.3 ServiceMonitor gaps
 
@@ -148,7 +156,6 @@ them (users can provide them via `spec.costManagement.api.env`):
 | `ENHANCED_ORG_ADMIN` | `"False"` | not set | **critical for RBAC scoping** |
 | `DEVELOPMENT` | `"False"` | not set | koku defaults to "True" in dev? |
 | `KOKU_ENABLE_SENTRY` | `"False"` | not set | Sentry SDK may try to phone home |
-| `S3_VERIFY_SSL` | `"false"` | not set | may fail on self-signed S3 |
 | `INITIAL_INGEST_NUM_MONTHS` | `"2"` | not set | may over-ingest |
 | `INITIAL_INGEST_OVERRIDE` | `"False"` | not set | probably fine |
 | `CACHED_VIEWS_DISABLED` | `"False"` | not set | probably fine (app default) |
@@ -159,7 +166,7 @@ them (users can provide them via `spec.costManagement.api.env`):
 | `USE_READREPLICA` | `"False"` | not set | probably fine |
 
 Previously missing `RETAIN_NUM_MONTHS` is now set via a dedicated CR field
-(default `4`; chart used `3`).
+(default `4`; chart was updated from `3` to `4` on 2026-08-10 — now matching).
 
 `ENHANCED_ORG_ADMIN` is particularly important: when True, Koku treats all
 org_admin users as having full access without checking RBAC. The chart's
@@ -234,8 +241,12 @@ install script.
 
 ### 5.8 Additional NetworkPolicies
 
-The operator creates Cache and Database NetworkPolicies not present in
-the chart, restricting access to the bundled infrastructure.
+The operator creates Masu, Cache, and Database NetworkPolicies not
+present in the chart. The Masu policy restricts access to monitoring
+only (no other pod should call Masu over HTTP); the Cache and Database
+policies restrict access to the bundled infrastructure. The operator's
+Koku API NetworkPolicy also adds a monitoring peer absent from the
+chart's `cost-api-access`.
 
 ---
 
@@ -253,11 +264,10 @@ Both define the same 5 Envoy route entries with matching timeouts.
 | `/api/ingress/ready` | ingress-backend | 10s | 10s |
 | `/api/ingress/` | ingress-backend | 180s | 180s |
 
-### 6.2 Route path: `/api` vs `/`
+### 6.2 Route path: both use `/api`
 
-Operator creates the gateway Route with `spec.path: /api`. The chart
-creates a broader Route at `/`. Correct — the gateway only handles API
-traffic; the UI has its own Route.
+Both the operator and chart create the gateway Route with `spec.path: /api`.
+The UI has its own separate Route.
 
 ### 6.3 Two separate Routes (API + UI) vs one
 
@@ -284,8 +294,8 @@ OpenShift Route annotation default should also be set for consistency.
 2. **Add Celery beat resources** (`koku.go`): set `{cpu: 50m, mem: 200Mi}` / `{cpu: 100m, mem: 400Mi}`
 3. **Fix Masu Service port** (`koku.go`): expose port 8000 (http) + 9000 (metrics)
 4. **Add ROS Processor + Poller Services**: needed for Prometheus metrics scraping
-5. **Add metrics-scraping NetworkPolicies**: allow Prometheus to reach metrics ports
-6. **Add RBAC + Gateway + ROS components to ServiceMonitors**: close monitoring gaps
+5. **Add ROS metrics-scraping NetworkPolicies**: ros-api-metrics, processor-metrics, poller-metrics (Gateway, Koku API, and Masu now covered)
+6. **Add RBAC + ROS components to ServiceMonitors**: rbac-api, ros-processor, ros-recommendation-poller, gateway still missing
 7. **Set default Route timeout annotation** to 180s in GatewayAPIRoute
-8. **Add remaining env var defaults**: `S3_VERIFY_SSL`, `INITIAL_INGEST_NUM_MONTHS`, logging vars
+8. **Add remaining env var defaults**: `INITIAL_INGEST_NUM_MONTHS`, logging vars in `KokuCommonEnv()`
 9. **Expose `roleCreateAllowList`** in the RBAC CR section
