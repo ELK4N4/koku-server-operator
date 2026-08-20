@@ -375,6 +375,7 @@ type IngressConfig struct {
 	// When empty, the operator uses the same bucket as Koku REQUESTED_BUCKET
 	// (status.discoveredConfig.s3.bucket, else spec.costManagement.storage.bucketName),
 	// then "koku-bucket".
+	// The bucket must already exist; the operator will not create it.
 	StagingBucket string                      `json:"stagingBucket,omitempty"`
 	Resources     corev1.ResourceRequirements `json:"resources,omitempty"`
 }
@@ -488,8 +489,12 @@ type CostManagementConfig struct {
 }
 
 type CostManagementStorageSpec struct {
+	// Bucket name for Cost Management object storage (Koku REQUESTED_BUCKET).
+	// The bucket must already exist; the operator will not create it.
 	// +kubebuilder:default:="koku-bucket"
 	BucketName string `json:"bucketName,omitempty"`
+	// ROS object-storage bucket. Required when ros.enabled is true.
+	// The bucket must already exist; the operator will not create it.
 	// +kubebuilder:default:="ros-data"
 	ROSBucketName string `json:"rosBucketName,omitempty"`
 }

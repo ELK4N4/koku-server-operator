@@ -102,7 +102,7 @@ spec:
           persistentVolumeClaim:
             claimName: minio-data
 ---
-# Create the buckets the operator / Koku expect by default.
+# Fixture-only (not operator behavior): create the buckets Koku expects by default.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -154,6 +154,7 @@ spec:
                 echo "waiting for minio..."
                 sleep 3
               done
+              # Fixture-only: the operator does not create buckets.
               mc mb --ignore-existing local/koku-bucket
               mc mb --ignore-existing local/ros-data
               mc ls local
