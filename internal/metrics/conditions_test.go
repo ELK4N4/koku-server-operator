@@ -23,6 +23,11 @@ func TestSetCondition_MirrorsActiveStatus(t *testing.T) {
 	if got := testutil.ToFloat64(Condition.WithLabelValues("ns", "cm", "Degraded", "False")); got != 1 {
 		t.Fatalf("after flip False = %v, want 1", got)
 	}
+
+	SetCondition("ns", "cm", "Empty", "")
+	if got := testutil.ToFloat64(Condition.WithLabelValues("ns", "cm", "Empty", "Unknown")); got != 1 {
+		t.Fatalf("empty status Unknown = %v, want 1", got)
+	}
 }
 
 func TestSetMigrationJobFailed(t *testing.T) {

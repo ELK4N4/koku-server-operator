@@ -231,21 +231,12 @@ func DatabaseNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *netwo
 // Route (COST-8060). In normal runtime no other workload calls Masu over HTTP;
 // report processing is driven by Kafka and Celery. This policy blocks casual
 // same-namespace access to admin endpoints on port 9000; app-level auth is
-// tracked under COST-7841. Prometheus may scrape metrics on the same port.
+// tracked under COST-7841. Prometheus (platform + UWM) may scrape metrics on
+// the same port.
 func MasuNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
-	const masuPort = int32(9000)
+	const masuMetricsPort = int32(9000)
 	return netpol(cfg, cfg.Name+"-masu", "cost-processor", []networkingv1.NetworkPolicyIngressRule{
-		{
-			From: []networkingv1.NetworkPolicyPeer{
-				{NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"network.openshift.io/policy-group": "monitoring"},
-				}},
-				{NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"kubernetes.io/metadata.name": "openshift-monitoring"},
-				}},
-			},
-			Ports: []networkingv1.NetworkPolicyPort{tcpPort(masuPort)},
-		},
+		monitoringFrom(masuMetricsPort),
 	})
 }
 
@@ -262,13 +253,5 @@ func KokuAPINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networ
 		podFrom(cfg, "cost-processor", kokuAPIPort),
 		podFrom(cfg, "ros-housekeeper", kokuAPIPort),
 		monitoringFrom(kokuMetricsPort),
-	})
-}
-
-// MasuNetworkPolicy allows Prometheus to scrape Masu /metrics (G2 / App SM).
-func MasuNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
-	const masuMetricsPort = int32(9000)
-	return netpol(cfg, cfg.Name+"-masu", "cost-processor", []networkingv1.NetworkPolicyIngressRule{
-		monitoringFrom(masuMetricsPort),
 	})
 }

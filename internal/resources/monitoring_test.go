@@ -66,8 +66,6 @@ func TestPrometheusRules_BetaOperatorCentricSet(t *testing.T) {
 		"CostManagementAPIDown",
 		"CostManagementReconcileFailure",
 		"CostManagementCeleryBacklog",
-		"CostManagementSecretRotated",
-		"CostManagementDriftCorrected",
 	}
 	for _, a := range want {
 		if !names[a] {
@@ -78,6 +76,8 @@ func TestPrometheusRules_BetaOperatorCentricSet(t *testing.T) {
 	absent := []string{
 		"CostManagementSchemaOutOfDate",
 		"CostManagementNotProgressing",
+		"CostManagementSecretRotated",  // deferred until COST-7694 emit path
+		"CostManagementDriftCorrected", // deferred until G4 emit path
 	}
 	for _, a := range absent {
 		if names[a] {
@@ -113,6 +113,41 @@ func TestOperatorServiceMonitor_HTTPScheme(t *testing.T) {
 	if ep["port"] != "https" {
 		t.Errorf("port name: got %v want https (Service port name)", ep["port"])
 	}
+}
+
+func TestGatewayServiceMonitor(t *testing.T) {
+	sm := GatewayServiceMonitor(testMonitoringCFG())
+	if sm.GetName() != "cost-management-gateway-metrics" {
+		t.Errorf("name: got %q", sm.GetName())
+	}
+	endpoints, found, err := unstructured.NestedSlice(sm.Object, "spec", "endpoints")
+	if err != nil || !found || len(endpoints) != 1 {
+		t.Fatalf("endpoints: found=%v len=%d err=%v", found, len(endpoints), err)
+	}
+	ep := endpoints[0].(map[string]any)
+	if ep["port"] != "admin" {
+		t.Errorf("port: got %v want admin", ep["port"])
+	}
+	if ep["path"] != "/stats/prometheus" {
+		t.Errorf("path: got %v want /stats/prometheus", ep["path"])
+	}
+}
+
+func TestPrometheusRules_ReconcileFailureFiresOnAnyRecentError(t *testing.T) {
+	pr := PrometheusRules(testMonitoringCFG())
+	groups, _, _ := unstructured.NestedSlice(pr.Object, "spec", "groups")
+	group := groups[0].(map[string]any)
+	for _, r := range group["rules"].([]any) {
+		rm := r.(map[string]any)
+		if rm["alert"] != "CostManagementReconcileFailure" {
+			continue
+		}
+		if rm["for"] != "0m" {
+			t.Fatalf("ReconcileFailure for=%v want 0m (any recent error in increase window)", rm["for"])
+		}
+		return
+	}
+	t.Fatal("CostManagementReconcileFailure rule missing")
 }
 
 func TestPrometheusRules_APIDownTreatsAbsentUp(t *testing.T) {

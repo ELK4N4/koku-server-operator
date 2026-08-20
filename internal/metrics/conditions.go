@@ -88,9 +88,25 @@ func SetCondition(namespace, name, condType string, status metav1.ConditionStatu
 	}
 }
 
+// ClearConditionMetrics removes all condition gauges for a CMSC instance.
+func ClearConditionMetrics(namespace, name string) int {
+	return Condition.DeletePartialMatch(prometheus.Labels{
+		labelNamespace: namespace,
+		labelName:      name,
+	})
+}
+
+// ClearMigrationJobFailedAll removes migration-failed gauges for a CMSC instance.
+func ClearMigrationJobFailedAll(namespace, name string) int {
+	return MigrationJobFailed.DeletePartialMatch(prometheus.Labels{
+		labelNamespace: namespace,
+		labelName:      name,
+	})
+}
+
 // ClearMigrationJobFailed resets the failed gauge for a job name.
 func ClearMigrationJobFailed(namespace, name, job string) {
-	MigrationJobFailed.WithLabelValues(namespace, name, job).Set(0)
+	SetMigrationJobFailed(namespace, name, job, false)
 }
 
 // SetMigrationJobFailed marks a migrate Job as failed (1) or clear (0).

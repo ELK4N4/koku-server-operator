@@ -13,7 +13,7 @@ var (
 )
 
 // serviceMonitor builds a ServiceMonitor that selects Services by component label.
-func serviceMonitor(cfg *costv1alpha1.CostManagementServiceConfig, name, portName string, components []string) *unstructured.Unstructured {
+func serviceMonitor(cfg *costv1alpha1.CostManagementServiceConfig, name, portName, path string, components []string) *unstructured.Unstructured {
 	matchExpressions := make([]any, len(components))
 	for i, c := range components {
 		matchExpressions[i] = c
@@ -28,7 +28,7 @@ func serviceMonitor(cfg *costv1alpha1.CostManagementServiceConfig, name, portNam
 	_ = unstructured.SetNestedSlice(sm.Object, []any{
 		map[string]any{
 			"port":     portName,
-			"path":     "/metrics",
+			"path":     path,
 			"interval": "30s",
 		},
 	}, "spec", "endpoints")
@@ -56,7 +56,7 @@ func serviceMonitor(cfg *costv1alpha1.CostManagementServiceConfig, name, portNam
 // Listener / ROS / Kruize / Gateway are intentionally excluded (no named metrics
 // port, wrong path, or out of beta).
 func AppServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
-	return serviceMonitor(cfg, cfg.Name+"-app-metrics", "metrics", []string{
+	return serviceMonitor(cfg, cfg.Name+"-app-metrics", "metrics", "/metrics", []string{
 		"cost-management-api", "cost-processor", "ingress",
 	})
 }
@@ -64,7 +64,7 @@ func AppServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructu
 // KruizeServiceMonitor watches Kruize which exposes metrics on port 8080.
 // Not applied in beta; retained for ROS cleanup when ros.enabled flips false.
 func KruizeServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
-	return serviceMonitor(cfg, cfg.Name+"-kruize-metrics", "metrics", []string{"ros-optimization"})
+	return serviceMonitor(cfg, cfg.Name+"-kruize-metrics", "metrics", "/metrics", []string{"ros-optimization"})
 }
 
 // OperatorServiceMonitor watches the controller-manager metrics endpoint.
@@ -95,19 +95,13 @@ func OperatorServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unst
 
 // GatewayServiceMonitor scrapes Envoy admin Prometheus stats (G2 leftover).
 func GatewayServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
-	sm := serviceMonitor(cfg, cfg.Name+"-gateway-metrics", "admin", []string{"gateway"})
-	_ = unstructured.SetNestedSlice(sm.Object, []any{
-		map[string]any{
-			"port":     "admin",
-			"path":     "/stats/prometheus",
-			"interval": "30s",
-		},
-	}, "spec", "endpoints")
-	return sm
+	return serviceMonitor(cfg, cfg.Name+"-gateway-metrics", "admin", "/stats/prometheus", []string{"gateway"})
 }
 
 // PrometheusRules returns UWM-evaluable alert rules (COST-8108 option B gauges +
 // App/operator scrape series). Condition alerts use costmanagement_condition.
+// SecretRotated / DriftCorrected alerts are deferred until emit paths exist
+// (COST-7694 / G4); counters remain registered for that work.
 func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
 	instance := cfg.Name
 	ns := cfg.Namespace
@@ -115,81 +109,70 @@ func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 	cond := func(typ, status string) string {
 		return `costmanagement_condition{namespace="` + ns + `",name="` + instance + `",type="` + typ + `",status="` + status + `"} == 1`
 	}
+	// cr_name avoids overwriting Prometheus's reserved "instance" (scrape target).
+	labels := func(severity string) map[string]any {
+		return map[string]any{
+			"severity": severity,
+			"cr_name":  instance,
+		}
+	}
 
 	rules := []any{
 		map[string]any{
-			"alert": "CostManagementMigrationFailed",
-			"expr":  `costmanagement_migration_job_failed{namespace="` + ns + `",name="` + instance + `"} == 1`,
-			"for":   "1m",
-			"labels": map[string]any{
-				"severity": "critical",
-				"instance": instance,
-			},
+			"alert":  "CostManagementMigrationFailed",
+			"expr":   `costmanagement_migration_job_failed{namespace="` + ns + `",name="` + instance + `"} == 1`,
+			"for":    "1m",
+			"labels": labels("critical"),
 			"annotations": map[string]any{
 				"summary":     "Cost Management migration job failed",
 				"description": "Migration job {{ $labels.job }} has failed. Schema upgrades are blocked.",
 			},
 		},
 		map[string]any{
-			"alert": "CostManagementMigrationStalled",
-			"expr":  cond("SchemaUpToDate", "False"),
-			"for":   "10m",
-			"labels": map[string]any{
-				"severity": "warning",
-				"instance": instance,
-			},
+			"alert":  "CostManagementMigrationStalled",
+			"expr":   cond("SchemaUpToDate", "False"),
+			"for":    "10m",
+			"labels": labels("warning"),
 			"annotations": map[string]any{
 				"summary":     "Cost Management schema migration stalled",
 				"description": "Database schema is not up to date for {{ $labels.name }} for more than 10 minutes.",
 			},
 		},
 		map[string]any{
-			"alert": "CostManagementDegraded",
-			"expr":  cond("Degraded", "True"),
-			"for":   "5m",
-			"labels": map[string]any{
-				"severity": "critical",
-				"instance": instance,
-			},
+			"alert":  "CostManagementDegraded",
+			"expr":   cond("Degraded", "True"),
+			"for":    "5m",
+			"labels": labels("critical"),
 			"annotations": map[string]any{
 				"summary":     "Cost Management operator is degraded",
 				"description": "The CostManagementServiceConfig {{ $labels.name }} has been in Degraded state for 5 minutes.",
 			},
 		},
 		map[string]any{
-			"alert": "CostManagementDependencyDown",
-			"expr":  `(` + cond("DatabaseReady", "False") + `) or (` + cond("CacheReady", "False") + `)`,
-			"for":   "5m",
-			"labels": map[string]any{
-				"severity": "critical",
-				"instance": instance,
-			},
+			"alert":  "CostManagementDependencyDown",
+			"expr":   `(` + cond("DatabaseReady", "False") + `) or (` + cond("CacheReady", "False") + `)`,
+			"for":    "5m",
+			"labels": labels("critical"),
 			"annotations": map[string]any{
 				"summary":     "Cost Management dependency validation failed",
 				"description": "DatabaseReady or CacheReady is False on {{ $labels.name }} for more than 5 minutes.",
 			},
 		},
 		map[string]any{
-			"alert": "CostManagementPodRestarting",
-			"expr":  `costmanagement_managed_pod_restarts{namespace="` + ns + `",name="` + instance + `"} > 3`,
-			"for":   "15m",
-			"labels": map[string]any{
-				"severity": "warning",
-				"instance": instance,
-			},
+			"alert":  "CostManagementPodRestarting",
+			"expr":   `costmanagement_managed_pod_restarts{namespace="` + ns + `",name="` + instance + `"} > 3`,
+			"for":    "15m",
+			"labels": labels("warning"),
 			"annotations": map[string]any{
 				"summary":     "Cost Management managed pod restarting",
 				"description": "Pod {{ $labels.pod }} container {{ $labels.container }} has restart count > 3 for 15 minutes.",
 			},
 		},
 		map[string]any{
-			"alert": "CostManagementNotAvailable",
-			"expr":  cond("Available", "False"),
-			"for":   "30m",
-			"labels": map[string]any{
-				"severity": "warning",
-				"instance": instance,
-			},
+			"alert":  "CostManagementNotAvailable",
+			"expr":   cond("Available", "False"),
+			"for":    "30m",
+			"labels": labels("warning"),
 			"annotations": map[string]any{
 				"summary":     "Cost Management stack is not available",
 				"description": "CostManagementServiceConfig {{ $labels.name }} has Available=False for 30 minutes.",
@@ -199,24 +182,20 @@ func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 			"alert": "CostManagementAPIDown",
 			"expr": `(up{namespace="` + ns + `",service="` + kokuAPIService + `"} == 0)` +
 				` or (absent(up{namespace="` + ns + `",service="` + kokuAPIService + `"}) == 1)`,
-			"for": "5m",
-			"labels": map[string]any{
-				"severity": "critical",
-				"instance": instance,
-			},
+			"for":    "5m",
+			"labels": labels("critical"),
 			"annotations": map[string]any{
 				"summary":     "Cost Management API metrics endpoint unreachable",
 				"description": "Prometheus cannot scrape /metrics on Service {{ $labels.service }} in namespace {{ $labels.namespace }} (down or absent) for more than 5 minutes.",
 			},
 		},
 		map[string]any{
-			"alert": "CostManagementReconcileFailure",
-			"expr":  `increase(costmanagement_reconcile_errors_total{namespace="` + ns + `",name="` + instance + `"}[15m]) > 0`,
-			"for":   "15m",
-			"labels": map[string]any{
-				"severity": "warning",
-				"instance": instance,
-			},
+			// Any reconcile error in the last 15m (for:0m avoids boundary flapping
+			// with increase(...[15m]) and for:15m).
+			"alert":  "CostManagementReconcileFailure",
+			"expr":   `increase(costmanagement_reconcile_errors_total{namespace="` + ns + `",name="` + instance + `"}[15m]) > 0`,
+			"for":    "0m",
+			"labels": labels("warning"),
 			"annotations": map[string]any{
 				"summary":     "Cost Management reconcile errors",
 				"description": "Operator reconcile errors for {{ $labels.name }} over the last 15 minutes.",
@@ -231,40 +210,11 @@ func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 				`cost_model_backlog{namespace="` + ns + `"} > 1000) or (` +
 				`default_backlog{namespace="` + ns + `"} > 1000) or (` +
 				`ocp_backlog{namespace="` + ns + `"} > 1000)`,
-			"for": "10m",
-			"labels": map[string]any{
-				"severity": "warning",
-				"instance": instance,
-			},
+			"for":    "10m",
+			"labels": labels("warning"),
 			"annotations": map[string]any{
 				"summary":     "Cost Management Celery backlog high",
 				"description": "A Celery/work queue backlog is above 1000 for more than 10 minutes in {{ $labels.namespace }}.",
-			},
-		},
-		map[string]any{
-			"alert": "CostManagementSecretRotated",
-			"expr":  `increase(costmanagement_secret_rotated_total{namespace="` + ns + `",name="` + instance + `"}[1h]) > 0`,
-			"for":   "0m",
-			"labels": map[string]any{
-				"severity": "info",
-				"instance": instance,
-			},
-			"annotations": map[string]any{
-				"summary":     "Cost Management secret rotated",
-				"description": "Managed Secret {{ $labels.secret }} was rotated (informational; align emit path with COST-7694).",
-			},
-		},
-		map[string]any{
-			"alert": "CostManagementDriftCorrected",
-			"expr":  `increase(costmanagement_drift_corrected_total{namespace="` + ns + `",name="` + instance + `"}[1h]) > 0`,
-			"for":   "0m",
-			"labels": map[string]any{
-				"severity": "info",
-				"instance": instance,
-			},
-			"annotations": map[string]any{
-				"summary":     "Cost Management drift corrected",
-				"description": "Operator re-applied desired state for {{ $labels.kind }} after detecting drift.",
 			},
 		},
 	}

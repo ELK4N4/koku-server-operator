@@ -144,7 +144,9 @@ func (r *CostManagementServiceConfigReconciler) Reconcile(ctx context.Context, r
 	if reconcileErr != nil {
 		opmetrics.ReconcileErrors.WithLabelValues(cfg.Namespace, cfg.Name).Inc()
 	}
-	_ = r.syncManagedPodRestarts(ctx, cfg)
+	if err := r.syncManagedPodRestarts(ctx, cfg); err != nil {
+		logger.Error(err, "failed to sync managed pod restart metrics")
+	}
 	r.syncConditionMetrics(cfg)
 
 	if patchErr := r.patchStatus(ctx, original, cfg); patchErr != nil {
@@ -215,6 +217,8 @@ func (r *CostManagementServiceConfigReconciler) reconcileDelete(ctx context.Cont
 
 	// Drop UWM series for this CMSC so deleted instances cannot keep alerts firing.
 	opmetrics.ClearManagedPodRestarts(cfg.Namespace, cfg.Name)
+	opmetrics.ClearConditionMetrics(cfg.Namespace, cfg.Name)
+	opmetrics.ClearMigrationJobFailedAll(cfg.Namespace, cfg.Name)
 
 	controllerutil.RemoveFinalizer(cfg, finalizerName)
 	if err := r.Update(ctx, cfg); err != nil {
@@ -497,6 +501,7 @@ func (r *CostManagementServiceConfigReconciler) runMigrationStep(
 	}
 
 	if isJobComplete(existing) {
+		opmetrics.SetMigrationJobFailed(cfg.Namespace, cfg.Name, jobName, false)
 		return Result{}, nil // proceed to next step
 	}
 	if isJobFailed(existing) {
