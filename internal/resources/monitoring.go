@@ -86,7 +86,8 @@ func OperatorServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unst
 		},
 	}, "spec", "endpoints")
 	_ = unstructured.SetNestedStringMap(sm.Object, map[string]string{
-		"control-plane": "controller-manager",
+		"control-plane":          "controller-manager",
+		"app.kubernetes.io/name": "koku-service-operator",
 	}, "spec", "selector", "matchLabels")
 	_ = unstructured.SetNestedSlice(sm.Object, []any{cfg.Namespace}, "spec", "namespaceSelector", "matchNames")
 
@@ -100,8 +101,8 @@ func GatewayServiceMonitor(cfg *costv1alpha1.CostManagementServiceConfig) *unstr
 
 // PrometheusRules returns UWM-evaluable alert rules (COST-8108 option B gauges +
 // App/operator scrape series). Condition alerts use costmanagement_condition.
-// SecretRotated / DriftCorrected alerts are deferred until emit paths exist
-// (COST-7694 / G4); counters remain registered for that work.
+// Deferred until emit/scrape paths exist: SecretRotated / DriftCorrected
+// (COST-7694 / G4); CeleryBacklog (needs Celery worker Service + metrics scrape).
 func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructured.Unstructured {
 	instance := cfg.Name
 	ns := cfg.Namespace
@@ -199,22 +200,6 @@ func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 			"annotations": map[string]any{
 				"summary":     "Cost Management reconcile errors",
 				"description": "Operator reconcile errors for {{ $labels.name }} over the last 15 minutes.",
-			},
-		},
-		map[string]any{
-			"alert": "CostManagementCeleryBacklog",
-			"expr": `(` +
-				`download_backlog{namespace="` + ns + `"} > 1000) or (` +
-				`summary_backlog{namespace="` + ns + `"} > 1000) or (` +
-				`priority_backlog{namespace="` + ns + `"} > 1000) or (` +
-				`cost_model_backlog{namespace="` + ns + `"} > 1000) or (` +
-				`default_backlog{namespace="` + ns + `"} > 1000) or (` +
-				`ocp_backlog{namespace="` + ns + `"} > 1000)`,
-			"for":    "10m",
-			"labels": labels("warning"),
-			"annotations": map[string]any{
-				"summary":     "Cost Management Celery backlog high",
-				"description": "A Celery/work queue backlog is above 1000 for more than 10 minutes in {{ $labels.namespace }}.",
 			},
 		},
 	}

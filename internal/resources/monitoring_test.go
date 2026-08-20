@@ -65,7 +65,6 @@ func TestPrometheusRules_BetaOperatorCentricSet(t *testing.T) {
 		"CostManagementNotAvailable",
 		"CostManagementAPIDown",
 		"CostManagementReconcileFailure",
-		"CostManagementCeleryBacklog",
 	}
 	for _, a := range want {
 		if !names[a] {
@@ -78,6 +77,7 @@ func TestPrometheusRules_BetaOperatorCentricSet(t *testing.T) {
 		"CostManagementNotProgressing",
 		"CostManagementSecretRotated",  // deferred until COST-7694 emit path
 		"CostManagementDriftCorrected", // deferred until G4 emit path
+		"CostManagementCeleryBacklog",  // deferred until Celery worker scrape
 	}
 	for _, a := range absent {
 		if names[a] {
@@ -112,6 +112,16 @@ func TestOperatorServiceMonitor_HTTPScheme(t *testing.T) {
 	}
 	if ep["port"] != "https" {
 		t.Errorf("port name: got %v want https (Service port name)", ep["port"])
+	}
+	sel, found, err := unstructured.NestedStringMap(sm.Object, "spec", "selector", "matchLabels")
+	if err != nil || !found {
+		t.Fatalf("selector.matchLabels: found=%v err=%v", found, err)
+	}
+	if sel["control-plane"] != "controller-manager" {
+		t.Errorf("control-plane label: got %q", sel["control-plane"])
+	}
+	if sel["app.kubernetes.io/name"] != "koku-service-operator" {
+		t.Errorf("app.kubernetes.io/name: got %q want koku-service-operator", sel["app.kubernetes.io/name"])
 	}
 }
 

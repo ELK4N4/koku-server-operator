@@ -269,6 +269,12 @@ func (r *CostManagementServiceConfigReconciler) reconcile(ctx context.Context, c
 		return ctrl.Result{RequeueAfter: requeueSlow}, err
 	}
 	if !result.IsZero() {
+		// Blocking validation / failed migrate set PhaseDegraded with RequeueAfter or
+		// Stop and never return an error — emit PhaseChanged here or Ready→Degraded
+		// is silent (COST-7692).
+		if cfg.Status.Phase == costv1alpha1.PhaseDegraded && cfg.Status.Phase != priorPhase {
+			r.emitPhaseChanged(cfg, priorPhase, cfg.Status.Phase)
+		}
 		return ctrl.Result{RequeueAfter: result.RequeueAfter}, nil
 	}
 

@@ -41,6 +41,26 @@ func TestSetMigrationJobFailed(t *testing.T) {
 	}
 }
 
+func TestClearConditionAndMigrationMetrics(t *testing.T) {
+	SetCondition("ns", "cm", "Degraded", metav1.ConditionTrue)
+	SetCondition("ns", "cm", "Available", metav1.ConditionFalse)
+	SetMigrationJobFailed("ns", "cm", "cm-koku-migrate", true)
+	SetMigrationJobFailed("ns", "cm", "cm-ros-migrate", true)
+
+	if n := ClearConditionMetrics("ns", "cm"); n < 2 {
+		t.Fatalf("ClearConditionMetrics deleted %d, want ≥2", n)
+	}
+	if Condition.DeleteLabelValues("ns", "cm", "Degraded", "True") {
+		t.Fatal("expected Degraded series deleted")
+	}
+	if n := ClearMigrationJobFailedAll("ns", "cm"); n != 2 {
+		t.Fatalf("ClearMigrationJobFailedAll deleted %d, want 2", n)
+	}
+	if MigrationJobFailed.DeleteLabelValues("ns", "cm", "cm-koku-migrate") {
+		t.Fatal("expected koku-migrate series deleted")
+	}
+}
+
 func TestClearManagedPodRestarts(t *testing.T) {
 	ManagedPodRestarts.WithLabelValues("ns", "cm", "pod-a", "app").Set(3)
 	ManagedPodRestarts.WithLabelValues("ns", "cm", "pod-b", "app").Set(1)
