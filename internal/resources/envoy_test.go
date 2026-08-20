@@ -372,16 +372,8 @@ func TestEnvoyDeploymentMountsKeycloakCACert(t *testing.T) {
 
 	dep := EnvoyDeployment(cfg)
 
-	// The secret must appear as a volume.
-	var found bool
-	for _, v := range dep.Spec.Template.Spec.Volumes {
-		if v.Secret != nil && v.Secret.SecretName == "my-router-ca" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("EnvoyDeployment missing volume for keycloak caCertSecretName=%q — "+
+	if !volumeProjectsSecret(dep.Spec.Template.Spec.Volumes, "my-router-ca", "keycloak-ca.crt") {
+		t.Errorf("EnvoyDeployment missing projected volume for keycloak caCertSecretName=%q — "+
 			"Envoy will fail to verify Keycloak Route certificates", "my-router-ca")
 	}
 }
@@ -396,12 +388,15 @@ func TestEnvoyInitMountsKeycloakCAAtCaExtra(t *testing.T) {
 	init := dep.Spec.Template.Spec.InitContainers[0]
 	found := false
 	for _, m := range init.VolumeMounts {
-		if m.Name == "keycloak-ca" && m.MountPath == "/ca-extra" {
+		if m.MountPath == "/ca-extra" {
 			found = true
+			if m.Name != caExtraVolumeName {
+				t.Errorf("ca-extra mount name = %q, want %q", m.Name, caExtraVolumeName)
+			}
 		}
 	}
 	if !found {
-		t.Fatal("prepare-ca-bundle must mount keycloak-ca at /ca-extra so combine-ca.sh can merge it")
+		t.Fatal("prepare-ca-bundle must mount /ca-extra so combine-ca.sh can merge user CAs")
 	}
 }
 
