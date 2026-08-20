@@ -55,6 +55,7 @@ const (
 	reasonWaitingForROSProcessor = "WaitingForROSProcessor"
 	reasonKokuAvailable          = "KokuAvailable"
 	reasonDeploymentNotReady     = "DeploymentNotReady"
+	reasonDeploymentReady        = "DeploymentReady"
 	msgWaitingForRBACAPI         = "waiting for RBAC API"
 	msgWaitingForRBACWorker      = "waiting for RBAC worker"
 	msgWaitingForKokuAPI         = "waiting for Koku API"
@@ -1285,6 +1286,7 @@ func (r *CostManagementServiceConfigReconciler) waitForDeployments(
 			return r.notReadyWait(cfg, w.reason, w.message, w.component), nil
 		}
 	}
+	r.clearDeploymentNotReady(cfg)
 	return Result{}, nil
 }
 
@@ -1307,7 +1309,21 @@ func (r *CostManagementServiceConfigReconciler) notReadyWait(
 		cfg.Status.Phase = costv1alpha1.PhaseDegraded
 		return Result{RequeueAfter: readinessBackoff(existing.LastTransitionTime.Time)}
 	}
+	r.clearDeploymentNotReady(cfg)
 	return Result{RequeueAfter: requeueSlow}
+}
+
+// clearDeploymentNotReady flips Degraded=False only when the reason is
+// DeploymentNotReady. ReconcileError and migration Degraded stay put.
+func (r *CostManagementServiceConfigReconciler) clearDeploymentNotReady(cfg *costv1alpha1.CostManagementServiceConfig) {
+	existing := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
+	if existing == nil || existing.Status != metav1.ConditionTrue || existing.Reason != reasonDeploymentNotReady {
+		return
+	}
+	r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionFalse, reasonDeploymentReady, "")
+	if cfg.Status.Phase == costv1alpha1.PhaseDegraded {
+		cfg.Status.Phase = costv1alpha1.PhaseProgressing
+	}
 }
 
 func readinessBackoff(since time.Time) time.Duration {

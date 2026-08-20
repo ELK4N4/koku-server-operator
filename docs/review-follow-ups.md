@@ -322,17 +322,8 @@ API, Ingress, Envoy, Valkey), not just COST-7686.
 
 ---
 
-## 14. No test that ROS Processor alone blocks worker readiness
+## 14. No test that ROS Processor alone blocks worker readiness — **closed in PR #105**
 
-**Source:** [PR #105 CodeRabbit](https://github.com/project-koku/koku-service-operator/pull/105).
+**Source:** [PR #105 CodeRabbit](https://github.com/project-koku/koku-service-operator/pull/105); João's [request-changes review](https://github.com/project-koku/koku-service-operator/pull/105#issuecomment-5354975468).
 
-**Problem:** `TestReconcileWorkers_ROSAPINotReady_BlocksProgress` leaves
-ROS API unavailable, so it never reaches the ROS Processor wait. Dropping
-Processor from `waitForWorkerReadiness` would still pass.
-
-**Suggested fix:** Mark Ingress + ROS API ready, leave Processor down,
-assert `Available=False` `WaitingForROSProcessor`.
-
-**Out of scope for PR #105** — coverage gap only; the wait list already
-includes Processor. Track separately from the ROS wait-clock bug that
-PR #105 does fix.
+**Closed:** `TestReconcileWorkers_ROSProcessorNotReady_BlocksProgress` marks Ingress + ROS API ready, leaves Processor down, and asserts `Available=False` `WaitingForROSProcessor`.

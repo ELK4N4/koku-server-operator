@@ -88,6 +88,35 @@ func TestReconcileWorkers_ROSAPINotReady_BlocksProgress(t *testing.T) {
 	}
 }
 
+func TestReconcileWorkers_ROSProcessorNotReady_BlocksProgress(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	cfg.Spec.ROS.Enabled = boolPtr(true)
+	c := fakeClientPreservingStatus(scheme)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+	if _, err := r.reconcileWorkers(context.Background(), cfg); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	markDeploymentReady(t, c, testNamespace, resources.NameIngress(cfg))
+	markDeploymentReady(t, c, testNamespace, resources.NameROSAPI(cfg))
+
+	result, err := r.reconcileWorkers(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected requeue while ROS Processor is not ready")
+	}
+	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != reasonWaitingForROSProcessor {
+		t.Fatalf("expected Available=False %s, got %+v", reasonWaitingForROSProcessor, avail)
+	}
+}
+
 // Core must not promote Available=True between worker wait passes, or the
 // 5-minute DeploymentNotReady clock for ROS API never elapses.
 func TestReconcileCoreThenWorkers_ROSAPINotReady_PreservesWaitClock(t *testing.T) {

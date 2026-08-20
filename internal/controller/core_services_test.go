@@ -286,6 +286,97 @@ func TestReconcileCoreServices_MasuNotReady_TimeoutDegrades(t *testing.T) {
 	}
 }
 
+func TestReconcileCoreServices_MasuTimeout_ClearsDegradedWhenListenerWaits(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	c := fakeClientPreservingStatus(scheme)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileCoreServices(context.Background(), cfg); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	markDeploymentReady(t, c, testNamespace, resources.NameRBACAPI(cfg))
+	markDeploymentReady(t, c, testNamespace, resources.NameRBACWorker(cfg))
+	markDeploymentReady(t, c, testNamespace, resources.NameKokuAPI(cfg))
+	apimeta.RemoveStatusCondition(&cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	apimeta.SetStatusCondition(&cfg.Status.Conditions, metav1.Condition{
+		Type:               costv1alpha1.ConditionAvailable,
+		Status:             metav1.ConditionFalse,
+		Reason:             reasonWaitingForMasu,
+		Message:            msgWaitingForMasu,
+		LastTransitionTime: metav1.NewTime(time.Now().Add(-6 * time.Minute)),
+	})
+	if _, err := r.reconcileCoreServices(context.Background(), cfg); err != nil {
+		t.Fatalf("timeout pass: %v", err)
+	}
+
+	markDeploymentReady(t, c, testNamespace, resources.NameMasu(cfg))
+	result, err := r.reconcileCoreServices(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("listener wait pass: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected requeue while Listener is not ready")
+	}
+	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != reasonWaitingForListener {
+		t.Fatalf("expected Available=False %s, got %+v", reasonWaitingForListener, avail)
+	}
+	assertDegradedNotDeploymentNotReady(t, cfg)
+}
+
+func TestReconcileCoreThenWorkers_MasuTimeout_ClearsDegradedWhenIngressWaits(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	c := fakeClientPreservingStatus(scheme)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileCoreServices(context.Background(), cfg); err != nil {
+		t.Fatalf("core first pass: %v", err)
+	}
+	markDeploymentReady(t, c, testNamespace, resources.NameRBACAPI(cfg))
+	markDeploymentReady(t, c, testNamespace, resources.NameRBACWorker(cfg))
+	markDeploymentReady(t, c, testNamespace, resources.NameKokuAPI(cfg))
+	apimeta.RemoveStatusCondition(&cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	apimeta.SetStatusCondition(&cfg.Status.Conditions, metav1.Condition{
+		Type:               costv1alpha1.ConditionAvailable,
+		Status:             metav1.ConditionFalse,
+		Reason:             reasonWaitingForMasu,
+		Message:            msgWaitingForMasu,
+		LastTransitionTime: metav1.NewTime(time.Now().Add(-6 * time.Minute)),
+	})
+	if _, err := r.reconcileCoreServices(context.Background(), cfg); err != nil {
+		t.Fatalf("timeout pass: %v", err)
+	}
+
+	markDeploymentReady(t, c, testNamespace, resources.NameMasu(cfg))
+	markDeploymentReady(t, c, testNamespace, resources.NameListener(cfg))
+	if _, err := r.reconcileCoreServices(context.Background(), cfg); err != nil {
+		t.Fatalf("core ready pass: %v", err)
+	}
+	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionAvailable) {
+		t.Fatal("expected Available=True once core Deployments are ready")
+	}
+	assertDegradedNotDeploymentNotReady(t, cfg)
+
+	result, err := r.reconcileWorkers(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("ingress wait pass: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected requeue while Ingress is not ready")
+	}
+	assertDegradedNotDeploymentNotReady(t, cfg)
+}
+
 func TestReconcileCoreServices_RBACNotReady_BlocksAvailable(t *testing.T) {
 	scheme := ownershipScheme(t)
 	cfg := minimalCR(testCRName, testNamespace)
@@ -404,5 +495,13 @@ func mustNotExist(t *testing.T, c client.Client, ns, name string, obj client.Obj
 	err := c.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: name}, obj)
 	if !apierrors.IsNotFound(err) {
 		t.Fatalf("expected %s/%s to be absent, got err=%v", ns, name, err)
+	}
+}
+
+func assertDegradedNotDeploymentNotReady(t *testing.T, cfg *costv1alpha1.CostManagementServiceConfig) {
+	t.Helper()
+	deg := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
+	if deg != nil && deg.Status == metav1.ConditionTrue && deg.Reason == reasonDeploymentNotReady {
+		t.Fatalf("expected Degraded not True %s, got %+v", reasonDeploymentNotReady, deg)
 	}
 }
