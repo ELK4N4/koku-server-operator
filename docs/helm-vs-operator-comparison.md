@@ -1,6 +1,6 @@
 # Helm Chart vs Operator Comparison Report
 
-Updated: 2026-08-20 (validated against `main`)
+Updated: 2026-08-20 (validated against `main` + feat/helm_gaps)
 
 Systematic comparison of `cost-onprem-chart/cost-onprem/` (Helm chart) against
 `koku-service-operator` (operator) — identifying deviations, missing pieces,
@@ -153,7 +153,7 @@ them (users can provide them via `spec.costManagement.api.env`):
 
 | Env Var | Chart Default | Operator | Impact |
 |---------|---------------|----------|--------|
-| `ENHANCED_ORG_ADMIN` | `"False"` | not set | **critical for RBAC scoping** |
+| `ENHANCED_ORG_ADMIN` | `"False"` | **set** (`"False"`) | **fixed** |
 | `DEVELOPMENT` | `"False"` | not set | koku defaults to "True" in dev? |
 | `KOKU_ENABLE_SENTRY` | `"False"` | not set | Sentry SDK may try to phone home |
 | `INITIAL_INGEST_NUM_MONTHS` | `"2"` | not set | may over-ingest |
@@ -168,10 +168,10 @@ them (users can provide them via `spec.costManagement.api.env`):
 Previously missing `RETAIN_NUM_MONTHS` is now set via a dedicated CR field
 (default `4`; chart was updated from `3` to `4` on 2026-08-10 — now matching).
 
-`ENHANCED_ORG_ADMIN` is particularly important: when True, Koku treats all
-org_admin users as having full access without checking RBAC. The chart's
-keycloakSync template validates this at render time. The operator should
-hardcode this to `"False"`.
+`ENHANCED_ORG_ADMIN` is now set to `"False"` in `KokuCommonEnv()` (fixed
+2026-08-20). When True, Koku treats all org_admin users as having full
+access without checking RBAC. The chart's keycloakSync template validates
+this at render time.
 
 ### 4.2 Logging env vars partially set
 
@@ -290,7 +290,7 @@ OpenShift Route annotation default should also be set for consistency.
 
 ## 7. Remaining Fixes (Priority Order)
 
-1. **Set `ENHANCED_ORG_ADMIN=False`** in `KokuCommonEnv()` — critical for RBAC scoping
+1. ~~**Set `ENHANCED_ORG_ADMIN=False`** in `KokuCommonEnv()` — critical for RBAC scoping~~ **DONE** (feat/helm_gaps)
 2. **Add Celery beat resources** (`koku.go`): set `{cpu: 50m, mem: 200Mi}` / `{cpu: 100m, mem: 400Mi}`
 3. **Fix Masu Service port** (`koku.go`): expose port 8000 (http) + 9000 (metrics)
 4. **Add ROS Processor + Poller Services**: needed for Prometheus metrics scraping
