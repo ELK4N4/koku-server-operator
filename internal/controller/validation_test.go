@@ -285,6 +285,62 @@ func TestReconcileValidation_ExternalDBUnreachable(t *testing.T) {
 	if dbCond != nil && dbCond.Reason != "DatabaseUnreachable" {
 		t.Errorf("unexpected reason %q", dbCond.Reason)
 	}
+	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != "DependencyNotReady" {
+		t.Errorf("expected Available=False reason=DependencyNotReady, got %+v", avail)
+	}
+	deg := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
+	if deg == nil || deg.Status != metav1.ConditionTrue || deg.Reason != "DependencyUnreachable" {
+		t.Errorf("expected Degraded=True reason=DependencyUnreachable, got %+v", deg)
+	}
+	if cfg.Status.Phase != costv1alpha1.PhaseDegraded {
+		t.Errorf("expected phase %q, got %q", costv1alpha1.PhaseDegraded, cfg.Status.Phase)
+	}
+}
+
+func TestReconcileValidation_ExternalCacheUnreachable_SetsAvailableDegraded(t *testing.T) {
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			Database: costv1alpha1.DatabaseConfig{Deploy: truePtr()},
+			Cache: costv1alpha1.CacheConfig{
+				Deploy: falsePtr(),
+				Host:   localHost,
+				Port:   1,
+			},
+			Kafka: costv1alpha1.KafkaConfig{BootstrapServers: ""},
+		},
+	}
+	// Stale Ready-era conditions that must be cleared on blocking failure.
+	cfg.Status.Conditions = []metav1.Condition{
+		{Type: costv1alpha1.ConditionAvailable, Status: metav1.ConditionTrue, Reason: "AllComponentsReady"},
+		{Type: costv1alpha1.ConditionDegraded, Status: metav1.ConditionFalse, Reason: "ReconcileComplete"},
+	}
+	cfg.Status.Phase = costv1alpha1.PhaseReady
+
+	r := newValidationReconciler(t)
+	result, err := r.reconcileValidation(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Error("expected non-zero requeue (unreachable external cache blocks pipeline)")
+	}
+	cacheCond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionCacheReady)
+	if cacheCond == nil || cacheCond.Status != metav1.ConditionFalse || cacheCond.Reason != "CacheUnreachable" {
+		t.Errorf("expected CacheReady=False CacheUnreachable, got %+v", cacheCond)
+	}
+	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if avail == nil || avail.Status != metav1.ConditionFalse {
+		t.Errorf("expected Available=False, got %+v", avail)
+	}
+	deg := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
+	if deg == nil || deg.Status != metav1.ConditionTrue {
+		t.Errorf("expected Degraded=True, got %+v", deg)
+	}
+	if cfg.Status.Phase != costv1alpha1.PhaseDegraded {
+		t.Errorf("expected phase %q, got %q", costv1alpha1.PhaseDegraded, cfg.Status.Phase)
+	}
 }
 
 func TestReconcileValidation_KafkaReachable(t *testing.T) {

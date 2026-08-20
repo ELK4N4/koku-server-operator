@@ -150,18 +150,19 @@ func PrometheusRules(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 				"description": "Database schema is not up to date for {{ $labels.customresource_name }}. Migrations may be stuck.",
 			},
 		},
-		// 4 — koku API unavailable
+		// 4 — koku API unavailable (scrape fail or target gone)
 		map[string]any{
 			"alert": "CostManagementAPIDown",
-			"expr":  `up{job="` + instance + `-koku-api",namespace="` + ns + `"} == 0`,
-			"for":   "5m",
+			"expr": `(up{job="` + instance + `-koku-api",namespace="` + ns + `"} == 0)` +
+				` or (absent(up{job="` + instance + `-koku-api",namespace="` + ns + `"}) == 1)`,
+			"for": "5m",
 			"labels": map[string]any{
 				"severity": "critical",
 				"instance": instance,
 			},
 			"annotations": map[string]any{
 				"summary":     "Cost Management API is unreachable",
-				"description": "The koku-api metrics endpoint has been unreachable for 5 minutes.",
+				"description": "The koku-api metrics endpoint has been down or absent for 5 minutes.",
 			},
 		},
 		// 5 — operator not progressing (stuck reconcile)

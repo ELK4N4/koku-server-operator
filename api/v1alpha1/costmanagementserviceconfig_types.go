@@ -249,8 +249,12 @@ type ObjectStorageConfig struct {
 	// When empty the operator creates or detects the secret via ODF/NooBaa.
 	SecretName string `json:"secretName,omitempty"`
 	// Namespace of the noobaa-admin Secret used by NooBaa auto-detection.
-	// Ignored when secretName is set.
+	// Ignored when secretName is set. Allowed values are openshift-storage
+	// (ODF) and noobaa (standalone noobaa-operator). Other namespaces must
+	// use secretName instead — the operator must not fetch noobaa-admin
+	// from an arbitrary namespace chosen in the CR.
 	// +kubebuilder:default:="openshift-storage"
+	// +kubebuilder:validation:Enum=openshift-storage;noobaa
 	NoobaaNamespace string    `json:"noobaaNamespace,omitempty"`
 	S3              S3Options `json:"s3,omitempty"`
 }
