@@ -329,6 +329,42 @@ func TestReconcileCoreServices_MasuTimeout_ClearsDegradedWhenListenerWaits(t *te
 	assertDegradedNotDeploymentNotReady(t, cfg)
 }
 
+func TestReconcileCoreServices_ShortWait_LeavesReconcileError(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	c := fakeClientPreservingStatus(scheme)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	if _, err := r.reconcileCoreServices(context.Background(), cfg); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	markDeploymentReady(t, c, testNamespace, resources.NameRBACAPI(cfg))
+	markDeploymentReady(t, c, testNamespace, resources.NameRBACWorker(cfg))
+	markDeploymentReady(t, c, testNamespace, resources.NameKokuAPI(cfg))
+	r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue,
+		"ReconcileError", "apply failed")
+	cfg.Status.Phase = costv1alpha1.PhaseDegraded
+
+	result, err := r.reconcileCoreServices(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("masu wait pass: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected requeue while Masu is not ready")
+	}
+	deg := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
+	if deg == nil || deg.Status != metav1.ConditionTrue || deg.Reason != "ReconcileError" {
+		t.Fatalf("expected Degraded=True ReconcileError to survive a short wait, got %+v", deg)
+	}
+	if deg.Message != "apply failed" {
+		t.Fatalf("expected ReconcileError message preserved, got %+v", deg)
+	}
+}
+
 func TestReconcileCoreThenWorkers_MasuTimeout_ClearsDegradedWhenIngressWaits(t *testing.T) {
 	scheme := ownershipScheme(t)
 	cfg := minimalCR(testCRName, testNamespace)
