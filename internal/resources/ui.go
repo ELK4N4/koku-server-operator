@@ -257,8 +257,10 @@ func UIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deploym
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: allLabels},
 				Spec: corev1.PodSpec{
-					SecurityContext:  nonRootPodSC(),
-					ImagePullSecrets: imagePullSecrets(cfg),
+					SecurityContext:              nonRootPodSC(),
+					ServiceAccountName:           NameUIServiceAccount(cfg),
+					AutomountServiceAccountToken: boolPtr(false),
+					ImagePullSecrets:             imagePullSecrets(cfg),
 					Containers: []corev1.Container{
 						{
 							Name:            "oauth-proxy",

@@ -296,6 +296,20 @@ func (r *CostManagementServiceConfigReconciler) reconcileSharedConfig(ctx contex
 	if err := r.ensureServiceAccount(ctx, cfg, cfg.Spec.CostManagement.ServiceAccount, resources.KokuServiceAccount(cfg)); err != nil {
 		return Result{}, fmt.Errorf("koku serviceaccount: %w", err)
 	}
+	// Family SAs with no CR create=false knob — Create defaults true.
+	for _, item := range []struct {
+		kind string
+		sa   *corev1.ServiceAccount
+	}{
+		{"gateway", resources.GatewayServiceAccount(cfg)},
+		{"ingress", resources.IngressServiceAccount(cfg)},
+		{"rbac", resources.RBACServiceAccount(cfg)},
+		{"ui", resources.UIServiceAccount(cfg)},
+	} {
+		if err := r.ensureServiceAccount(ctx, cfg, costv1alpha1.ServiceAccountSpec{}, item.sa); err != nil {
+			return Result{}, fmt.Errorf("%s serviceaccount: %w", item.kind, err)
+		}
+	}
 
 	return Result{}, nil
 }

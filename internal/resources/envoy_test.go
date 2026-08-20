@@ -313,6 +313,12 @@ func TestEnvoyResourceNames(t *testing.T) {
 	if d.Name != "cost-management-gateway" {
 		t.Errorf("Deployment name = %q", d.Name)
 	}
+	if d.Spec.Template.Spec.ServiceAccountName != NameGatewayServiceAccount(cfg) {
+		t.Errorf("ServiceAccountName = %q, want %q", d.Spec.Template.Spec.ServiceAccountName, NameGatewayServiceAccount(cfg))
+	}
+	if d.Spec.Template.Spec.AutomountServiceAccountToken == nil || *d.Spec.Template.Spec.AutomountServiceAccountToken {
+		t.Errorf("AutomountServiceAccountToken = %v, want false", d.Spec.Template.Spec.AutomountServiceAccountToken)
+	}
 	if d.Spec.Template.Spec.Containers[0].Image != "registry.redhat.io/openshift-service-mesh/proxyv2-rhel9:2.6" {
 		t.Errorf("image = %q", d.Spec.Template.Spec.Containers[0].Image)
 	}

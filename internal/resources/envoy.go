@@ -194,6 +194,7 @@ func EnvoyDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Depl
 					},
 				},
 				Spec: corev1.PodSpec{
+					ServiceAccountName:           NameGatewayServiceAccount(cfg),
 					AutomountServiceAccountToken: &falseVal,
 					SecurityContext:              nonRootPodSC(),
 					ImagePullSecrets:             imagePullSecrets(cfg),

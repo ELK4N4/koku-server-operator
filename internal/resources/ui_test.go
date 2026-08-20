@@ -36,6 +36,17 @@ func uiTestCfg() *costv1alpha1.CostManagementServiceConfig {
 	return cfg
 }
 
+func TestUIDeploymentServiceAccount(t *testing.T) {
+	dep := UIDeployment(uiTestCfg())
+	spec := dep.Spec.Template.Spec
+	if spec.ServiceAccountName != NameUIServiceAccount(uiTestCfg()) {
+		t.Errorf("ServiceAccountName = %q, want %q", spec.ServiceAccountName, NameUIServiceAccount(uiTestCfg()))
+	}
+	if spec.AutomountServiceAccountToken == nil || *spec.AutomountServiceAccountToken {
+		t.Errorf("AutomountServiceAccountToken = %v, want false", spec.AutomountServiceAccountToken)
+	}
+}
+
 func TestUIDeploymentOAuthProxySecurityContext(t *testing.T) {
 	dep := UIDeployment(uiTestCfg())
 	proxy := containerByName(t, dep.Spec.Template.Spec.Containers, "oauth-proxy")
