@@ -737,6 +737,8 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		resources.IngressNetworkPolicy(cfg),
 		resources.RBACAPINetworkPolicy(cfg),
 		resources.KokuAPINetworkPolicy(cfg),
+		resources.UINetworkPolicy(cfg),
+		resources.ListenerNetworkPolicy(cfg),
 	}
 	if costv1alpha1.ROSEnabled(cfg) {
 		netpols = append(netpols,

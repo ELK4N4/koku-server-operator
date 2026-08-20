@@ -130,6 +130,11 @@ func TestReconcileEdge_EnvoyReady_WithDomain_NoOAuth(t *testing.T) {
 	mustExist(t, r.Client, testNamespace, cfg.Name+"-ingress", &networkingv1.NetworkPolicy{})
 	mustExist(t, r.Client, testNamespace, cfg.Name+"-rbac-api", &networkingv1.NetworkPolicy{})
 	mustExist(t, r.Client, testNamespace, cfg.Name+"-koku-api", &networkingv1.NetworkPolicy{})
+	mustExist(t, r.Client, testNamespace, cfg.Name+"-ui", &networkingv1.NetworkPolicy{})
+	mustExist(t, r.Client, testNamespace, cfg.Name+"-listener", &networkingv1.NetworkPolicy{})
+	// Masu / cost-processor NetworkPolicy is COST-8060 — do not apply it here.
+	mustNotExist(t, r.Client, testNamespace, cfg.Name+"-masu", &networkingv1.NetworkPolicy{})
+	mustNotExist(t, r.Client, testNamespace, cfg.Name+"-cost-processor", &networkingv1.NetworkPolicy{})
 	// Deploy defaults true → cache/db NetworkPolicies are applied.
 	mustExist(t, r.Client, testNamespace, cfg.Name+"-cache", &networkingv1.NetworkPolicy{})
 	mustExist(t, r.Client, testNamespace, cfg.Name+"-database", &networkingv1.NetworkPolicy{})
