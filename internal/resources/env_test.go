@@ -225,3 +225,17 @@ func TestMergeEnvOverrideReplacesBase(t *testing.T) {
 		t.Fatalf("expected 3 env vars, got %d", len(merged))
 	}
 }
+
+func TestKokuCommonEnvEnhancedOrgAdmin(t *testing.T) {
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cost-management", Namespace: "cost-onprem"},
+	}
+	env := KokuCommonEnv(cfg)
+	got, ok := envValue(env, "ENHANCED_ORG_ADMIN")
+	if !ok {
+		t.Fatal("missing ENHANCED_ORG_ADMIN")
+	}
+	if got != "False" {
+		t.Errorf("ENHANCED_ORG_ADMIN = %q, want False", got)
+	}
+}
