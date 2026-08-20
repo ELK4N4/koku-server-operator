@@ -69,6 +69,7 @@ func KokuCommonEnv(cfg *costv1alpha1.CostManagementServiceConfig) []corev1.EnvVa
 		EnvVal("RBAC_SERVICE_PORT", "8080"),
 		EnvVal("RBAC_SERVICE_PATH", "/api/rbac/v1/access/"),
 		EnvVal("RBAC_SERVICE_PROTOCOL", "http"),
+		EnvVal("ENHANCED_ORG_ADMIN", "False"),
 	}
 
 	// Celery result expiry (default 28800 = 8 hours)

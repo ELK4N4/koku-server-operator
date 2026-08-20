@@ -1,6 +1,6 @@
 # Helm Chart vs Operator Comparison Report
 
-Updated: 2026-08-20 (validated against `main`)
+Updated: 2026-08-20 (validated against `main` + feat/helm_gaps: ENHANCED_ORG_ADMIN, Celery beat resources, Masu Service ports)
 
 Systematic comparison of `cost-onprem-chart/cost-onprem/` (Helm chart) against
 `koku-service-operator` (operator) — identifying deviations, missing pieces,
@@ -27,11 +27,11 @@ a `CostManagementServiceConfig` CR + Go reconciler.
 | CA Combine ConfigMap | yes | yes | match |
 | Service CA ConfigMap | yes | yes | match |
 | Koku API Deployment + Service | yes | yes | match |
-| Masu Deployment + Service | yes | yes | **port mismatch** |
+| Masu Deployment + Service | yes | yes | **fixed** (8000 http, 9000 metrics) |
 | Listener Deployment | yes | yes | match |
 | Koku ServiceAccount | yes | yes | match |
 | Koku Migration Job | yes | yes | match |
-| Celery Beat Deployment | yes | yes | **no resources** |
+| Celery Beat Deployment | yes | yes | **fixed** (50m/200Mi req, 100m/400Mi lim) |
 | Celery Workers (10 queues) | yes | yes | match |
 | RBAC API Deployment + Service | yes | yes | match |
 | RBAC Worker Deployment | yes | yes | match |
@@ -86,22 +86,21 @@ a `CostManagementServiceConfig` CR + Go reconciler.
 
 ## 2. Open Issues (Broken / Wrong)
 
-### 2.1 Celery beat has zero resource limits
+### 2.1 Celery beat has zero resource limits **FIXED** (feat/helm_gaps)
 
 **Severity: MEDIUM — unbounded resource consumption**
 
-`CeleryBeatDeployment()` in `koku.go` passes `corev1.ResourceRequirements{}`
+`CeleryBeatDeployment()` in `koku.go` previously passed `corev1.ResourceRequirements{}`
 (empty). The chart sets requests `{cpu: 50m, mem: 200Mi}` and limits
-`{cpu: 100m, mem: 400Mi}`.
+`{cpu: 100m, mem: 400Mi}`. **Now fixed** — operator matches chart defaults.
 
-### 2.2 Masu Service port mismatch
+### 2.2 Masu Service port mismatch **FIXED** (feat/helm_gaps)
 
 **Severity: MEDIUM — metrics scraping may break**
 
-Operator `MasuService()` exposes port 9000 (the metrics port). The Helm
-chart's Masu service exposes port 8000 (the Gunicorn HTTP port). This should
-be a two-port service (8000 for http, 9000 for metrics) or at minimum match
-the chart's port 8000.
+Operator `MasuService()` previously exposed only port 9000 (metrics). The Helm
+chart's Masu service exposes port 8000 (HTTP). **Now fixed** — operator exposes
+both ports: 8000 (http) and 9000 (metrics).
 
 ---
 
@@ -153,7 +152,7 @@ them (users can provide them via `spec.costManagement.api.env`):
 
 | Env Var | Chart Default | Operator | Impact |
 |---------|---------------|----------|--------|
-| `ENHANCED_ORG_ADMIN` | `"False"` | not set | **critical for RBAC scoping** |
+| `ENHANCED_ORG_ADMIN` | `"False"` | **set** (`"False"`) | **fixed** |
 | `DEVELOPMENT` | `"False"` | not set | koku defaults to "True" in dev? |
 | `KOKU_ENABLE_SENTRY` | `"False"` | not set | Sentry SDK may try to phone home |
 | `INITIAL_INGEST_NUM_MONTHS` | `"2"` | not set | may over-ingest |
@@ -168,10 +167,10 @@ them (users can provide them via `spec.costManagement.api.env`):
 Previously missing `RETAIN_NUM_MONTHS` is now set via a dedicated CR field
 (default `4`; chart was updated from `3` to `4` on 2026-08-10 — now matching).
 
-`ENHANCED_ORG_ADMIN` is particularly important: when True, Koku treats all
-org_admin users as having full access without checking RBAC. The chart's
-keycloakSync template validates this at render time. The operator should
-hardcode this to `"False"`.
+`ENHANCED_ORG_ADMIN` is now set to `"False"` in `KokuCommonEnv()` (fixed
+2026-08-20). When True, Koku treats all org_admin users as having full
+access without checking RBAC. The chart's keycloakSync template validates
+this at render time.
 
 ### 4.2 Logging env vars partially set
 
@@ -290,9 +289,9 @@ OpenShift Route annotation default should also be set for consistency.
 
 ## 7. Remaining Fixes (Priority Order)
 
-1. **Set `ENHANCED_ORG_ADMIN=False`** in `KokuCommonEnv()` — critical for RBAC scoping
-2. **Add Celery beat resources** (`koku.go`): set `{cpu: 50m, mem: 200Mi}` / `{cpu: 100m, mem: 400Mi}`
-3. **Fix Masu Service port** (`koku.go`): expose port 8000 (http) + 9000 (metrics)
+1. ~~**Set `ENHANCED_ORG_ADMIN=False`** in `KokuCommonEnv()` — critical for RBAC scoping~~ **DONE** (feat/helm_gaps)
+2. ~~**Add Celery beat resources** (`koku.go`): set `{cpu: 50m, mem: 200Mi}` / `{cpu: 100m, mem: 400Mi}`~~ **DONE** (feat/helm_gaps)
+3. ~~**Fix Masu Service port** (`koku.go`): expose port 8000 (http) + 9000 (metrics)~~ **DONE** (feat/helm_gaps)
 4. **Add ROS Processor + Poller Services**: needed for Prometheus metrics scraping
 5. **Add ROS metrics-scraping NetworkPolicies**: ros-api-metrics, processor-metrics, poller-metrics (Gateway, Koku API, and Masu now covered)
 6. **Add RBAC + ROS components to ServiceMonitors**: rbac-api, ros-processor, ros-recommendation-poller, gateway still missing
