@@ -103,3 +103,30 @@ func TestCeleryWorkerDeployments_SaaSQueuesOptIn(t *testing.T) {
 		t.Errorf("subs_extraction replicas = %d, want 1", got)
 	}
 }
+
+func TestCeleryBeatDeployment_ContainerResources(t *testing.T) {
+	cfg := testCfg()
+	cfg.Spec.CostManagement.API.Image.Repository = "quay.io/example/koku"
+	cfg.Spec.CostManagement.API.Image.Tag = "latest"
+
+	dep := CeleryBeatDeployment(cfg)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	cpuReq := container.Resources.Requests[corev1.ResourceCPU]
+	memReq := container.Resources.Requests[corev1.ResourceMemory]
+	cpuLim := container.Resources.Limits[corev1.ResourceCPU]
+	memLim := container.Resources.Limits[corev1.ResourceMemory]
+
+	if cpuReq.String() != "50m" {
+		t.Errorf("CPU request = %s, want 50m", cpuReq.String())
+	}
+	if memReq.String() != "200Mi" {
+		t.Errorf("Memory request = %s, want 200Mi", memReq.String())
+	}
+	if cpuLim.String() != "100m" {
+		t.Errorf("CPU limit = %s, want 100m", cpuLim.String())
+	}
+	if memLim.String() != "400Mi" {
+		t.Errorf("Memory limit = %s, want 400Mi", memLim.String())
+	}
+}
