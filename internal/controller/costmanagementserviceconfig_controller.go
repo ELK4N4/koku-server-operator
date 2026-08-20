@@ -602,6 +602,13 @@ func (r *CostManagementServiceConfigReconciler) waitForCoreServiceReadiness(ctx 
 		return result, err
 	}
 
+	// A later phase (ROS API/Processor) may already own Available=False.
+	// Promoting to KokuAvailable here would stamp a new LastTransitionTime
+	// and reset the 5-minute DeploymentNotReady clock on every pass.
+	if holdingWorkerReadinessWait(cfg) {
+		return Result{}, nil
+	}
+
 	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionAvailable) {
 		r.Recorder.Event(cfg, corev1.EventTypeNormal, "CoreServicesAvailable", "Koku API is ready")
 	}
@@ -1243,6 +1250,22 @@ func (r *CostManagementServiceConfigReconciler) isDeploymentReady(ctx context.Co
 
 type deploymentWait struct {
 	name, reason, message, component string
+}
+
+// holdingWorkerReadinessWait is true when a later phase already set
+// Available=False for a worker Deployment. Core must not overwrite that
+// wait clock.
+func holdingWorkerReadinessWait(cfg *costv1alpha1.CostManagementServiceConfig) bool {
+	existing := apimeta.FindStatusCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if existing == nil || existing.Status != metav1.ConditionFalse {
+		return false
+	}
+	switch existing.Reason {
+	case reasonWaitingForROSAPI, reasonWaitingForROSProcessor:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *CostManagementServiceConfigReconciler) waitForDeployments(

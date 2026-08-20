@@ -172,8 +172,8 @@ func TestReconcileCoreServices_MasuNotReady_BlocksProgress(t *testing.T) {
 		t.Fatal("expected requeue while Masu is not ready")
 	}
 	avail := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionAvailable)
-	if avail == nil || avail.Status != metav1.ConditionFalse {
-		t.Fatalf("expected Available=False while Masu is not ready, got %+v", avail)
+	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != reasonWaitingForMasu {
+		t.Fatalf("expected Available=False %s, got %+v", reasonWaitingForMasu, avail)
 	}
 }
 
@@ -271,12 +271,15 @@ func TestReconcileCoreServices_MasuNotReady_TimeoutDegrades(t *testing.T) {
 	if err != nil {
 		t.Fatalf("timeout pass: %v", err)
 	}
-	if result.RequeueAfter == 0 {
-		t.Fatal("expected backoff requeue after readiness timeout")
+	if result.RequeueAfter != 2*time.Minute {
+		t.Fatalf("expected 2m backoff after a 6m wait, got %s", result.RequeueAfter)
 	}
 	deg := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
 	if deg == nil || deg.Status != metav1.ConditionTrue || deg.Reason != reasonDeploymentNotReady {
 		t.Fatalf("expected Degraded=True %s, got %+v", reasonDeploymentNotReady, deg)
+	}
+	if deg.Message != "Masu is not ready" {
+		t.Fatalf("expected Degraded message to name Masu, got %+v", deg)
 	}
 	if cfg.Status.Phase != costv1alpha1.PhaseDegraded {
 		t.Fatalf("expected Phase=Degraded, got %q", cfg.Status.Phase)
