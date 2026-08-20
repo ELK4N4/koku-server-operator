@@ -1174,7 +1174,25 @@ func (r *CostManagementServiceConfigReconciler) isStatefulSetReady(ctx context.C
 	if ss.Spec.Replicas == nil || *ss.Spec.Replicas == 0 {
 		return true, nil
 	}
-	return ss.Status.ReadyReplicas >= *ss.Spec.Replicas, nil
+	want := *ss.Spec.Replicas
+	// ObservedGeneration lags metadata.generation until the controller has
+	// seen the SSA-applied spec. ReadyReplicas alone can still be the old
+	// revision's pods.
+	if ss.Status.ObservedGeneration < ss.Generation {
+		return false, nil
+	}
+	if ss.Status.ReadyReplicas < want {
+		return false, nil
+	}
+	if ss.Status.UpdateRevision != "" && ss.Status.CurrentRevision != ss.Status.UpdateRevision {
+		return false, nil
+	}
+	// UpdatedReplicas is 0 on first create until an update revision exists;
+	// once the controller reports any updated pods, all replicas must match.
+	if ss.Status.UpdatedReplicas > 0 && ss.Status.UpdatedReplicas < want {
+		return false, nil
+	}
+	return true, nil
 }
 
 func isJobComplete(j *batchv1.Job) bool {

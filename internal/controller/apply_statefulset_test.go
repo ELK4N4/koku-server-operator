@@ -44,6 +44,42 @@ func TestReconcileInfrastructure_ApplyStatefulSetCreate(t *testing.T) {
 	}
 }
 
+func TestReconcileInfrastructure_WaitsForStatefulSetRollout(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	cfg.Spec.Cache.Deploy = boolPtr(false)
+
+	existing := resources.DatabaseStatefulSet(cfg)
+	existing.Generation = 2
+	replicas := int32(1)
+	existing.Spec.Replicas = &replicas
+	existing.Status.ObservedGeneration = 2
+	existing.Status.ReadyReplicas = 1
+	existing.Status.Replicas = 1
+	existing.Status.UpdatedReplicas = 0
+	existing.Status.CurrentRevision = "rev-old"
+	existing.Status.UpdateRevision = "rev-new"
+
+	c := fakeClientPreservingStatus(scheme, existing)
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	result, err := r.reconcileInfrastructure(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("reconcileInfrastructure: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected requeue while the new StatefulSet revision is rolling out")
+	}
+	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDatabaseReady)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "WaitingForDatabase" {
+		t.Fatalf("expected DatabaseReady=False WaitingForDatabase during rollout, got %+v", cond)
+	}
+}
+
 func TestApplyStatefulSet_UpdatePreservesVolumeClaimTemplates(t *testing.T) {
 	scheme := ownershipScheme(t)
 	cfg := minimalCR(testCRName, testNamespace)
