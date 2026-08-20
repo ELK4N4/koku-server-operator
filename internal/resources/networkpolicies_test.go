@@ -108,8 +108,8 @@ func TestMasuNetworkPolicy(t *testing.T) {
 	}
 	wantNSLabels := []map[string]string{
 		{"network.openshift.io/policy-group": "monitoring"},
-		{"kubernetes.io/metadata.name":       "openshift-monitoring"},
-		{"kubernetes.io/metadata.name":       "openshift-user-workload-monitoring"},
+		{"kubernetes.io/metadata.name": "openshift-monitoring"},
+		{"kubernetes.io/metadata.name": "openshift-user-workload-monitoring"},
 	}
 	matched := make([]bool, len(wantNSLabels))
 	for _, from := range rule.From {
