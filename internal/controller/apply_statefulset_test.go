@@ -6,9 +6,15 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 	"github.com/project-koku/koku-service-operator/internal/resources"
@@ -37,6 +43,9 @@ func TestReconcileInfrastructure_ApplyStatefulSetCreate(t *testing.T) {
 	mustExist(t, r.Client, testNamespace, resources.NameDatabase(cfg), &corev1.Service{})
 	sts := &appsv1.StatefulSet{}
 	mustExist(t, r.Client, testNamespace, resources.NameDatabase(cfg), sts)
+	if len(sts.OwnerReferences) != 1 {
+		t.Fatalf("apply() should set ownerRef on the StatefulSet, got %d", len(sts.OwnerReferences))
+	}
 
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDatabaseReady)
 	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "WaitingForDatabase" {
@@ -398,6 +407,64 @@ func TestVolumeClaimTemplatesEqual(t *testing.T) {
 			b:        []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test2"}}},
 			expected: false,
 		},
+		{
+			name: "different labels",
+			a: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Labels: map[string]string{"app": "db"}},
+			}},
+			b: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Labels: map[string]string{"app": "other"}},
+			}},
+			expected: false,
+		},
+		{
+			name: "nil vs empty labels",
+			a:    []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test"}}},
+			b:    []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test", Labels: map[string]string{}}}},
+			expected: true,
+		},
+		{
+			name: "different annotations",
+			a: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Annotations: map[string]string{"pv.kubernetes.io/bind-completed": "yes"}},
+			}},
+			b: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			}},
+			expected: false,
+		},
+		{
+			name: "nil vs empty annotations",
+			a:    []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test"}}},
+			b:    []corev1.PersistentVolumeClaim{{ObjectMeta: metav1.ObjectMeta{Name: "test", Annotations: map[string]string{}}}},
+			expected: true,
+		},
+		{
+			name: "different DataSourceRef namespace",
+			a: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					DataSourceRef: &corev1.TypedObjectReference{
+						APIGroup:  stringPtr("snapshot.storage.k8s.io"),
+						Kind:      "VolumeSnapshot",
+						Name:      "snap-1",
+						Namespace: stringPtr("ns-a"),
+					},
+				},
+			}},
+			b: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					DataSourceRef: &corev1.TypedObjectReference{
+						APIGroup:  stringPtr("snapshot.storage.k8s.io"),
+						Kind:      "VolumeSnapshot",
+						Name:      "snap-1",
+						Namespace: stringPtr("ns-b"),
+					},
+				},
+			}},
+			expected: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -636,6 +703,8 @@ func TestDataSourceRefEqual(t *testing.T) {
 		{name: "one nil", a: nil, b: &corev1.TypedObjectReference{}, expected: false},
 		{name: "equal", a: &corev1.TypedObjectReference{APIGroup: ptr(""), Kind: "VolumeSnapshot", Name: "snap-1"}, b: &corev1.TypedObjectReference{APIGroup: ptr(""), Kind: "VolumeSnapshot", Name: "snap-1"}, expected: true},
 		{name: "different kind", a: &corev1.TypedObjectReference{APIGroup: ptr(""), Kind: "VolumeSnapshot", Name: "snap-1"}, b: &corev1.TypedObjectReference{APIGroup: ptr(""), Kind: "PVC", Name: "snap-1"}, expected: false},
+		{name: "different namespace", a: &corev1.TypedObjectReference{APIGroup: ptr(""), Kind: "VolumeSnapshot", Name: "snap-1", Namespace: ptr("ns-a")}, b: &corev1.TypedObjectReference{APIGroup: ptr(""), Kind: "VolumeSnapshot", Name: "snap-1", Namespace: ptr("ns-b")}, expected: false},
+		{name: "equal including namespace", a: &corev1.TypedObjectReference{APIGroup: ptr(""), Kind: "VolumeSnapshot", Name: "snap-1", Namespace: ptr("ns-a")}, b: &corev1.TypedObjectReference{APIGroup: ptr(""), Kind: "VolumeSnapshot", Name: "snap-1", Namespace: ptr("ns-a")}, expected: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -664,6 +733,28 @@ func TestVolumeAttributesClassNameEqual(t *testing.T) {
 			result := volumeAttributesClassNameEqual(tt.a, tt.b)
 			if result != tt.expected {
 				t.Errorf("volumeAttributesClassNameEqual() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestPtrEqual(t *testing.T) {
+	tests := []struct {
+		name     string
+		a, b     *string
+		expected bool
+	}{
+		{name: "both nil", expected: true},
+		{name: "one nil", b: ptr("gp3"), expected: false},
+		{name: "equal", a: ptr("gp3"), b: ptr("gp3"), expected: true},
+		{name: "different", a: ptr("gp3"), b: ptr("gp2"), expected: false},
+		{name: "nil vs empty string", a: nil, b: ptr(""), expected: false},
+		{name: "both empty string", a: ptr(""), b: ptr(""), expected: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ptrEqual(tt.a, tt.b); got != tt.expected {
+				t.Errorf("ptrEqual() = %v, want %v", got, tt.expected)
 			}
 		})
 	}
@@ -714,6 +805,85 @@ func TestReconcileInfrastructure_VCTMismatchOnReadyDB(t *testing.T) {
 	deg := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
 	if deg == nil || deg.Status != metav1.ConditionTrue || deg.Reason != "StorageConfigChanged" {
 		t.Fatalf("expected Degraded=True StorageConfigChanged, got %+v", deg)
+	}
+}
+
+// TestReconcile_VCTMismatchPersistsStatus goes through Reconcile (not just
+// reconcileInfrastructure) and reads the CR back from the client. Reconcile
+// patchStatus runs after runPhases even when the result is RequeueAfter/nil.
+func TestReconcile_VCTMismatchPersistsStatus(t *testing.T) {
+	scheme := ownershipScheme(t)
+	cfg := minimalCR(testCRName, testNamespace)
+	cfg.Spec.Cache.Deploy = boolPtr(false)
+	cfg.Spec.Global.ClusterDomain = "apps.example.com"
+	cfg.Spec.Global.StorageClass = "gp3"
+	cfg.Spec.ObjectStorage.SecretName = "s3-creds"
+	controllerutil.AddFinalizer(cfg, finalizerName)
+
+	existing := resources.DatabaseStatefulSet(cfg)
+	existing.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("10Gi")
+	replicas := int32(1)
+	existing.Spec.Replicas = &replicas
+
+	cfg.Spec.Database.Storage.Size = resource.MustParse("20Gi")
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(cfg, existing).
+		WithStatusSubresource(cfg, &appsv1.StatefulSet{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, inner client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				if patch.Type() != types.ApplyPatchType {
+					return inner.Patch(ctx, obj, patch, opts...)
+				}
+				key := client.ObjectKeyFromObject(obj)
+				got := obj.DeepCopyObject().(client.Object)
+				err := inner.Get(ctx, key, got)
+				if apierrors.IsNotFound(err) {
+					return inner.Create(ctx, obj)
+				}
+				if err != nil {
+					return err
+				}
+				obj.SetResourceVersion(got.GetResourceVersion())
+				return inner.Update(ctx, obj)
+			},
+		}).Build()
+
+	r := &CostManagementServiceConfigReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: &noopRecorder{},
+	}
+
+	result, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: testCRName, Namespace: testNamespace},
+	})
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if result.RequeueAfter == 0 {
+		t.Fatal("expected requeue on VCT mismatch")
+	}
+
+	updated := &costv1alpha1.CostManagementServiceConfig{}
+	if err := c.Get(context.Background(), types.NamespacedName{Name: testCRName, Namespace: testNamespace}, updated); err != nil {
+		t.Fatalf("Get CR: %v", err)
+	}
+	cond := findCondition(updated.Status.Conditions, costv1alpha1.ConditionDatabaseReady)
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "StorageConfigChanged" {
+		t.Fatalf("status not persisted: DatabaseReady=%+v", cond)
+	}
+	avail := findCondition(updated.Status.Conditions, costv1alpha1.ConditionAvailable)
+	if avail == nil || avail.Status != metav1.ConditionFalse || avail.Reason != "StorageConfigChanged" {
+		t.Fatalf("status not persisted: Available=%+v", avail)
+	}
+	deg := findCondition(updated.Status.Conditions, costv1alpha1.ConditionDegraded)
+	if deg == nil || deg.Status != metav1.ConditionTrue || deg.Reason != "StorageConfigChanged" {
+		t.Fatalf("status not persisted: Degraded=%+v", deg)
+	}
+	if updated.Status.Phase != costv1alpha1.PhaseDegraded {
+		t.Errorf("phase = %q, want %q", updated.Status.Phase, costv1alpha1.PhaseDegraded)
 	}
 }
 

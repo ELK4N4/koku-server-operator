@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -929,9 +930,9 @@ var ErrStorageConfigChanged = fmt.Errorf("storage config changed: VolumeClaimTem
 // volumeClaimTemplatesEqual compares two VolumeClaimTemplate slices for equality
 // of the immutable fields. It normalizes defaulted values per Kubernetes API
 // conventions before comparison to avoid false mismatches.
-// Compared fields: Name, StorageClassName, Resources (Requests & Limits),
-// AccessModes, VolumeMode, Selector, VolumeName, DataSource, DataSourceRef,
-// VolumeAttributesClassName.
+// Compared fields: Name, Labels, Annotations, StorageClassName, Resources
+// (Requests & Limits), AccessModes, VolumeMode, Selector, VolumeName,
+// DataSource, DataSourceRef (including Namespace), VolumeAttributesClassName.
 func volumeClaimTemplatesEqual(a, b []corev1.PersistentVolumeClaim) bool {
 	if len(a) != len(b) {
 		return false
@@ -940,11 +941,13 @@ func volumeClaimTemplatesEqual(a, b []corev1.PersistentVolumeClaim) bool {
 		if a[i].Name != b[i].Name {
 			return false
 		}
-		if a[i].Spec.StorageClassName != nil && b[i].Spec.StorageClassName != nil {
-			if *a[i].Spec.StorageClassName != *b[i].Spec.StorageClassName {
-				return false
-			}
-		} else if (a[i].Spec.StorageClassName == nil) != (b[i].Spec.StorageClassName == nil) {
+		if !maps.Equal(a[i].Labels, b[i].Labels) {
+			return false
+		}
+		if !maps.Equal(a[i].Annotations, b[i].Annotations) {
+			return false
+		}
+		if !ptrEqual(a[i].Spec.StorageClassName, b[i].Spec.StorageClassName) {
 			return false
 		}
 		if !resourceRequirementsEqual(a[i].Spec.Resources, b[i].Spec.Resources) {
@@ -1012,7 +1015,9 @@ func accessModesEqual(a, b []corev1.PersistentVolumeAccessMode) bool {
 }
 
 func volumeModeEqual(a, b *corev1.PersistentVolumeMode) bool {
-	// nil and Filesystem are equivalent per Kubernetes defaulting
+	// PersistentVolumeClaimSpec.VolumeMode defaults to Filesystem when unset
+	// (Kubernetes API defaulting). Treat nil and Filesystem as equal so live
+	// vs desired comparisons do not false-mismatch after defaulting.
 	if a == nil && b == nil {
 		return true
 	}
@@ -1085,7 +1090,7 @@ func dataSourceRefEqual(a, b *corev1.TypedObjectReference) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	return ptrEqual(a.APIGroup, b.APIGroup) && a.Kind == b.Kind && a.Name == b.Name
+	return ptrEqual(a.APIGroup, b.APIGroup) && a.Kind == b.Kind && a.Name == b.Name && ptrEqual(a.Namespace, b.Namespace)
 }
 
 func volumeAttributesClassNameEqual(a, b *string) bool {
