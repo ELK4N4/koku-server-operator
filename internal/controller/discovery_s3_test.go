@@ -47,10 +47,14 @@ func obcSecret(name, ns, accessKey, secretKey string) *corev1.Secret {
 }
 
 func noobaaAdminSecret(accessKey, secretKey string) *corev1.Secret {
+	return noobaaAdminSecretIn("openshift-storage", accessKey, secretKey)
+}
+
+func noobaaAdminSecretIn(ns, accessKey, secretKey string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "noobaa-admin",
-			Namespace: "openshift-storage",
+			Namespace: ns,
 		},
 		Data: map[string][]byte{
 			"AWS_ACCESS_KEY_ID":     []byte(accessKey),
@@ -307,6 +311,218 @@ func TestResolveS3_OBCMissingBucketName(t *testing.T) {
 			t.Fatalf("OBC path must not succeed with empty Bucket: %+v", got)
 		}
 		t.Fatalf("expected resolveS3 to fail without NooBaa fallback, got %+v", got)
+	}
+}
+
+func TestNoobaaNamespace(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		ns   string
+		want string
+	}{
+		{name: "unset defaults to openshift-storage", want: "openshift-storage"},
+		{name: "explicit noobaa", ns: "noobaa", want: "noobaa"},
+		{name: "explicit openshift-storage", ns: "openshift-storage", want: "openshift-storage"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := &costv1alpha1.CostManagementServiceConfig{}
+			cfg.Spec.ObjectStorage.NoobaaNamespace = tt.ns
+			if got := noobaaNamespace(cfg); got != tt.want {
+				t.Errorf("noobaaNamespace() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNoobaaEndpoint(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		ns       string
+		endpoint string
+		port     int32
+		useSSL   *bool
+		want     string
+	}{
+		{
+			name: "unset host and ns uses default in-cluster service",
+			want: "https://s3.openshift-storage.svc.cluster.local:443",
+		},
+		{
+			name: "custom ns builds s3.<ns>.svc",
+			ns:   "noobaa",
+			want: "https://s3.noobaa.svc.cluster.local:443",
+		},
+		{
+			name:     "CRD default host is not a custom route",
+			ns:       "noobaa",
+			endpoint: "s3.openshift-storage.svc.cluster.local",
+			want:     "https://s3.noobaa.svc.cluster.local:443",
+		},
+		{
+			name:     "custom host uses spec port and SSL",
+			endpoint: "s3.apps.example.com",
+			port:     443,
+			useSSL:   boolPtr(true),
+			want:     "https://s3.apps.example.com:443",
+		},
+		{
+			name:     "custom host honors UseSSL false and port",
+			endpoint: "s3-noobaa.apps.example.com",
+			port:     80,
+			useSSL:   boolPtr(false),
+			want:     "http://s3-noobaa.apps.example.com:80",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := &costv1alpha1.CostManagementServiceConfig{}
+			cfg.Spec.ObjectStorage.NoobaaNamespace = tt.ns
+			cfg.Spec.ObjectStorage.Endpoint = tt.endpoint
+			cfg.Spec.ObjectStorage.Port = tt.port
+			cfg.Spec.ObjectStorage.UseSSL = tt.useSSL
+			if got := noobaaEndpoint(cfg); got != tt.want {
+				t.Errorf("noobaaEndpoint() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNoobaaEndpointIgnoresDiscoveredStatus(t *testing.T) {
+	t.Parallel()
+	cfg := &costv1alpha1.CostManagementServiceConfig{}
+	cfg.Spec.ObjectStorage.Endpoint = "s3.apps.example.com"
+	cfg.Spec.ObjectStorage.Port = 443
+	cfg.Spec.ObjectStorage.UseSSL = boolPtr(true)
+	cfg.Status.DiscoveredConfig = &costv1alpha1.DiscoveredConfig{
+		S3: &costv1alpha1.DiscoveredS3{Endpoint: "https://s3.openshift-storage.svc.cluster.local:443"},
+	}
+	got := noobaaEndpoint(cfg)
+	if got != "https://s3.apps.example.com:443" {
+		t.Errorf("noobaaEndpoint() = %q, want custom host (must not reuse status.discoveredConfig.s3)", got)
+	}
+}
+
+func TestResolveS3_NooBaaCustomNamespace(t *testing.T) {
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(noobaaAdminSecretIn("noobaa", "ak-nb", "sk-nb")).
+		Build()
+
+	r := &CostManagementServiceConfigReconciler{Client: c, Recorder: record.NewFakeRecorder(10)}
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			ObjectStorage: costv1alpha1.ObjectStorageConfig{
+				NoobaaNamespace: "noobaa",
+			},
+		},
+	}
+
+	got, err := r.resolveS3(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Endpoint != "https://s3.noobaa.svc.cluster.local:443" {
+		t.Errorf("Endpoint: got %q, want https://s3.noobaa.svc.cluster.local:443", got.Endpoint)
+	}
+}
+
+func TestResolveS3_NooBaaUnsetNamespaceMissesOtherNS(t *testing.T) {
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(noobaaAdminSecretIn("noobaa", "ak-nb", "sk-nb")).
+		Build()
+
+	r := &CostManagementServiceConfigReconciler{Client: c, Recorder: record.NewFakeRecorder(10)}
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+	}
+
+	got, err := r.resolveS3(context.Background(), cfg)
+	if err == nil {
+		t.Fatalf("expected NooBaa path to fail when secret is only in noobaa, got %+v", got)
+	}
+}
+
+func TestNoobaaNamespaceAllowed(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		ns   string
+		want bool
+	}{
+		{ns: "openshift-storage", want: true},
+		{ns: "noobaa", want: true},
+		{ns: "kube-system", want: false},
+		{ns: "openshift-monitoring", want: false},
+		{ns: testNamespace, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.ns, func(t *testing.T) {
+			t.Parallel()
+			if got := noobaaNamespaceAllowed(tt.ns); got != tt.want {
+				t.Errorf("noobaaNamespaceAllowed(%q) = %v, want %v", tt.ns, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveS3_NooBaaDisallowedNamespaceDoesNotCopySecret(t *testing.T) {
+	const foreignNS = "kube-system"
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(noobaaAdminSecretIn(foreignNS, "ak-stolen", "sk-stolen")).
+		Build()
+
+	r := &CostManagementServiceConfigReconciler{Client: c, Recorder: record.NewFakeRecorder(10)}
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			ObjectStorage: costv1alpha1.ObjectStorageConfig{
+				NoobaaNamespace: foreignNS,
+			},
+		},
+	}
+
+	got, err := r.resolveS3(context.Background(), cfg)
+	if err == nil {
+		t.Fatalf("expected disallowed noobaaNamespace to fail, got %+v", got)
+	}
+	wantSecret := testCRName + "-storage-credentials"
+	sec := &corev1.Secret{}
+	if err := c.Get(context.Background(), types.NamespacedName{Namespace: testNamespace, Name: wantSecret}, sec); err == nil {
+		t.Fatalf("must not copy noobaa-admin from %s into %s/%s", foreignNS, testNamespace, wantSecret)
+	}
+}
+
+func TestResolveS3_NooBaaCustomEndpoint(t *testing.T) {
+	c := fake.NewClientBuilder().
+		WithScheme(testScheme(t)).
+		WithObjects(noobaaAdminSecret("ak-nb", "sk-nb")).
+		Build()
+
+	r := &CostManagementServiceConfigReconciler{Client: c, Recorder: record.NewFakeRecorder(10)}
+	cfg := &costv1alpha1.CostManagementServiceConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: testCRName, Namespace: testNamespace},
+		Spec: costv1alpha1.CostManagementServiceConfigSpec{
+			ObjectStorage: costv1alpha1.ObjectStorageConfig{
+				Endpoint: "s3.apps.example.com",
+				Port:     443,
+				UseSSL:   boolPtr(true),
+			},
+		},
+	}
+
+	got, err := r.resolveS3(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Endpoint != "https://s3.apps.example.com:443" {
+		t.Errorf("Endpoint: got %q, want custom route", got.Endpoint)
 	}
 }
 

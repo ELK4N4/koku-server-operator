@@ -7,7 +7,7 @@ The Cost Management service operator runs in **OwnNamespace** mode:
 | Operator install NS | Same as the `CostManagementServiceConfig` (operand) NS |
 | Informer cache | Restricted to that watch NS (`Cache.DefaultNamespaces`) |
 | BYOI infra (Postgres, Kafka, MinIO, …) | May live in **other** namespaces; connect via CR fields — do **not** watch/own them |
-| Cluster-scoped exceptions | StorageClass / OpenShift Ingress discovery, ConsoleLink, Kruize ClusterRole/Binding, and a narrow `get` on Secret `noobaa-admin` (typically `openshift-storage`) |
+| Cluster-scoped exceptions | StorageClass / OpenShift Ingress discovery, ConsoleLink, Kruize ClusterRole/Binding, and a narrow `get` on Secret `noobaa-admin` (`spec.objectStorage.noobaaNamespace`: `openshift-storage` or `noobaa` only) |
 
 ## RBAC shape
 
