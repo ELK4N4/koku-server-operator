@@ -1,6 +1,6 @@
 # Helm Chart vs Operator Comparison Report
 
-Updated: 2026-08-20 (validated against `main` + feat/helm_gaps)
+Updated: 2026-08-20 (validated against `main` + feat/helm_gaps: ENHANCED_ORG_ADMIN, Celery beat resources)
 
 Systematic comparison of `cost-onprem-chart/cost-onprem/` (Helm chart) against
 `koku-service-operator` (operator) — identifying deviations, missing pieces,
@@ -31,7 +31,7 @@ a `CostManagementServiceConfig` CR + Go reconciler.
 | Listener Deployment | yes | yes | match |
 | Koku ServiceAccount | yes | yes | match |
 | Koku Migration Job | yes | yes | match |
-| Celery Beat Deployment | yes | yes | **no resources** |
+| Celery Beat Deployment | yes | yes | **fixed** (50m/200Mi req, 100m/400Mi lim) |
 | Celery Workers (10 queues) | yes | yes | match |
 | RBAC API Deployment + Service | yes | yes | match |
 | RBAC Worker Deployment | yes | yes | match |
@@ -86,13 +86,13 @@ a `CostManagementServiceConfig` CR + Go reconciler.
 
 ## 2. Open Issues (Broken / Wrong)
 
-### 2.1 Celery beat has zero resource limits
+### 2.1 Celery beat has zero resource limits **FIXED** (feat/helm_gaps)
 
 **Severity: MEDIUM — unbounded resource consumption**
 
-`CeleryBeatDeployment()` in `koku.go` passes `corev1.ResourceRequirements{}`
+`CeleryBeatDeployment()` in `koku.go` previously passed `corev1.ResourceRequirements{}`
 (empty). The chart sets requests `{cpu: 50m, mem: 200Mi}` and limits
-`{cpu: 100m, mem: 400Mi}`.
+`{cpu: 100m, mem: 400Mi}`. **Now fixed** — operator matches chart defaults.
 
 ### 2.2 Masu Service port mismatch
 
@@ -291,7 +291,7 @@ OpenShift Route annotation default should also be set for consistency.
 ## 7. Remaining Fixes (Priority Order)
 
 1. ~~**Set `ENHANCED_ORG_ADMIN=False`** in `KokuCommonEnv()` — critical for RBAC scoping~~ **DONE** (feat/helm_gaps)
-2. **Add Celery beat resources** (`koku.go`): set `{cpu: 50m, mem: 200Mi}` / `{cpu: 100m, mem: 400Mi}`
+2. ~~**Add Celery beat resources** (`koku.go`): set `{cpu: 50m, mem: 200Mi}` / `{cpu: 100m, mem: 400Mi}`~~ **DONE** (feat/helm_gaps)
 3. **Fix Masu Service port** (`koku.go`): expose port 8000 (http) + 9000 (metrics)
 4. **Add ROS Processor + Poller Services**: needed for Prometheus metrics scraping
 5. **Add ROS metrics-scraping NetworkPolicies**: ros-api-metrics, processor-metrics, poller-metrics (Gateway, Koku API, and Masu now covered)
