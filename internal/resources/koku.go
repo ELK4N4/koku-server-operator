@@ -106,15 +106,16 @@ func MasuDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deplo
 		masuProbe("/livez"), masuProbe("/readyz"), env,
 		[]string{"/bin/bash", "-c", "cd $APP_HOME && exec gunicorn -c gunicorn_conf.py --max-requests=1000 koku.wsgi"},
 	)
-	// Masu gunicorn binds a single port that serves both API and /metrics.
+	// Same dual-port shape as Koku API: gunicorn HTTP + Prometheus /metrics.
 	d.Spec.Template.Spec.Containers[0].Ports = []corev1.ContainerPort{
+		{Name: "http", ContainerPort: 8000, Protocol: corev1.ProtocolTCP},
 		{Name: "metrics", ContainerPort: 9000, Protocol: corev1.ProtocolTCP},
 	}
 	return d
 }
 
-// MasuService exposes Masu internally. The port is named "metrics" so the App
-// ServiceMonitor can scrape /metrics; callers still dial host:9000 by number.
+// MasuService exposes Masu internally with HTTP (8000) and metrics (9000) ports.
+// The metrics port is named "metrics" so the App ServiceMonitor can scrape /metrics.
 func MasuService(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.Service {
 	return &corev1.Service{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Service"},
@@ -126,6 +127,7 @@ func MasuService(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.Service 
 		Spec: corev1.ServiceSpec{
 			Selector: SelectorLabels(cfg, "cost-processor"),
 			Ports: []corev1.ServicePort{
+				{Name: "http", Port: 8000, TargetPort: intstr.FromString("http"), Protocol: corev1.ProtocolTCP},
 				{Name: "metrics", Port: 9000, TargetPort: intstr.FromString("metrics"), Protocol: corev1.ProtocolTCP},
 			},
 		},

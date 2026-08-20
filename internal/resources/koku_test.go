@@ -70,21 +70,30 @@ func TestMasuService(t *testing.T) {
 	if svc.Spec.Selector[labelComponent] != "cost-processor" {
 		t.Errorf("selector component = %q", svc.Spec.Selector[labelComponent])
 	}
-	if len(svc.Spec.Ports) != 1 {
-		t.Fatalf("ports = %+v", svc.Spec.Ports)
+	if len(svc.Spec.Ports) != 2 {
+		t.Fatalf("ports = %+v, want 2 ports", svc.Spec.Ports)
 	}
 
 	byName := servicePortsByName(svc.Spec.Ports)
-	port, ok := byName["metrics"]
+	httpPort, ok := byName["http"]
+	if !ok {
+		t.Fatal("missing port named http")
+	}
+	if httpPort.Port != 8000 || httpPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("http port = %+v, want http/8000/TCP", httpPort)
+	}
+	if httpPort.TargetPort != intstr.FromString("http") {
+		t.Errorf("http TargetPort = %+v, want named http", httpPort.TargetPort)
+	}
+	metricsPort, ok := byName["metrics"]
 	if !ok {
 		t.Fatal("missing port named metrics")
 	}
-	// Named "metrics" so App ServiceMonitor can scrape; callers still dial :9000.
-	if port.Port != 9000 || port.Protocol != corev1.ProtocolTCP {
-		t.Errorf("port = %+v, want metrics/9000/TCP", port)
+	if metricsPort.Port != 9000 || metricsPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("metrics port = %+v, want metrics/9000/TCP", metricsPort)
 	}
-	if port.TargetPort != intstr.FromString("metrics") {
-		t.Errorf("TargetPort = %+v, want named metrics", port.TargetPort)
+	if metricsPort.TargetPort != intstr.FromString("metrics") {
+		t.Errorf("metrics TargetPort = %+v, want named metrics", metricsPort.TargetPort)
 	}
 }
 
