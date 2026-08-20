@@ -316,6 +316,12 @@ func TestUIRoute_GlobalClusterDomainFallback(t *testing.T) {
 		t.Errorf("ConsoleLink href = %q, want %q", href, wantHref)
 	}
 
+	wantRedirect := "--redirect-url=https://" + wantHost + "/oauth2/callback"
+	proxy := containerByName(t, UIDeployment(cfg).Spec.Template.Spec.Containers, "oauth-proxy")
+	if !slices.Contains(proxy.Args, wantRedirect) {
+		t.Errorf("oauth2-proxy args missing %q\ngot %q", wantRedirect, proxy.Args)
+	}
+
 	// Discovered domain wins over spec.global when both are set.
 	cfg.Status.DiscoveredConfig = &costv1alpha1.DiscoveredConfig{ClusterDomain: "apps.discovered.example.com"}
 	route = UIRoute(cfg)
