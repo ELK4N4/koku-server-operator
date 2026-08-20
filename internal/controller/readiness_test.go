@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -71,6 +72,27 @@ func TestIsDeploymentReady(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadinessBackoff(t *testing.T) {
+	tests := []struct {
+		name string
+		age  time.Duration
+		want time.Duration
+	}{
+		{name: "just past timeout", age: 5*time.Minute + 10*time.Second, want: 30 * time.Second},
+		{name: "under one minute past timeout", age: 5*time.Minute + 45*time.Second, want: time.Minute},
+		{name: "under three minutes past timeout", age: 7 * time.Minute, want: 2 * time.Minute},
+		{name: "well past timeout", age: 11 * time.Minute, want: 5 * time.Minute},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := readinessBackoff(time.Now().Add(-tt.age))
+			if got != tt.want {
+				t.Fatalf("got %s, want %s", got, tt.want)
 			}
 		})
 	}
