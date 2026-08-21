@@ -92,9 +92,9 @@ func TestGatewayAPIRouteDefaultTimeoutAnnotation(t *testing.T) {
 	if route == nil {
 		t.Fatal("expected Route")
 	}
-	timeout := route.GetAnnotations()[gatewayRouteTimeoutAnnotation]
-	if timeout != gatewayRouteTimeoutDefault {
-		t.Errorf("default timeout annotation = %q, want %s", timeout, gatewayRouteTimeoutDefault)
+	timeout := route.GetAnnotations()["haproxy.router.openshift.io/timeout"]
+	if timeout != "180s" {
+		t.Errorf("default timeout annotation = %q, want 180s", timeout)
 	}
 }
 
@@ -111,9 +111,9 @@ func TestGatewayAPIRouteMergesAnnotationsWithoutDroppingDefaultTimeout(t *testin
 	if got["foo"] != "bar" {
 		t.Errorf("custom annotation foo = %q, want bar; annotations = %v", got["foo"], got)
 	}
-	if got[gatewayRouteTimeoutAnnotation] != gatewayRouteTimeoutDefault {
-		t.Errorf("timeout annotation = %q, want %s when CR omits the key; annotations = %v",
-			got[gatewayRouteTimeoutAnnotation], gatewayRouteTimeoutDefault, got)
+	if got["haproxy.router.openshift.io/timeout"] != "180s" {
+		t.Errorf("timeout annotation = %q, want 180s when CR omits the key; annotations = %v",
+			got["haproxy.router.openshift.io/timeout"], got)
 	}
 }
 
