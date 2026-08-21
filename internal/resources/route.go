@@ -23,17 +23,20 @@ func GatewayAPIHost(cfg *costv1alpha1.CostManagementServiceConfig) (host string,
 	if cfg.Spec.GatewayRoute.Host != "" {
 		return cfg.Spec.GatewayRoute.Host, true
 	}
-	var domain string
-	if cfg.Status.DiscoveredConfig != nil {
-		domain = cfg.Status.DiscoveredConfig.ClusterDomain
-	}
-	if domain == "" {
-		domain = cfg.Spec.Global.ClusterDomain
-	}
+	domain := clusterDomain(cfg)
 	if domain == "" {
 		return "", false
 	}
 	return fmt.Sprintf("%s-gateway-%s.%s", cfg.Name, cfg.Namespace, domain), true
+}
+
+// clusterDomain returns status.discoveredConfig.clusterDomain, falling back to
+// spec.global.clusterDomain. Empty when neither is set.
+func clusterDomain(cfg *costv1alpha1.CostManagementServiceConfig) string {
+	if cfg.Status.DiscoveredConfig != nil && cfg.Status.DiscoveredConfig.ClusterDomain != "" {
+		return cfg.Status.DiscoveredConfig.ClusterDomain
+	}
+	return cfg.Spec.Global.ClusterDomain
 }
 
 // GatewayAPIRoute builds the OpenShift Route that fronts Envoy at path /api.
