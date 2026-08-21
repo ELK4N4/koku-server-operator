@@ -164,7 +164,7 @@ ConsoleLink when the UI Route exists.
 |---------|----------------|
 | `DatabaseSecretInvalid` / `CacheSecretInvalid` | Wrong Secret keys — see [prerequisites](prerequisites.md) (`redis-password`, all ten DB keys) |
 | `DatabaseUnreachable` | Host/port not reachable from the operator pod (NetworkPolicy, wrong Service DNS) |
-| `SchemaUpToDate` never True | Migration Job failed — `oc -n "$NAMESPACE" get jobs,logs` |
+| `SchemaUpToDate` never True | Migration Job failed. List Jobs, then logs for the failed one: `oc -n "$NAMESPACE" get jobs` then `oc -n "$NAMESPACE" logs job/<cr>-koku-migrate` (beta Cost-only; RBAC is `{cr}-rbac-migrate`) |
 | `Available` True but `UIReady` False | Missing `{cr}-ui-oauth-client` with `client-id` / `client-secret` |
 | `StorageReady` False | Missing `access-key` / `secret-key`, or bucket does not exist |
 | Uploads return 500 | Bucket `koku-bucket` (or your `bucketName`) was never created |
