@@ -1,6 +1,6 @@
 # Helm Chart vs Operator Comparison Report
 
-Updated: 2026-08-20 (validated against `main` + feat/helm_gaps: ENHANCED_ORG_ADMIN, Celery beat resources, Masu Service ports)
+Updated: 2026-08-20 (validated against `main` + feat/helm_gaps: ENHANCED_ORG_ADMIN, Celery beat resources, Masu Service ports, Gateway Route timeout)
 
 Systematic comparison of `cost-onprem-chart/cost-onprem/` (Helm chart) against
 `koku-service-operator` (operator) — identifying deviations, missing pieces,
@@ -278,12 +278,11 @@ the UI (passthrough TLS to oauth2-proxy). Architecturally sound.
 Operator uses `app.kubernetes.io/{name,instance,component,managed-by}`.
 Chart uses Helm-standard labels. Both are valid.
 
-### 6.5 Gateway Route timeout annotation not set by default
+### 6.5 Gateway Route timeout annotation **FIXED** (feat/helm_gaps)
 
-The operator doesn't set `haproxy.router.openshift.io/timeout` on the
-gateway Route (user can set it via `spec.gatewayRoute.annotations`). The
-chart sets `180s`. The Envoy-side timeout is now correct (180s), but the
-OpenShift Route annotation default should also be set for consistency.
+The operator now sets `haproxy.router.openshift.io/timeout: "180s"` as a
+default annotation on the gateway Route (matches Helm chart and Envoy config).
+User overrides via `spec.gatewayRoute.annotations` still take precedence.
 
 ---
 
@@ -295,6 +294,6 @@ OpenShift Route annotation default should also be set for consistency.
 4. **Add ROS Processor + Poller Services**: needed for Prometheus metrics scraping
 5. **Add ROS metrics-scraping NetworkPolicies**: ros-api-metrics, processor-metrics, poller-metrics (Gateway, Koku API, and Masu now covered)
 6. **Add RBAC + ROS components to ServiceMonitors**: rbac-api, ros-processor, ros-recommendation-poller, gateway still missing
-7. **Set default Route timeout annotation** to 180s in GatewayAPIRoute
+7. ~~**Set default Route timeout annotation** to 180s in GatewayAPIRoute~~ **DONE** (feat/helm_gaps)
 8. **Add remaining env var defaults**: `INITIAL_INGEST_NUM_MONTHS`, logging vars in `KokuCommonEnv()`
 9. **Expose `roleCreateAllowList`** in the RBAC CR section
