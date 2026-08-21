@@ -203,7 +203,7 @@ func markRouteAdmitted(t *testing.T, c client.Client, ns, name string) {
 		map[string]any{
 			"host": "admitted.example.com",
 			"conditions": []any{
-				map[string]any{"type": "Admitted", "status": "True"},
+				map[string]any{"type": routeAdmittedType, "status": "True"},
 			},
 		},
 	}, "status", "ingress"); err != nil {

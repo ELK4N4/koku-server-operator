@@ -115,7 +115,7 @@ func TestReconcileEdge_EnvoyReady_WithDomain_NoOAuth(t *testing.T) {
 	}
 
 	route := &unstructured.Unstructured{}
-	route.SetGroupVersionKind(schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: "Route"})
+	route.SetGroupVersionKind(routeGVK())
 	mustExist(t, r.Client, testNamespace, resources.NameAPIRoute(cfg), route)
 
 	mustExist(t, r.Client, testNamespace, resources.NameUICookieSecret(cfg), &corev1.Secret{})
@@ -202,7 +202,7 @@ func TestReconcileUI_ValidOAuthSecret(t *testing.T) {
 	mustExist(t, r.Client, testNamespace, resources.NameUI(cfg), &corev1.Service{})
 
 	uiRoute := &unstructured.Unstructured{}
-	uiRoute.SetGroupVersionKind(schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: "Route"})
+	uiRoute.SetGroupVersionKind(routeGVK())
 	mustExist(t, r.Client, testNamespace, cfg.Name+"-ui", uiRoute)
 
 	cl := &unstructured.Unstructured{}
@@ -405,7 +405,7 @@ func TestReconcileUI_AdmittedRoute_SetsUIReady(t *testing.T) {
 		map[string]any{
 			"host": "ui.apps.example.com",
 			"conditions": []any{
-				map[string]any{"type": "Admitted", "status": "True"},
+				map[string]any{"type": routeAdmittedType, "status": "True"},
 			},
 		},
 	}, "status", "ingress"); err != nil {

@@ -4,6 +4,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+const (
+	routeKind         = "Route"
+	routeAdmittedType = "Admitted"
+)
+
 // routeAdmitted reports whether an OpenShift Route has been admitted by a router.
 // Requires status.ingress to be non-empty. An ingress entry is admitted when it
 // has conditions with type=Admitted status=True, or — if that entry has no
@@ -39,7 +44,7 @@ func routeAdmitted(u *unstructured.Unstructured) bool {
 			}
 			typ, _, _ := unstructured.NestedString(cm, "type")
 			status, _, _ := unstructured.NestedString(cm, "status")
-			if typ == "Admitted" && status == "True" {
+			if typ == routeAdmittedType && status == "True" {
 				return true
 			}
 		}

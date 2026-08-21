@@ -950,7 +950,7 @@ func (r *CostManagementServiceConfigReconciler) apply(ctx context.Context, cfg *
 }
 
 func routeGVK() schema.GroupVersionKind {
-	return schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: "Route"}
+	return schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: routeKind}
 }
 
 func (r *CostManagementServiceConfigReconciler) getRoute(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error) {
