@@ -5,9 +5,18 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
+
+func servicePortsByName(ports []corev1.ServicePort) map[string]corev1.ServicePort {
+	out := make(map[string]corev1.ServicePort, len(ports))
+	for _, p := range ports {
+		out[p.Name] = p
+	}
+	return out
+}
 
 func TestKokuAPIService(t *testing.T) {
 	cfg := testCfg()
@@ -21,12 +30,31 @@ func TestKokuAPIService(t *testing.T) {
 	if svc.Spec.Selector[labelComponent] != "cost-management-api" {
 		t.Errorf("selector component = %q", svc.Spec.Selector[labelComponent])
 	}
-	if len(svc.Spec.Ports) != 1 {
-		t.Fatalf("ports = %+v", svc.Spec.Ports)
+	if len(svc.Spec.Ports) != 2 {
+		t.Fatalf("ports = %+v, want http + metrics", svc.Spec.Ports)
 	}
-	port := svc.Spec.Ports[0]
-	if port.Name != "http" || port.Port != 8000 || port.Protocol != corev1.ProtocolTCP {
-		t.Errorf("port = %+v, want http/8000/TCP", port)
+
+	byName := servicePortsByName(svc.Spec.Ports)
+	httpPort, ok := byName["http"]
+	if !ok {
+		t.Fatal("missing port named http")
+	}
+	if httpPort.Port != 8000 || httpPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("http port = %+v, want port 8000/TCP", httpPort)
+	}
+	if httpPort.TargetPort != intstr.FromString("http") {
+		t.Errorf("http TargetPort = %+v, want named http", httpPort.TargetPort)
+	}
+
+	metricsPort, ok := byName["metrics"]
+	if !ok {
+		t.Fatal("missing port named metrics")
+	}
+	if metricsPort.Port != 9000 || metricsPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("metrics port = %+v, want port 9000/TCP", metricsPort)
+	}
+	if metricsPort.TargetPort != intstr.FromString("metrics") {
+		t.Errorf("metrics TargetPort = %+v, want named metrics", metricsPort.TargetPort)
 	}
 }
 
@@ -42,12 +70,30 @@ func TestMasuService(t *testing.T) {
 	if svc.Spec.Selector[labelComponent] != "cost-processor" {
 		t.Errorf("selector component = %q", svc.Spec.Selector[labelComponent])
 	}
-	if len(svc.Spec.Ports) != 1 {
-		t.Fatalf("ports = %+v", svc.Spec.Ports)
+	if len(svc.Spec.Ports) != 2 {
+		t.Fatalf("ports = %+v, want 2 ports", svc.Spec.Ports)
 	}
-	port := svc.Spec.Ports[0]
-	if port.Name != "http" || port.Port != 9000 || port.Protocol != corev1.ProtocolTCP {
-		t.Errorf("port = %+v, want http/9000/TCP", port)
+
+	byName := servicePortsByName(svc.Spec.Ports)
+	httpPort, ok := byName["http"]
+	if !ok {
+		t.Fatal("missing port named http")
+	}
+	if httpPort.Port != 8000 || httpPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("http port = %+v, want http/8000/TCP", httpPort)
+	}
+	if httpPort.TargetPort != intstr.FromString("http") {
+		t.Errorf("http TargetPort = %+v, want named http", httpPort.TargetPort)
+	}
+	metricsPort, ok := byName["metrics"]
+	if !ok {
+		t.Fatal("missing port named metrics")
+	}
+	if metricsPort.Port != 9000 || metricsPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("metrics port = %+v, want metrics/9000/TCP", metricsPort)
+	}
+	if metricsPort.TargetPort != intstr.FromString("metrics") {
+		t.Errorf("metrics TargetPort = %+v, want named metrics", metricsPort.TargetPort)
 	}
 }
 
@@ -101,5 +147,32 @@ func TestCeleryWorkerDeployments_SaaSQueuesOptIn(t *testing.T) {
 	}
 	if got := celeryDeploymentReplicas(t, cfg, deps, "subs_extraction"); got != 1 {
 		t.Errorf("subs_extraction replicas = %d, want 1", got)
+	}
+}
+
+func TestCeleryBeatDeployment_ContainerResources(t *testing.T) {
+	cfg := testCfg()
+	cfg.Spec.CostManagement.API.Image.Repository = "quay.io/example/koku"
+	cfg.Spec.CostManagement.API.Image.Tag = "latest"
+
+	dep := CeleryBeatDeployment(cfg)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	cpuReq := container.Resources.Requests[corev1.ResourceCPU]
+	memReq := container.Resources.Requests[corev1.ResourceMemory]
+	cpuLim := container.Resources.Limits[corev1.ResourceCPU]
+	memLim := container.Resources.Limits[corev1.ResourceMemory]
+
+	if cpuReq.String() != "50m" {
+		t.Errorf("CPU request = %s, want 50m", cpuReq.String())
+	}
+	if memReq.String() != "200Mi" {
+		t.Errorf("Memory request = %s, want 200Mi", memReq.String())
+	}
+	if cpuLim.String() != "100m" {
+		t.Errorf("CPU limit = %s, want 100m", cpuLim.String())
+	}
+	if memLim.String() != "400Mi" {
+		t.Errorf("Memory limit = %s, want 400Mi", memLim.String())
 	}
 }
