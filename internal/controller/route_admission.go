@@ -11,9 +11,8 @@ const (
 )
 
 // routeAdmitted reports whether an OpenShift Route has been admitted by a router.
-// Requires status.ingress to be non-empty. An ingress entry is admitted when it
-// has conditions with type=Admitted status=True, or — if that entry has no
-// conditions — when host is non-empty.
+// An ingress entry counts only when it has type=Admitted status=True. A host
+// with no conditions is not admission — routers always set the condition.
 func routeAdmitted(u *unstructured.Unstructured) bool {
 	if u == nil {
 		return false
@@ -28,14 +27,7 @@ func routeAdmitted(u *unstructured.Unstructured) bool {
 			continue
 		}
 		conds, condsFound, condErr := unstructured.NestedSlice(m, "conditions")
-		if condErr != nil {
-			continue
-		}
-		if !condsFound || len(conds) == 0 {
-			host, _, _ := unstructured.NestedString(m, "host")
-			if host != "" {
-				return true
-			}
+		if condErr != nil || !condsFound {
 			continue
 		}
 		for _, c := range conds {

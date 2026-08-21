@@ -767,6 +767,16 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		logger.Info("skipping API Route: cluster domain not resolved; gateway still deployed for in-cluster access")
 	}
 
+	// Isolation and UI bootstrap do not wait on the API Route. OpenShift
+	// defaults to allow-all until a NetworkPolicy exists, and cookie/nginx
+	// ConfigMaps are safe without a host.
+	if err := r.applyNetworkPolicies(ctx, cfg); err != nil {
+		return Result{}, err
+	}
+	if err := r.applyUICookieAndNginx(ctx, cfg); err != nil {
+		return Result{}, err
+	}
+
 	ready, err := r.isDeploymentReady(ctx, cfg.Namespace, resources.NameEnvoy(cfg))
 	if err != nil {
 		return Result{}, err
@@ -800,7 +810,13 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 		return Result{}, err
 	}
 
-	// NetworkPolicies — restrict traffic to expected flows per component.
+	if apimeta.IsStatusConditionFalse(cfg.Status.Conditions, costv1alpha1.ConditionUIReady) {
+		return Result{RequeueAfter: requeueSlow}, nil
+	}
+	return Result{}, nil
+}
+
+func (r *CostManagementServiceConfigReconciler) applyNetworkPolicies(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) error {
 	netpols := []client.Object{
 		resources.GatewayNetworkPolicy(cfg),
 		resources.IngressNetworkPolicy(cfg),
@@ -824,25 +840,27 @@ func (r *CostManagementServiceConfigReconciler) reconcileEdge(ctx context.Contex
 	}
 	for _, np := range netpols {
 		if err := r.apply(ctx, cfg, np); err != nil {
-			return Result{}, fmt.Errorf("networkpolicy %s: %w", np.GetName(), err)
+			return fmt.Errorf("networkpolicy %s: %w", np.GetName(), err)
 		}
 	}
-
-	if apimeta.IsStatusConditionFalse(cfg.Status.Conditions, costv1alpha1.ConditionUIReady) {
-		return Result{RequeueAfter: requeueSlow}, nil
-	}
-	return Result{}, nil
+	return nil
 }
 
-// reconcileUI ensures cookie/nginx config, validates the user-provided OAuth
-// client Secret, and applies UI Deploy/Service/Route/ConsoleLink when ready.
-func (r *CostManagementServiceConfigReconciler) reconcileUI(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) error {
-	// Cookie secret + nginx ConfigMap are safe without OAuth credentials.
+func (r *CostManagementServiceConfigReconciler) applyUICookieAndNginx(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) error {
 	if err := r.ensureSecret(ctx, cfg, resources.UICookieSecret(cfg)); err != nil {
 		return fmt.Errorf("ui cookie secret: %w", err)
 	}
 	if err := r.apply(ctx, cfg, resources.UINginxConfigMap(cfg)); err != nil {
 		return fmt.Errorf("ui %s: %w", resources.NameUINginxConfigMap(cfg), err)
+	}
+	return nil
+}
+
+// reconcileUI ensures cookie/nginx config, validates the user-provided OAuth
+// client Secret, and applies UI Deploy/Service/Route/ConsoleLink when ready.
+func (r *CostManagementServiceConfigReconciler) reconcileUI(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) error {
+	if err := r.applyUICookieAndNginx(ctx, cfg); err != nil {
+		return err
 	}
 
 	// OAuth client Secret is user-provided (same-namespace SecretRef). Gate UI

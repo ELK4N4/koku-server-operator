@@ -26,12 +26,12 @@ func TestRouteAdmitted(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "host without conditions",
+			name: "host without conditions stays unready",
 			yaml: `status:
   ingress:
   - host: cost.apps.example.com
 `,
-			want: true,
+			want: false,
 		},
 		{
 			name: "admitted true",

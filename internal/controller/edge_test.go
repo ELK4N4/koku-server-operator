@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 	"github.com/project-koku/koku-service-operator/internal/resources"
@@ -37,8 +38,10 @@ func TestReconcileEdge_EnvoyNotReady(t *testing.T) {
 	mustExist(t, r.Client, testNamespace, resources.NameEnvoy(cfg), &corev1.Service{})
 	mustExist(t, r.Client, testNamespace, resources.NameEnvoy(cfg), &appsv1.Deployment{})
 
-	// UI runs only after the Envoy ready gate — cookie secret and UI Deployment must be absent.
-	mustNotExist(t, r.Client, testNamespace, resources.NameUICookieSecret(cfg), &corev1.Secret{})
+	// Isolation and cookie/nginx do not wait on Envoy readiness. UI Deploy does.
+	mustIsolationNetworkPolicies(t, r.Client, cfg)
+	mustExist(t, r.Client, testNamespace, resources.NameUICookieSecret(cfg), &corev1.Secret{})
+	mustExist(t, r.Client, testNamespace, resources.NameUINginxConfigMap(cfg), &corev1.ConfigMap{})
 	mustNotExist(t, r.Client, testNamespace, resources.NameUI(cfg), &appsv1.Deployment{})
 
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionGatewayReady)
@@ -75,10 +78,11 @@ func TestReconcileEdge_EnvoyReady_NoClusterDomain(t *testing.T) {
 		t.Fatalf("expected GatewayReady=False ClusterDomainPending, got %+v", cond)
 	}
 
-	// UI is after the domain/route gate — must not run yet.
-	mustNotExist(t, r.Client, testNamespace, resources.NameUICookieSecret(cfg), &corev1.Secret{})
+	// Isolation and cookie/nginx do not wait on cluster domain. UI Deploy does.
+	mustIsolationNetworkPolicies(t, r.Client, cfg)
+	mustExist(t, r.Client, testNamespace, resources.NameUICookieSecret(cfg), &corev1.Secret{})
+	mustExist(t, r.Client, testNamespace, resources.NameUINginxConfigMap(cfg), &corev1.ConfigMap{})
 	mustNotExist(t, r.Client, testNamespace, resources.NameUI(cfg), &appsv1.Deployment{})
-	mustNotExist(t, r.Client, testNamespace, cfg.Name+"-gateway", &networkingv1.NetworkPolicy{})
 }
 
 func TestReconcileEdge_EnvoyReady_WithDomain_NoOAuth(t *testing.T) {
@@ -127,16 +131,7 @@ func TestReconcileEdge_EnvoyReady_WithDomain_NoOAuth(t *testing.T) {
 		t.Fatalf("expected UIReady=False OAuthClientSecretMissing, got %+v", uiCond)
 	}
 
-	mustExist(t, r.Client, testNamespace, cfg.Name+"-gateway", &networkingv1.NetworkPolicy{})
-	mustExist(t, r.Client, testNamespace, cfg.Name+"-ingress", &networkingv1.NetworkPolicy{})
-	mustExist(t, r.Client, testNamespace, cfg.Name+"-rbac-api", &networkingv1.NetworkPolicy{})
-	mustExist(t, r.Client, testNamespace, cfg.Name+"-koku-api", &networkingv1.NetworkPolicy{})
-	mustExist(t, r.Client, testNamespace, cfg.Name+"-ui", &networkingv1.NetworkPolicy{})
-	mustExist(t, r.Client, testNamespace, cfg.Name+"-listener", &networkingv1.NetworkPolicy{})
-	mustExist(t, r.Client, testNamespace, cfg.Name+"-masu", &networkingv1.NetworkPolicy{})
-	// Deploy defaults true → cache/db NetworkPolicies are applied.
-	mustExist(t, r.Client, testNamespace, cfg.Name+"-cache", &networkingv1.NetworkPolicy{})
-	mustExist(t, r.Client, testNamespace, cfg.Name+"-database", &networkingv1.NetworkPolicy{})
+	mustIsolationNetworkPolicies(t, r.Client, cfg)
 }
 
 func TestReconcileEdge_DoesNotOverwriteOIDCUnreachable(t *testing.T) {
@@ -291,8 +286,11 @@ func TestReconcileEdge_RouteNotAdmitted_Requeues(t *testing.T) {
 		t.Fatalf("expected empty status.ingress before admission, got %#v", ingress)
 	}
 
-	// UI and NPs run only after the gateway Route is admitted.
-	mustNotExist(t, r.Client, testNamespace, resources.NameUICookieSecret(cfg), &corev1.Secret{})
+	// Isolation and cookie/nginx apply before API Route admission. UI Deploy waits.
+	mustIsolationNetworkPolicies(t, r.Client, cfg)
+	mustExist(t, r.Client, testNamespace, resources.NameUICookieSecret(cfg), &corev1.Secret{})
+	mustExist(t, r.Client, testNamespace, resources.NameUINginxConfigMap(cfg), &corev1.ConfigMap{})
+	mustNotExist(t, r.Client, testNamespace, resources.NameUI(cfg), &appsv1.Deployment{})
 }
 
 func TestReconcileEdge_RouteAdmitted_GatewayReady(t *testing.T) {
@@ -427,4 +425,14 @@ func TestReconcileUI_AdmittedRoute_SetsUIReady(t *testing.T) {
 	cl := &unstructured.Unstructured{}
 	cl.SetGroupVersionKind(schema.GroupVersionKind{Group: "console.openshift.io", Version: "v1", Kind: "ConsoleLink"})
 	mustExist(t, r.Client, "", resources.NameConsoleLink(cfg), cl)
+}
+
+func mustIsolationNetworkPolicies(t *testing.T, c client.Client, cfg *costv1alpha1.CostManagementServiceConfig) {
+	t.Helper()
+	for _, suffix := range []string{
+		"-gateway", "-ingress", "-rbac-api", "-koku-api",
+		"-ui", "-listener", "-masu", "-cache", "-database",
+	} {
+		mustExist(t, c, testNamespace, cfg.Name+suffix, &networkingv1.NetworkPolicy{})
+	}
 }
