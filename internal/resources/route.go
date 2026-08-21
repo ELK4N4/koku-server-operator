@@ -10,6 +10,11 @@ import (
 	costv1alpha1 "github.com/project-koku/koku-service-operator/api/v1alpha1"
 )
 
+const (
+	gatewayRouteTimeoutAnnotation = "haproxy.router.openshift.io/timeout"
+	gatewayRouteTimeoutDefault    = "180s"
+)
+
 var routeGVK = schema.GroupVersionKind{
 	Group:   "route.openshift.io",
 	Version: "v1",
@@ -60,9 +65,10 @@ func GatewayAPIRoute(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 	route.SetNamespace(cfg.Namespace)
 	route.SetLabels(Labels(cfg, envoyComponent))
 
-	// Set default timeout annotation (matches Helm chart and Envoy config)
+	// Default timeout matches Helm and the longest Envoy route (/api/ingress/).
+	// CR annotations overlay this map; omitting the timeout key keeps 180s.
 	annotations := map[string]string{
-		"haproxy.router.openshift.io/timeout": "180s",
+		gatewayRouteTimeoutAnnotation: gatewayRouteTimeoutDefault,
 	}
 	maps.Copy(annotations, cfg.Spec.GatewayRoute.Annotations)
 	route.SetAnnotations(annotations)
