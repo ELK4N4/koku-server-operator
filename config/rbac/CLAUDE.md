@@ -21,3 +21,6 @@ grep -E 'consolelinks|clusterroles|clusterrolebindings|ingresses|storageclasses|
 
 This must return nothing. If it does, the marker belongs in
 `cluster_access_role.yaml` instead, not in a `+kubebuilder:rbac` annotation.
+
+CI also locks this via `TestManagerRole_NoClusterScopedResources` in
+`internal/controller/rbac_manifest_test.go`.

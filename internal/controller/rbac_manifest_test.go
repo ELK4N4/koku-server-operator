@@ -207,3 +207,49 @@ func TestManagerRole_StillGrantsNamespacedSecrets(t *testing.T) {
 		t.Fatal("manager-role must still list unnamed secrets (scoped by RoleBinding)")
 	}
 }
+
+// clusterScopedResources belong in cluster_access_role.yaml. role.yaml is
+// bound via a namespaced RoleBinding, so rules for these resources are inert
+// today but would regain cluster-wide reach if the binding were switched
+// back to a ClusterRoleBinding (review follow-up #6).
+var clusterScopedResources = map[string]struct{}{
+	"consolelinks":        {},
+	"clusterroles":        {},
+	"clusterrolebindings": {},
+	"storageclasses":      {},
+}
+
+func assertNoClusterScopedResources(t *testing.T, source string, rules []rbacv1.PolicyRule) {
+	t.Helper()
+	for _, rule := range rules {
+		for _, res := range rule.Resources {
+			if _, forbidden := clusterScopedResources[res]; forbidden {
+				t.Errorf("%s must not grant cluster-scoped resource %q (belongs in cluster_access_role.yaml): %+v", source, res, rule)
+			}
+			// OpenShift Ingress/cluster is cluster-scoped; networking.k8s.io
+			// Ingress is namespaced and would be fine in role.yaml.
+			if res == "ingresses" && slices.Contains(rule.APIGroups, "config.openshift.io") {
+				t.Errorf("%s must not grant config.openshift.io/ingresses (belongs in cluster_access_role.yaml): %+v", source, rule)
+			}
+		}
+	}
+}
+
+func TestManagerRole_NoClusterScopedResources(t *testing.T) {
+	var cr rbacv1.ClusterRole
+	decodeYAMLFile(t, rbacManifestPath(t, "role.yaml"), &cr)
+	if cr.Name != "manager-role" {
+		t.Fatalf("manager role name: got %q", cr.Name)
+	}
+	assertNoClusterScopedResources(t, "manager-role", cr.Rules)
+
+	// OLM installs from the CSV, not role.yaml. Lock namespaced permissions
+	// to the same constraint so a regenerated bundle cannot reintroduce
+	// cluster-scoped rules under OwnNamespace.
+	var csv olmCSVInstallPermissions
+	decodeYAMLFile(t, bundleCSVPath(t), &csv)
+	if len(csv.Spec.Install.Spec.Permissions) == 0 {
+		t.Fatal("CSV spec.install.spec.permissions is empty (unmarshal failed or field moved)")
+	}
+	assertNoClusterScopedResources(t, "CSV permissions", csvPolicyRules(csv.Spec.Install.Spec.Permissions))
+}
