@@ -227,9 +227,9 @@ var clusterScopedResources = map[string]struct{}{
 // resources=["*"] grant on these groups is equivalent to naming the
 // cluster-scoped kinds.
 var exclusivelyClusterScopedAPIGroups = map[string]struct{}{
-	"console.openshift.io": {},
-	"config.openshift.io":  {},
-	"storage.k8s.io":       {},
+	"console.openshift.io":  {},
+	openShiftConfigAPIGroup: {},
+	"storage.k8s.io":        {},
 }
 
 func clusterScopedViolations(rules []rbacv1.PolicyRule) []string {
@@ -257,8 +257,8 @@ func clusterScopedViolations(rules []rbacv1.PolicyRule) []string {
 			}
 			// OpenShift Ingress/cluster is cluster-scoped; networking.k8s.io
 			// Ingress is namespaced and would be fine in role.yaml.
-			if res == "ingresses" && (slices.Contains(rule.APIGroups, "config.openshift.io") || wildcardGroup) {
-				out = append(out, fmt.Sprintf("config.openshift.io/ingresses (belongs in cluster_access_role.yaml): %+v", rule))
+			if res == "ingresses" && (slices.Contains(rule.APIGroups, openShiftConfigAPIGroup) || wildcardGroup) {
+				out = append(out, fmt.Sprintf("%s/ingresses (belongs in cluster_access_role.yaml): %+v", openShiftConfigAPIGroup, rule))
 			}
 		}
 	}
@@ -305,7 +305,7 @@ func TestClusterScopedViolations(t *testing.T) {
 		},
 		{
 			name:    "config.openshift.io ingresses",
-			rule:    rbacv1.PolicyRule{APIGroups: []string{"config.openshift.io"}, Resources: []string{"ingresses"}},
+			rule:    rbacv1.PolicyRule{APIGroups: []string{openShiftConfigAPIGroup}, Resources: []string{"ingresses"}},
 			wantHit: true,
 		},
 		{
