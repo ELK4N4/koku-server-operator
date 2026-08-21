@@ -7,6 +7,7 @@ import (
 const (
 	routeKind         = "Route"
 	routeAdmittedType = "Admitted"
+	routeStatusTrue   = "True"
 )
 
 // routeAdmitted reports whether an OpenShift Route has been admitted by a router.
@@ -44,7 +45,7 @@ func routeAdmitted(u *unstructured.Unstructured) bool {
 			}
 			typ, _, _ := unstructured.NestedString(cm, "type")
 			status, _, _ := unstructured.NestedString(cm, "status")
-			if typ == routeAdmittedType && status == "True" {
+			if typ == routeAdmittedType && status == routeStatusTrue {
 				return true
 			}
 		}
