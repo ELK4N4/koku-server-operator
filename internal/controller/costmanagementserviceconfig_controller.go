@@ -885,9 +885,6 @@ func (r *CostManagementServiceConfigReconciler) reconcileUI(ctx context.Context,
 		if !routeAdmitted(live) {
 			r.setCondition(cfg, costv1alpha1.ConditionUIReady, metav1.ConditionFalse,
 				"RouteNotAdmitted", "waiting for UI Route admission")
-			if err := r.applyClusterScoped(ctx, resources.ConsoleLink(cfg)); err != nil {
-				return fmt.Errorf("consolelink: %w", err)
-			}
 			return nil
 		}
 	}

@@ -207,7 +207,7 @@ func TestReconcileUI_ValidOAuthSecret(t *testing.T) {
 
 	cl := &unstructured.Unstructured{}
 	cl.SetGroupVersionKind(schema.GroupVersionKind{Group: "console.openshift.io", Version: "v1", Kind: "ConsoleLink"})
-	mustExist(t, r.Client, "", resources.NameConsoleLink(cfg), cl)
+	mustNotExist(t, r.Client, "", resources.NameConsoleLink(cfg), cl)
 
 	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionUIReady)
 	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "RouteNotAdmitted" {
@@ -377,6 +377,9 @@ func TestReconcileEdge_UIRouteNotAdmitted(t *testing.T) {
 	uiRoute.SetGroupVersionKind(routeGVK())
 	mustExist(t, r.Client, testNamespace, cfg.Name+"-ui", uiRoute)
 	mustExist(t, r.Client, testNamespace, resources.NameUI(cfg), &appsv1.Deployment{})
+	cl := &unstructured.Unstructured{}
+	cl.SetGroupVersionKind(schema.GroupVersionKind{Group: "console.openshift.io", Version: "v1", Kind: "ConsoleLink"})
+	mustNotExist(t, r.Client, "", resources.NameConsoleLink(cfg), cl)
 }
 
 func TestReconcileUI_AdmittedRoute_SetsUIReady(t *testing.T) {
@@ -421,4 +424,7 @@ func TestReconcileUI_AdmittedRoute_SetsUIReady(t *testing.T) {
 		t.Fatalf("expected UIReady=True after UI Route admission, got %+v",
 			findCondition(cfg.Status.Conditions, costv1alpha1.ConditionUIReady))
 	}
+	cl := &unstructured.Unstructured{}
+	cl.SetGroupVersionKind(schema.GroupVersionKind{Group: "console.openshift.io", Version: "v1", Kind: "ConsoleLink"})
+	mustExist(t, r.Client, "", resources.NameConsoleLink(cfg), cl)
 }
