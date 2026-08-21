@@ -223,6 +223,35 @@ func DatabaseNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *netwo
 }
 
 // -----------------------------------------------------------------------------
+// UI (oauth2-proxy)
+// -----------------------------------------------------------------------------
+
+// UINetworkPolicy allows OpenShift ingress to reach the UI oauth2-proxy on 8443.
+func UINetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
+	return netpol(cfg, cfg.Name+"-ui", "ui", []networkingv1.NetworkPolicyIngressRule{{
+		From: []networkingv1.NetworkPolicyPeer{
+			{NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"network.openshift.io/policy-group": "ingress"},
+			}},
+			{NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"kubernetes.io/metadata.name": "openshift-ingress"},
+			}},
+		},
+		Ports: []networkingv1.NetworkPolicyPort{tcpPort(uiProxyPort)},
+	}})
+}
+
+// -----------------------------------------------------------------------------
+// Listener (Kafka consumer — no Service)
+// -----------------------------------------------------------------------------
+
+// ListenerNetworkPolicy denies all inbound traffic to the Kafka listener.
+// The listener has no Service; it only consumes from Kafka.
+func ListenerNetworkPolicy(cfg *costv1alpha1.CostManagementServiceConfig) *networkingv1.NetworkPolicy {
+	return netpol(cfg, cfg.Name+"-listener", "listener", nil)
+}
+
+// -----------------------------------------------------------------------------
 // Koku API
 // -----------------------------------------------------------------------------
 

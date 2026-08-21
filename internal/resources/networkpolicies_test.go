@@ -263,6 +263,46 @@ func TestDatabaseNetworkPolicy(t *testing.T) {
 	}
 }
 
+func TestUINetworkPolicy(t *testing.T) {
+	cfg := testCfg()
+	np := UINetworkPolicy(cfg)
+	if np.Name != cfg.Name+"-ui" {
+		t.Errorf("Name = %q, want %s-ui", np.Name, cfg.Name)
+	}
+	assertIngressOnly(t, np)
+	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "ui" {
+		t.Errorf("podSelector component = %q, want ui", got)
+	}
+	if len(np.Spec.Ingress) != 1 {
+		t.Fatalf("expected 1 ingress rule, got %d", len(np.Spec.Ingress))
+	}
+	rule := np.Spec.Ingress[0]
+	if !ruleHasNamespaceLabel(rule, "network.openshift.io/policy-group", "ingress") {
+		t.Error("missing OpenShift ingress policy-group peer")
+	}
+	if !ruleHasNamespaceLabel(rule, "kubernetes.io/metadata.name", "openshift-ingress") {
+		t.Error("missing openshift-ingress namespace peer")
+	}
+	if !ruleAllowsPort(np.Spec.Ingress, uiProxyPort) {
+		t.Errorf("missing UI proxy port %d", uiProxyPort)
+	}
+}
+
+func TestListenerNetworkPolicy(t *testing.T) {
+	cfg := testCfg()
+	np := ListenerNetworkPolicy(cfg)
+	if np.Name != cfg.Name+"-listener" {
+		t.Errorf("Name = %q, want %s-listener", np.Name, cfg.Name)
+	}
+	assertIngressOnly(t, np)
+	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "listener" {
+		t.Errorf("podSelector component = %q, want listener", got)
+	}
+	if len(np.Spec.Ingress) != 0 {
+		t.Errorf("Listener Ingress = %+v, want empty (deny all inbound)", np.Spec.Ingress)
+	}
+}
+
 func TestROSAPINetworkPolicy_GatewayOnly(t *testing.T) {
 	// Extends the smoke test in names_test.go with peer/port assertions.
 	cfg := testCfg()
@@ -284,6 +324,15 @@ func assertIngressOnly(t *testing.T, np *networkingv1.NetworkPolicy) {
 	if len(np.Spec.PolicyTypes) != 1 || np.Spec.PolicyTypes[0] != networkingv1.PolicyTypeIngress {
 		t.Errorf("PolicyTypes = %v, want [Ingress]", np.Spec.PolicyTypes)
 	}
+}
+
+func ruleHasNamespaceLabel(rule networkingv1.NetworkPolicyIngressRule, key, value string) bool {
+	for _, from := range rule.From {
+		if from.NamespaceSelector != nil && from.NamespaceSelector.MatchLabels[key] == value {
+			return true
+		}
+	}
+	return false
 }
 
 func peerHasComponent(rule networkingv1.NetworkPolicyIngressRule, component string) bool {
