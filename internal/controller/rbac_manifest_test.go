@@ -218,6 +218,9 @@ var clusterScopedResources = map[string]struct{}{
 	"clusterroles":        {},
 	"clusterrolebindings": {},
 	"storageclasses":      {},
+	// noobaa-admin is a Secret resourceName, not a resource — see
+	// clusterScopedViolations. The CLAUDE.md grep uses noobaa-admin
+	// for the same reason.
 }
 
 // exclusivelyClusterScopedAPIGroups have no namespaced resources. A

@@ -16,7 +16,7 @@ This operator uses an **OwnNamespace** install model with two ClusterRoles:
 2. Verify `role.yaml` has **no cluster-scoped resources**:
 
 ```bash
-grep -E 'consolelinks|clusterroles|clusterrolebindings|ingresses|storageclasses|noobaa' config/rbac/role.yaml
+grep -E 'consolelinks|clusterroles|clusterrolebindings|ingresses|storageclasses|noobaa-admin' config/rbac/role.yaml
 ```
 
 This must return nothing. If it does, the marker belongs in
