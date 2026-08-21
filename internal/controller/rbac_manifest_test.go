@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -219,19 +220,122 @@ var clusterScopedResources = map[string]struct{}{
 	"storageclasses":      {},
 }
 
-func assertNoClusterScopedResources(t *testing.T, source string, rules []rbacv1.PolicyRule) {
-	t.Helper()
+// exclusivelyClusterScopedAPIGroups have no namespaced resources. A
+// resources=["*"] grant on these groups is equivalent to naming the
+// cluster-scoped kinds.
+var exclusivelyClusterScopedAPIGroups = map[string]struct{}{
+	"console.openshift.io": {},
+	"config.openshift.io":  {},
+	"storage.k8s.io":       {},
+}
+
+func clusterScopedViolations(rules []rbacv1.PolicyRule) []string {
+	var out []string
 	for _, rule := range rules {
+		if slices.Contains(rule.ResourceNames, "noobaa-admin") {
+			out = append(out, fmt.Sprintf("noobaa-admin resourceName (belongs in cluster_access_role.yaml): %+v", rule))
+		}
+
+		wildcardGroup := slices.Contains(rule.APIGroups, "*")
+		if slices.Contains(rule.Resources, "*") {
+			for _, g := range rule.APIGroups {
+				_, exclusive := exclusivelyClusterScopedAPIGroups[g]
+				// rbac.authorization.k8s.io also has namespaced roles/rolebindings
+				// in role.yaml; "*" on that group would include clusterroles.
+				if exclusive || g == "*" || g == "rbac.authorization.k8s.io" {
+					out = append(out, fmt.Sprintf("wildcard resources on API group %q (belongs in cluster_access_role.yaml): %+v", g, rule))
+				}
+			}
+		}
+
 		for _, res := range rule.Resources {
 			if _, forbidden := clusterScopedResources[res]; forbidden {
-				t.Errorf("%s must not grant cluster-scoped resource %q (belongs in cluster_access_role.yaml): %+v", source, res, rule)
+				out = append(out, fmt.Sprintf("cluster-scoped resource %q (belongs in cluster_access_role.yaml): %+v", res, rule))
 			}
 			// OpenShift Ingress/cluster is cluster-scoped; networking.k8s.io
 			// Ingress is namespaced and would be fine in role.yaml.
-			if res == "ingresses" && slices.Contains(rule.APIGroups, "config.openshift.io") {
-				t.Errorf("%s must not grant config.openshift.io/ingresses (belongs in cluster_access_role.yaml): %+v", source, rule)
+			if res == "ingresses" && (slices.Contains(rule.APIGroups, "config.openshift.io") || wildcardGroup) {
+				out = append(out, fmt.Sprintf("config.openshift.io/ingresses (belongs in cluster_access_role.yaml): %+v", rule))
 			}
 		}
+	}
+	return out
+}
+
+func assertNoClusterScopedResources(t *testing.T, source string, rules []rbacv1.PolicyRule) {
+	t.Helper()
+	for _, msg := range clusterScopedViolations(rules) {
+		t.Errorf("%s must not grant %s", source, msg)
+	}
+}
+
+func TestClusterScopedViolations(t *testing.T) {
+	tests := []struct {
+		name    string
+		rule    rbacv1.PolicyRule
+		wantHit bool
+	}{
+		{
+			name:    "explicit storageclasses",
+			rule:    rbacv1.PolicyRule{APIGroups: []string{"storage.k8s.io"}, Resources: []string{"storageclasses"}},
+			wantHit: true,
+		},
+		{
+			name:    "wildcard storage.k8s.io",
+			rule:    rbacv1.PolicyRule{APIGroups: []string{"storage.k8s.io"}, Resources: []string{"*"}},
+			wantHit: true,
+		},
+		{
+			name:    "wildcard all API groups",
+			rule:    rbacv1.PolicyRule{APIGroups: []string{"*"}, Resources: []string{"*"}},
+			wantHit: true,
+		},
+		{
+			name:    "wildcard rbac.authorization.k8s.io includes clusterroles",
+			rule:    rbacv1.PolicyRule{APIGroups: []string{"rbac.authorization.k8s.io"}, Resources: []string{"*"}},
+			wantHit: true,
+		},
+		{
+			name:    "noobaa-admin named secret",
+			rule:    rbacv1.PolicyRule{APIGroups: []string{""}, Resources: []string{"secrets"}, ResourceNames: []string{"noobaa-admin"}},
+			wantHit: true,
+		},
+		{
+			name:    "config.openshift.io ingresses",
+			rule:    rbacv1.PolicyRule{APIGroups: []string{"config.openshift.io"}, Resources: []string{"ingresses"}},
+			wantHit: true,
+		},
+		{
+			name:    "wildcard group with ingresses",
+			rule:    rbacv1.PolicyRule{APIGroups: []string{"*"}, Resources: []string{"ingresses"}},
+			wantHit: true,
+		},
+		{
+			name:    "namespaced secrets without resourceNames",
+			rule:    rbacv1.PolicyRule{APIGroups: []string{""}, Resources: []string{"secrets"}},
+			wantHit: false,
+		},
+		{
+			name:    "namespaced roles and rolebindings",
+			rule:    rbacv1.PolicyRule{APIGroups: []string{"rbac.authorization.k8s.io"}, Resources: []string{"roles", "rolebindings"}},
+			wantHit: false,
+		},
+		{
+			name:    "wildcard networking.k8s.io is namespaced",
+			rule:    rbacv1.PolicyRule{APIGroups: []string{"networking.k8s.io"}, Resources: []string{"*"}},
+			wantHit: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := clusterScopedViolations([]rbacv1.PolicyRule{tt.rule})
+			if tt.wantHit && len(got) == 0 {
+				t.Fatalf("expected a cluster-scoped violation, got none")
+			}
+			if !tt.wantHit && len(got) > 0 {
+				t.Fatalf("unexpected violation: %v", got)
+			}
+		})
 	}
 }
 

@@ -85,8 +85,9 @@ given the dev-only use case.
 
 **Fixed:** `TestManagerRole_NoClusterScopedResources` parses `role.yaml`
 and CSV namespaced `permissions` and fails if they grant `consolelinks`,
-`clusterroles`, `clusterrolebindings`, `storageclasses`, or
-`config.openshift.io/ingresses`. Those rules belong in
+`clusterroles`, `clusterrolebindings`, `storageclasses`,
+`config.openshift.io/ingresses`, a `noobaa-admin` resourceName, or a
+`resources: ["*"]` grant on those API groups. Those rules belong in
 `cluster_access_role.yaml`.
 
 ---
