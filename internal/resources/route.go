@@ -2,6 +2,7 @@ package resources
 
 import (
 	"fmt"
+	"maps"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -61,9 +62,13 @@ func GatewayAPIRoute(cfg *costv1alpha1.CostManagementServiceConfig) *unstructure
 	route.SetName(NameAPIRoute(cfg))
 	route.SetNamespace(cfg.Namespace)
 	route.SetLabels(Labels(cfg, envoyComponent))
-	if len(cfg.Spec.GatewayRoute.Annotations) > 0 {
-		route.SetAnnotations(cfg.Spec.GatewayRoute.Annotations)
+
+	// Set default timeout annotation (matches Helm chart and Envoy config)
+	annotations := map[string]string{
+		"haproxy.router.openshift.io/timeout": "180s",
 	}
+	maps.Copy(annotations, cfg.Spec.GatewayRoute.Annotations)
+	route.SetAnnotations(annotations)
 
 	_ = unstructured.SetNestedField(route.Object, host, "spec", "host")
 	_ = unstructured.SetNestedField(route.Object, "/api", "spec", "path")

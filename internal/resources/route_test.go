@@ -84,6 +84,20 @@ func TestGatewayAPIRouteSpec(t *testing.T) {
 	}
 }
 
+func TestGatewayAPIRouteDefaultTimeoutAnnotation(t *testing.T) {
+	cfg := testCfg()
+	cfg.Spec.Global.ClusterDomain = "apps.cluster.local"
+
+	route := GatewayAPIRoute(cfg)
+	if route == nil {
+		t.Fatal("expected Route")
+	}
+	timeout := route.GetAnnotations()["haproxy.router.openshift.io/timeout"]
+	if timeout != "180s" {
+		t.Errorf("default timeout annotation = %q, want 180s", timeout)
+	}
+}
+
 func TestGatewayAPIRouteTLSOverrides(t *testing.T) {
 	cfg := testCfg()
 	cfg.Spec.GatewayRoute.Host = "api.example.com"

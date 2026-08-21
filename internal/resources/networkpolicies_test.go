@@ -85,6 +85,71 @@ func TestRBACAPINetworkPolicy(t *testing.T) {
 	}
 }
 
+func TestMasuNetworkPolicy(t *testing.T) {
+	const masuPort = int32(9000)
+	cfg := testCfg()
+	np := MasuNetworkPolicy(cfg)
+	if np.Name != cfg.Name+"-masu" {
+		t.Errorf("Name = %q", np.Name)
+	}
+	assertIngressOnly(t, np)
+	if got := np.Spec.PodSelector.MatchLabels[labelComponent]; got != "cost-processor" {
+		t.Errorf("podSelector component = %q, want cost-processor", got)
+	}
+	if len(np.Spec.Ingress) != 1 {
+		t.Fatalf("expected single monitoring rule, got %d", len(np.Spec.Ingress))
+	}
+	rule := np.Spec.Ingress[0]
+	if len(rule.From) != 2 {
+		t.Fatalf("expected 2 monitoring namespace peers, got %d", len(rule.From))
+	}
+	wantNSLabels := []map[string]string{
+		{"network.openshift.io/policy-group": "monitoring"},
+		{"kubernetes.io/metadata.name": "openshift-monitoring"},
+	}
+	matched := make([]bool, len(wantNSLabels))
+	for _, from := range rule.From {
+		if from.PodSelector != nil {
+			t.Error("masu ingress must not allow pod peers")
+		}
+		if from.IPBlock != nil {
+			t.Error("masu ingress must not allow IPBlock peers")
+		}
+		if from.NamespaceSelector == nil {
+			t.Fatal("masu ingress peer must use NamespaceSelector")
+		}
+		found := false
+		for i, want := range wantNSLabels {
+			if mapsEqual(from.NamespaceSelector.MatchLabels, want) {
+				if matched[i] {
+					t.Errorf("duplicate namespace peer MatchLabels %v", want)
+				}
+				matched[i] = true
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("unexpected namespace peer MatchLabels = %v", from.NamespaceSelector.MatchLabels)
+		}
+	}
+	for i, want := range wantNSLabels {
+		if !matched[i] {
+			t.Errorf("missing namespace peer MatchLabels %v", want)
+		}
+	}
+	if len(rule.Ports) != 1 {
+		t.Fatalf("expected single TCP port, got %d", len(rule.Ports))
+	}
+	port := rule.Ports[0]
+	if port.Port == nil || port.Port.IntVal != masuPort {
+		t.Errorf("port = %v, want TCP %d", port.Port, masuPort)
+	}
+	if port.Protocol == nil || *port.Protocol != corev1.ProtocolTCP {
+		t.Errorf("protocol = %v, want TCP", port.Protocol)
+	}
+}
+
 func TestKokuAPINetworkPolicy(t *testing.T) {
 	const (
 		kokuAPIPort     = int32(8000)
@@ -273,6 +338,18 @@ func peerHasComponent(rule networkingv1.NetworkPolicyIngressRule, component stri
 		}
 	}
 	return false
+}
+
+func mapsEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
 }
 
 func ruleAllowsPort(rules []networkingv1.NetworkPolicyIngressRule, port int32) bool {

@@ -42,12 +42,16 @@ func TestMasuService(t *testing.T) {
 	if svc.Spec.Selector[labelComponent] != "cost-processor" {
 		t.Errorf("selector component = %q", svc.Spec.Selector[labelComponent])
 	}
-	if len(svc.Spec.Ports) != 1 {
-		t.Fatalf("ports = %+v", svc.Spec.Ports)
+	if len(svc.Spec.Ports) != 2 {
+		t.Fatalf("ports = %+v, want 2 ports", svc.Spec.Ports)
 	}
-	port := svc.Spec.Ports[0]
-	if port.Name != "http" || port.Port != 9000 || port.Protocol != corev1.ProtocolTCP {
-		t.Errorf("port = %+v, want http/9000/TCP", port)
+	httpPort := svc.Spec.Ports[0]
+	if httpPort.Name != "http" || httpPort.Port != 8000 || httpPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("port[0] = %+v, want http/8000/TCP", httpPort)
+	}
+	metricsPort := svc.Spec.Ports[1]
+	if metricsPort.Name != "metrics" || metricsPort.Port != 9000 || metricsPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("port[1] = %+v, want metrics/9000/TCP", metricsPort)
 	}
 }
 
@@ -101,5 +105,32 @@ func TestCeleryWorkerDeployments_SaaSQueuesOptIn(t *testing.T) {
 	}
 	if got := celeryDeploymentReplicas(t, cfg, deps, "subs_extraction"); got != 1 {
 		t.Errorf("subs_extraction replicas = %d, want 1", got)
+	}
+}
+
+func TestCeleryBeatDeployment_ContainerResources(t *testing.T) {
+	cfg := testCfg()
+	cfg.Spec.CostManagement.API.Image.Repository = "quay.io/example/koku"
+	cfg.Spec.CostManagement.API.Image.Tag = "latest"
+
+	dep := CeleryBeatDeployment(cfg)
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	cpuReq := container.Resources.Requests[corev1.ResourceCPU]
+	memReq := container.Resources.Requests[corev1.ResourceMemory]
+	cpuLim := container.Resources.Limits[corev1.ResourceCPU]
+	memLim := container.Resources.Limits[corev1.ResourceMemory]
+
+	if cpuReq.String() != "50m" {
+		t.Errorf("CPU request = %s, want 50m", cpuReq.String())
+	}
+	if memReq.String() != "200Mi" {
+		t.Errorf("Memory request = %s, want 200Mi", memReq.String())
+	}
+	if cpuLim.String() != "100m" {
+		t.Errorf("CPU limit = %s, want 100m", cpuLim.String())
+	}
+	if memLim.String() != "400Mi" {
+		t.Errorf("Memory limit = %s, want 400Mi", memLim.String())
 	}
 }

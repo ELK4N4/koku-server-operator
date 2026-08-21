@@ -3,6 +3,7 @@ package resources
 import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -87,9 +88,23 @@ func MasuDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deplo
 	)
 }
 
-// MasuService exposes Masu internally.
+// MasuService exposes Masu internally with HTTP (8000) and metrics (9000) ports.
 func MasuService(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.Service {
-	return appService(cfg, NameMasu(cfg), "cost-processor", 9000)
+	return &corev1.Service{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Service"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      NameMasu(cfg),
+			Namespace: cfg.Namespace,
+			Labels:    Labels(cfg, "cost-processor"),
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: SelectorLabels(cfg, "cost-processor"),
+			Ports: []corev1.ServicePort{
+				{Name: "http", Port: 8000, Protocol: corev1.ProtocolTCP},
+				{Name: "metrics", Port: 9000, Protocol: corev1.ProtocolTCP},
+			},
+		},
+	}
 }
 
 // -----------------------------------------------------------------------------
@@ -130,8 +145,19 @@ func CeleryBeatDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1
 	env := KokuCommonEnv(cfg)
 	env = append(env, EnvVal("CELERY_LOG_LEVEL", "info"))
 
+	resources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("50m"),
+			corev1.ResourceMemory: resource.MustParse("200Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("400Mi"),
+		},
+	}
+
 	return deployment(cfg, NameCeleryBeat(cfg), "cost-scheduler", image, replicas,
-		corev1.ResourceRequirements{}, nil, nil, env,
+		resources, nil, nil, env,
 		[]string{"/bin/sh", "-c", "cd $APP_HOME && PYTHONPATH=$APP_HOME celery -A koku beat -l info"},
 	)
 }
