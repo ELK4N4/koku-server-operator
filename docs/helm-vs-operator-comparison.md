@@ -165,7 +165,7 @@ The Helm chart sets these env vars with defaults. The operator **now sets** them
 
 ### 4.2 Logging env vars — **FIXED**
 
-`GUNICORN_LOG_LEVEL`, `KOKU_LOG_LEVEL`, `DJANGO_LOG_LEVEL`, `DJANGO_LOG_FORMATTER`, and `DJANGO_LOG_HANDLERS` are now set in `KokuCommonEnv()` and per-workload overrides:
+Shared logging defaults live in `KokuCommonEnv()`; `KOKU_LOG_LEVEL` is set per workload, not in the shared env:
 - Shared defaults: `GUNICORN_LOG_LEVEL=INFO`, `DJANGO_LOG_LEVEL=INFO`, `DJANGO_LOG_FORMATTER=simple`, `DJANGO_LOG_HANDLERS=console`
 - Per-workload `KOKU_LOG_LEVEL`: API/Listener/Celery=INFO, Masu=DEBUG (matches chart)
 
@@ -284,5 +284,5 @@ User overrides via `spec.gatewayRoute.annotations` still take precedence.
 5. **Add ROS metrics-scraping NetworkPolicies**: ros-api-metrics, processor-metrics, poller-metrics (Gateway, Koku API, and Masu now covered)
 6. **Add RBAC + ROS components to ServiceMonitors**: rbac-api, ros-processor, ros-recommendation-poller, gateway still missing
 7. ~~**Set default Route timeout annotation** to 180s in GatewayAPIRoute~~ **DONE**
-8. **Add remaining env var defaults**: `INITIAL_INGEST_NUM_MONTHS`, logging vars in `KokuCommonEnv()`
+8. ~~**Add remaining env var defaults**: `INITIAL_INGEST_NUM_MONTHS`, logging vars in `KokuCommonEnv()`~~ **DONE**
 9. **Expose `roleCreateAllowList`** in the RBAC CR section
