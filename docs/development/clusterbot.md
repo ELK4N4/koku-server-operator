@@ -7,6 +7,8 @@ Short path to get a `CostManagementServiceConfig` reconciling on a **Cluster Bot
 **Beta:** ROS/Kruize are off by default (`spec.ros.enabled` defaults to `false`).
 Day-one success does not require ROS images or migrate Jobs.
 
+Customer install/config: [docs/install/](../install/README.md).
+
 For a fuller BYOI → UI walkthrough (AMQ Streams + Keycloak), see
 [pre-prod-install.md](pre-prod-install.md). For laptop **CRC** with bundled DB,
 see [crc-testing.md](crc-testing.md).
