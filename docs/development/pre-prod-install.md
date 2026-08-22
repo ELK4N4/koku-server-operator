@@ -4,6 +4,9 @@ End-to-end path for a **pre-prod / lab** OpenShift cluster: optional fixture
 dependencies (BYOI), then the mandatory operator + `CostManagementServiceConfig`,
 ending at a working Cost Management UI login.
 
+Customer install/config (prerequisites, Secret keys, quickstart, production, CMMO):
+[docs/install/](../install/README.md).
+
 This is **not** an OLM Catalog / production packaging guide (COST-7695). It uses
 the OwnNamespace model: **operator install namespace == CR namespace**. BYOI
 infra may live elsewhere and is referenced only via CR connection fields.
