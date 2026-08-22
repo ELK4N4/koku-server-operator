@@ -210,7 +210,8 @@ branch.
 
 **Source:** PR #74 review (Jordi)
 
-**Fixed:** `reconcileValidation` now reads `ca.crt` from
+**Fixed:** `reconcileValidation` now delegates Keycloak CA loading to
+`keycloakCACertPool`, which reads `ca.crt` from
 `auth.keycloak.tls.caCertSecretName` and passes a custom `x509.CertPool` to
 `jwksProbe`. Missing or invalid CA data reports `OIDCCACertInvalid`. When
 `insecureSkipVerify=true`, the operator skips CA Secret loading and honors the

@@ -173,7 +173,7 @@ func (r *CostManagementServiceConfigReconciler) validateOIDC(ctx context.Context
 	caCertPool, err := r.keycloakCACertPool(ctx, cfg)
 	if err != nil {
 		r.setCondition(cfg, costv1alpha1.ConditionAuthReady, metav1.ConditionFalse,
-			"OIDCCACertInvalid", err.Error())
+			"OIDCCACertInvalid", fmt.Errorf("load Keycloak CA Secret: %w", err).Error())
 		return
 	}
 	if err := jwksProbe(ctx, jwksURL, insecure, caCertPool, validationTimeout); err != nil {
@@ -201,7 +201,7 @@ func (r *CostManagementServiceConfigReconciler) keycloakCACertPool(ctx context.C
 	}
 	caCertPool := x509.NewCertPool()
 	if !caCertPool.AppendCertsFromPEM(caSecret.Data[caCertKey]) {
-		return nil, fmt.Errorf("secret %q key ca.crt contains no valid PEM certificates", caName)
+		return nil, fmt.Errorf("secret %q key %q contains no valid PEM certificates", caName, caCertKey)
 	}
 	return caCertPool, nil
 }
