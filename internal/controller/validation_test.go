@@ -557,6 +557,39 @@ func TestReconcileValidation_OIDCWithCustomCA(t *testing.T) {
 	})
 }
 
+func TestCertPoolFromPEM_AppendsToSystemPool(t *testing.T) {
+	sys, err := x509.SystemCertPool()
+	if err != nil || sys == nil || sys.Equal(x509.NewCertPool()) {
+		t.Skip("system cert pool unavailable or empty")
+	}
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	t.Cleanup(srv.Close)
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+
+	pool, err := certPoolFromPEM(pemBytes)
+	if err != nil {
+		t.Fatalf("certPoolFromPEM: %v", err)
+	}
+
+	customOnly := x509.NewCertPool()
+	if !customOnly.AppendCertsFromPEM(pemBytes) {
+		t.Fatal("test CA PEM did not parse")
+	}
+	if pool.Equal(customOnly) {
+		t.Fatal("cert pool replaced the system roots; custom CA should be appended")
+	}
+	if pool.Equal(sys) {
+		t.Fatal("custom CA was not added to the system pool")
+	}
+}
+
+func TestCertPoolFromPEM_RejectsInvalidPEM(t *testing.T) {
+	if _, err := certPoolFromPEM([]byte("not-a-certificate")); err == nil {
+		t.Fatal("expected error for invalid PEM")
+	}
+}
+
 func TestReconcileValidation_DBSecretMissingKeys(t *testing.T) {
 	ln := listenLocalTCP(t)
 	addr := ln.Addr().(*net.TCPAddr)

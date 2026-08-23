@@ -199,11 +199,24 @@ func (r *CostManagementServiceConfigReconciler) keycloakCACertPool(ctx context.C
 	if err != nil {
 		return nil, err
 	}
-	caCertPool := x509.NewCertPool()
-	if !caCertPool.AppendCertsFromPEM(caSecret.Data[caCertKey]) {
+	pool, err := certPoolFromPEM(caSecret.Data[caCertKey])
+	if err != nil {
 		return nil, fmt.Errorf("secret %q key %q contains no valid PEM certificates", caName, caCertKey)
 	}
-	return caCertPool, nil
+	return pool, nil
+}
+
+// certPoolFromPEM starts from the system CA pool and appends the given PEM
+// certificates so a custom CA does not drop public roots.
+func certPoolFromPEM(pem []byte) (*x509.CertPool, error) {
+	pool, err := x509.SystemCertPool()
+	if err != nil || pool == nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pem) {
+		return nil, fmt.Errorf("PEM data contains no valid certificates")
+	}
+	return pool, nil
 }
 
 // blockingDependencyMessage summarizes why DB/Cache validation blocked reconcile.
@@ -256,8 +269,8 @@ func kafkaTCPProbe(bootstrapServers string, timeout time.Duration) error {
 // with a non-empty keys array (what Envoy needs to validate JWTs).
 // 4xx is an error: 401/403 means the endpoint is misconfigured; 404 means
 // the JWKS URL or realm is wrong. Uses the reconcile context so shutdown
-// cancels an in-flight probe. When caCertPool is non-nil, it is used instead
-// of the system CA pool for TLS verification.
+// cancels an in-flight probe. When caCertPool is non-nil it is installed as
+// RootCAs (callers should include system roots plus any custom CA).
 func jwksProbe(ctx context.Context, rawURL string, insecureSkipVerify bool, caCertPool *x509.CertPool, timeout time.Duration) error {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {

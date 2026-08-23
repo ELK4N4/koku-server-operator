@@ -113,6 +113,9 @@ as a workaround, defeating TLS verification.
 from CACombineInitContainer) and set `SSL_CERT_FILE` in the container env.
 Follow the same pattern used by the Envoy gateway and oauth2-proxy.
 
+Envoy itself already trusts this CA (COST-7688 R2; follow-up #18). This
+item is the CronJob-only remaining gap.
+
 ---
 
 ## 8. ~~Keycloak sync: enable/disable lifecycle test~~ — **CLOSED**
@@ -125,30 +128,15 @@ same pattern as `TestKruizeCronJobDeletedWhenDisabled`.
 
 ---
 
-## 9. S3 TLS fields are probe-only — not wired to app pods
+## 9. ~~S3 TLS fields are probe-only — not wired to app pods~~ — **CLOSED**
 
 **Source:** Code review of PR #71 (validation follow-ups).
 
-**Problem:** `spec.objectStorage.insecureSkipVerify` and
-`spec.objectStorage.caCertSecretName` configure the operator's own
-`ListBuckets` validation probe, but are not wired to application pod
-env vars (`AWS_CA_BUNDLE`) or volume mounts. App pods that need to
-reach the same S3 endpoint with a private CA rely on the combined CA
-bundle from `CACombineInitContainer`, which does not read the
-objectStorage TLS fields.
-
-The Keycloak and Cache TLS equivalents (`auth.keycloak.tls`,
-`cache.tls`) are wired to both the operator probe and the app
-containers. S3 should follow the same pattern.
-
-**Impact:** A user sets `caCertSecretName` expecting it to fix S3
-connectivity for both the operator condition and the running workloads.
-The `StorageReady` condition turns green, but uploads still fail if
-the app pods don't have the CA in their trust store via another path.
-
-**Suggested fix:** Wire `objectStorage.caCertSecretName` into the
-`CACombineInitContainer` inputs (or set `AWS_CA_BUNDLE` env var on
-Koku/Masu containers) so app pods trust the same CA.
+**Fixed:** `userCAFiles` includes `objectStorage.caCertSecretName` as
+`object-storage-ca.crt`. `CACombineInitContainer` merges it into the
+combined bundle. Koku/Masu set `AWS_CA_BUNDLE` and `REQUESTS_CA_BUNDLE`
+to that bundle (`internal/resources/env.go`). Covered by
+`internal/resources/volumes_test.go`.
 
 ---
 
@@ -299,3 +287,42 @@ reasons `WaitingForRBAC` / component `"RBAC API"`). Leave the RBAC
 worker as condition-only (it does not block `Available` today).
 
 **Out of scope for PR #105** — COST-7689 leftover, not a COST-7686 AC.
+
+---
+
+## 16. ~~Custom CA `RootCAs` replaced the system pool~~ — **CLOSED**
+
+**Source:** [PR #121 review](https://github.com/project-koku/koku-service-operator/pull/121#pullrequestreview-5000508819) (bacciotti).
+
+**Fixed:** `certPoolFromPEM` starts from `x509.SystemCertPool()` and
+appends the custom CA. JWKS and S3 probes share it so a custom CA no
+longer drops public roots. `TestCertPoolFromPEM_AppendsToSystemPool`
+guards the replace-vs-append contract.
+
+---
+
+## 17. ~~Edge overwrites `AuthenticationReady` with `GatewayReady`~~ — **CLOSED**
+
+**Source:** [PR #121 review](https://github.com/project-koku/koku-service-operator/pull/121#pullrequestreview-5000508819) (stale restatement of D3 / COST-7688 G1).
+
+**Already fixed:** `reconcileEdge` writes `GatewayReady` only.
+`validateOIDC` is the only writer of `AuthenticationReady`.
+`TestReconcileEdge_DoesNotOverwriteOIDCUnreachable` asserts OIDC stays
+`OIDCUnreachable` while Gateway goes True. See
+[COST-7688.md](gap_analysis/COST-7688.md).
+
+---
+
+## 18. ~~Envoy ignores Keycloak `caCertSecretName` (D11)~~ — **CLOSED**
+
+**Source:** [PR #121 review](https://github.com/project-koku/koku-service-operator/pull/121#pullrequestreview-5000508819).
+
+D11 was the *operator* JWKS probe ignoring the CA — closed in #11 / PR #121.
+
+Envoy already mounts `auth.keycloak.tls.caCertSecretName` via
+`CACombineInitContainer` (`/ca-extra` → combined bundle) and uses
+`trusted_ca`. `caCertSecretName` wins over `insecureSkipVerify`. Tests:
+`TestEnvoyDeploymentMountsKeycloakCACert`,
+`TestEnvoyYAMLCASecretWinsOverSkipVerify`. See COST-7688 R2.
+
+**Still open:** Keycloak sync CronJob does not mount that Secret — item #7.
