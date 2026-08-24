@@ -155,8 +155,26 @@ golangci-lint run ./...
 govulncheck ./...
 ```
 
+## Cluster Bot + pytest (operator path)
+
+For MCE / Cluster Bot lab clusters running the **ported pytest suite** against an
+operator-managed stack (COST-7697), use the in-cluster operator path — not laptop
+`make run` or `make deploy` with integrated-registry push from a Mac.
+
+| Rule | Detail |
+|------|--------|
+| OwnNamespace | Operator install NS **must equal** CR NS and pytest `NAMESPACE` (e.g. `cost-onprem`) |
+| Deploy operator | `IMG=quay.io/<user>/koku-service-operator:<tag> ./hack/deploy-incluster.sh cost-onprem` |
+| Avoid on laptop | `make deploy`, `install-cmsc.sh` registry push, `make run` against `*.svc.cluster.local` BYOI |
+| Infra | `./scripts/deploy-test-cost-onprem.sh --deploy-s4 --skip-helm --skip-chart-tests ...` |
+| Pytest | `NAMESPACE=cost-onprem ./scripts/run-pytest.sh --no-ui` (Mac: see runbook for SSL/Playwright) |
+
+Full runbook: [docs/development/clusterbot-operator-pytest.md](docs/development/clusterbot-operator-pytest.md).
+Quick Redpanda smoke (alternate path): [clusterbot.md](docs/development/clusterbot.md).
+
 ## Reference material
 
+- [docs/development/clusterbot-operator-pytest.md](docs/development/clusterbot-operator-pytest.md) — Cluster Bot operator + pytest runbook (COST-7697)
 - [docs/development/crc-testing.md](docs/development/crc-testing.md) — local development and CRC testing guide
 - [docs/tasks.md](docs/tasks.md) — implementation status per JIRA ticket
 - [docs/design/design-vs-jira.md](docs/design/design-vs-jira.md) — design decisions and best-practice analysis
