@@ -79,6 +79,9 @@
 
 set -e
 
+# Homebrew/macOS often exports REQUESTS_CA_BUNDLE, which overrides session.verify=False.
+unset REQUESTS_CA_BUNDLE SSL_CERT_FILE 2>/dev/null || true
+
 # Script configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
