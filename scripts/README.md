@@ -215,8 +215,8 @@ release/ci-operator/step-registry/insights-onprem/cost-onprem-chart/e2e/
 6. Optionally runs IQE integration tests
 7. Optionally saves deployment version info
 
-**Operator path (Cluster Bot / COST-7697):** use this script for infra only
-(`--deploy-s4 --skip-helm --skip-chart-tests`), then deploy the operator with
+**Operator path (Cluster Bot / COST-8121):** use this script for infra only
+(`--deploy-s4 --skip-helm --skip-chart-tests --skip-tls`), then deploy the operator with
 `hack/deploy-incluster.sh` and apply the CMSC — see
 [docs/development/clusterbot-operator-pytest.md](../docs/development/clusterbot-operator-pytest.md).
 

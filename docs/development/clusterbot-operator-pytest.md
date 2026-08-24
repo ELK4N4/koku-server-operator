@@ -1,12 +1,13 @@
 # Cluster Bot: operator deploy + pytest
 
-
 Runbook for reproducing the **operator** path on a Cluster Bot / MCE lab cluster
 and running the ported `cost-onprem-chart` pytest suite against it.
 
-This path is used for [COST-7697](https://redhat.atlassian.net/browse/COST-7697)
-(operator pytest parity). It deploys via `CostManagementServiceConfig` — **not**
-the Helm chart.
+This path continues [COST-7697](https://redhat.atlassian.net/browse/COST-7697)
+(operator pytest parity, **Closed** — original port in PR #56). Active triage and
+cluster-bot reproduction are tracked in
+[COST-8121](https://redhat.atlassian.net/browse/COST-8121). Deploys via
+`CostManagementServiceConfig` — **not** the Helm chart.
 
 | Related docs | When to use |
 |--------------|-------------|
@@ -23,6 +24,9 @@ the Helm chart.
 | Operator | Manager running **in-cluster** (not laptop `make run`) |
 | CMSC | Sample CR reconciled to day-one success |
 | Tests | `./scripts/run-pytest.sh` (~25–60 min without UI; ~1h with UI) |
+
+Step 1 deploys external infra only. The default CMSC sample still **bundles
+PostgreSQL and Valkey** in `cost-onprem` (lab/CI — not production BYOI).
 
 **Day-one success (enough for most pytest):**
 
@@ -68,7 +72,8 @@ admission-gated on this lab path (OLM/cert-manager covers production).
 
 ```bash
 export NAMESPACE=cost-onprem
-export HELM_RELEASE_NAME=cost-onprem   # release name prefix on managed resources
+# Prefix for managed resource names (app.kubernetes.io/instance = CR name). Not a Helm release.
+export HELM_RELEASE_NAME=cost-onprem
 export KEYCLOAK_NAMESPACE=keycloak
 ```
 
@@ -169,28 +174,42 @@ oc get pods -n s4-test
 oc get kafka -n kafka
 ```
 
-### Known S4 credential gap (script bug — fix pending)
+### Known S4 credential gap (script bug — fix in PR #127)
 
 `deploy-s4-test.sh` creates Secret **`s4-credentials`**, but
-`deploy-test-cost-onprem.sh` looks for **`cost-onprem-storage-credentials`** in
-the S4 namespace. If the copy step logs a warning, sync manually before CMSC:
+`deploy-test-cost-onprem.sh` expects **`cost-onprem-storage-credentials`** in
+`cost-onprem`. If the copy step logs a warning, sync manually before CMSC:
 
 ```bash
-kubectl get secret s4-credentials -n s4-test -o yaml \
-  | sed 's/namespace: s4-test/namespace: cost-onprem/' \
-  | sed 's/name: s4-credentials/name: cost-onprem-storage-credentials/' \
-  | kubectl apply -f -
+ACCESS_KEY=$(kubectl get secret s4-credentials -n s4-test -o jsonpath='{.data.access-key}' | base64 -d)
+SECRET_KEY=$(kubectl get secret s4-credentials -n s4-test -o jsonpath='{.data.secret-key}' | base64 -d)
+kubectl create secret generic cost-onprem-storage-credentials \
+  --namespace=cost-onprem \
+  --from-literal=access-key="${ACCESS_KEY}" \
+  --from-literal=secret-key="${SECRET_KEY}" \
+  --dry-run=client -o yaml | kubectl apply -f -
 ```
 
 After CMSC reconcile, create buckets if preflight fails (`HeadBucket 403` /
-`SignatureDoesNotMatch`):
+`SignatureDoesNotMatch`). Re-run pytest — `s3_bucket_preflight` exercises bucket
+access — or create them explicitly against the S4 endpoint:
 
 ```bash
-# From operator namespace, using S4 creds — or use deploy-s4-test.sh docs
+# Redeploy regenerates s4-credentials only — it does not update cost-onprem-storage-credentials.
 ./scripts/deploy-s4-test.sh s4-test cleanup && ./scripts/deploy-s4-test.sh s4-test deploy
+
+# Re-sync credentials into the operator namespace before CMSC reconcile / pytest:
+ACCESS_KEY=$(kubectl get secret s4-credentials -n s4-test -o jsonpath='{.data.access-key}' | base64 -d)
+SECRET_KEY=$(kubectl get secret s4-credentials -n s4-test -o jsonpath='{.data.secret-key}' | base64 -d)
+kubectl create secret generic cost-onprem-storage-credentials \
+  --namespace=cost-onprem \
+  --from-literal=access-key="${ACCESS_KEY}" \
+  --from-literal=secret-key="${SECRET_KEY}" \
+  --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-Then ensure buckets exist: `koku-bucket`, `ros-data`, `insights-upload-perma`.
+Required buckets: `koku-bucket`, `ros-data`, `insights-upload-perma`
+(`deploy-s4-test.sh` does not create them).
 
 ## Step 2 — Operator in-cluster
 
@@ -210,8 +229,9 @@ Apply the default sample into **`cost-onprem`** (same NS as Step 2):
 
 ```bash
 DOMAIN=$(oc get ingresses.config cluster -o jsonpath='{.spec.domain}')
-KEYCLOAK_URL=https://$(oc get route -n keycloak -o jsonpath='{.items[0].spec.host}' 2>/dev/null | awk '{print $1}')
-# Prefer the non-default RHBK route; adjust if your cluster uses a different name.
+KEYCLOAK_HOST="$(oc get route keycloak -n keycloak -o jsonpath='{.spec.host}')"
+test -n "$KEYCLOAK_HOST"
+KEYCLOAK_URL="https://${KEYCLOAK_HOST}"
 
 oc apply -f config/samples/service.costmanagement_v1alpha1_costmanagementserviceconfig.yaml
 
@@ -233,9 +253,10 @@ oc patch cmsc cost-onprem -n cost-onprem --type merge -p "{
     }
   }
 }"
-
-oc adm policy add-scc-to-user anyuid -z default -n cost-onprem
 ```
+
+`hack/deploy-incluster.sh` → `deploy-dev.sh` already grants `anyuid` to the
+default ServiceAccount in the operator namespace.
 
 Why these patches (sample defaults are ODF/CRC, not cluster-bot S4):
 
@@ -396,5 +417,6 @@ oc delete ns cost-onprem s4-test kafka keycloak --ignore-not-found
 
 ## Related JIRA
 
-- [COST-7697](https://redhat.atlassian.net/browse/COST-7697) — adapt pytest suite for operator
+- [COST-8121](https://redhat.atlassian.net/browse/COST-8121) — reproduce and triage pytest on cluster-bot (active)
+- [COST-7697](https://redhat.atlassian.net/browse/COST-7697) — adapt pytest suite for operator (**Closed**)
 - PR #56 — original pytest port (merged to `main`)
