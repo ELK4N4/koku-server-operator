@@ -17,7 +17,7 @@ import (
 // KokuAPIDeployment builds the Koku API Deployment.
 func KokuAPIDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deployment {
 	spec := cfg.Spec.CostManagement.API
-	image := spec.Image.Repository + ":" + spec.Image.Tag
+	image, _ := KokuImage(cfg)
 	replicas := spec.Replicas
 	if replicas == 0 {
 		replicas = 1
@@ -80,9 +80,9 @@ func KokuAPIService(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.Servi
 // MasuDeployment builds the Masu data processor Deployment.
 func MasuDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deployment {
 	spec := cfg.Spec.CostManagement.Masu
-	image := spec.Image.Repository + ":" + spec.Image.Tag
-	if image == ":" {
-		image = cfg.Spec.CostManagement.API.Image.Repository + ":" + cfg.Spec.CostManagement.API.Image.Tag
+	image, ok := ImageRef(spec.Image)
+	if !ok {
+		image, _ = KokuImage(cfg)
 	}
 	replicas := spec.Replicas
 	if replicas == 0 {
@@ -143,7 +143,7 @@ func MasuService(cfg *costv1alpha1.CostManagementServiceConfig) *corev1.Service 
 // ListenerDeployment builds the Kafka Listener Deployment.
 func ListenerDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deployment {
 	spec := cfg.Spec.CostManagement.Listener
-	image := cfg.Spec.CostManagement.API.Image.Repository + ":" + cfg.Spec.CostManagement.API.Image.Tag
+	image, _ := KokuImage(cfg)
 	replicas := spec.Replicas
 	if replicas == 0 {
 		replicas = 2
@@ -169,7 +169,7 @@ func ListenerDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.D
 
 // CeleryBeatDeployment builds the Celery Beat scheduler Deployment.
 func CeleryBeatDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1.Deployment {
-	image := cfg.Spec.CostManagement.API.Image.Repository + ":" + cfg.Spec.CostManagement.API.Image.Tag
+	image, _ := KokuImage(cfg)
 	replicas := int32(1)
 
 	env := KokuCommonEnv(cfg)
@@ -201,7 +201,7 @@ func CeleryBeatDeployment(cfg *costv1alpha1.CostManagementServiceConfig) *appsv1
 
 // CeleryWorkerDeployment builds a Celery worker Deployment for the given queue.
 func CeleryWorkerDeployment(cfg *costv1alpha1.CostManagementServiceConfig, queue string, spec costv1alpha1.CeleryWorkerSpec) *appsv1.Deployment {
-	image := cfg.Spec.CostManagement.API.Image.Repository + ":" + cfg.Spec.CostManagement.API.Image.Tag
+	image, _ := KokuImage(cfg)
 	replicas := spec.Replicas
 	concurrency := spec.Concurrency
 	if concurrency == 0 {
