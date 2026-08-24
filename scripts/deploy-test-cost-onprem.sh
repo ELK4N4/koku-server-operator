@@ -546,7 +546,7 @@ copy_s4_storage_credentials() {
     done
 
     if [[ -z "${source_secret}" ]]; then
-        log_warning "No S4 storage secret (s4-credentials or ${storage_secret}) in ${source_ns}"
+        log_error "No S4 storage secret (s4-credentials or ${storage_secret}) in ${source_ns}"
         return 1
     fi
 
@@ -556,15 +556,18 @@ copy_s4_storage_credentials() {
     secret_key=$(kubectl get secret "${source_secret}" -n "${source_ns}" -o jsonpath='{.data.secret-key}' | base64 -d)
 
     if [[ -z "${access_key}" || -z "${secret_key}" ]]; then
-        log_warning "Secret ${source_ns}/${source_secret} is missing access-key or secret-key"
+        log_error "Secret ${source_ns}/${source_secret} is missing access-key or secret-key"
         return 1
     fi
 
-    kubectl create secret generic "${storage_secret}" \
+    if ! kubectl create secret generic "${storage_secret}" \
         --namespace="${target_ns}" \
         --from-literal=access-key="${access_key}" \
         --from-literal=secret-key="${secret_key}" \
-        --dry-run=client -o yaml | kubectl apply -f -
+        --dry-run=client -o yaml | kubectl apply -f -; then
+        log_error "Failed to apply ${storage_secret} in ${target_ns}"
+        return 1
+    fi
     log_success "Storage credentials copied from ${source_ns}/${source_secret} to ${target_ns}/${storage_secret}"
 }
 
@@ -606,7 +609,10 @@ deploy_s4() {
     # deploy-s4-test.sh creates s4-credentials; operator/CMSC expect cost-onprem-storage-credentials.
     log_info "Syncing storage credentials from ${S4_NAMESPACE} to ${NAMESPACE}..."
     if ! copy_s4_storage_credentials "${S4_NAMESPACE}" "${NAMESPACE}"; then
-        log_warning "Storage credentials not synced — CMSC/S3 preflight may fail until fixed manually"
+        log_error "S4 credential sync failed — cannot continue with stale or missing storage credentials"
+        log_info "Check: kubectl get secret s4-credentials -n ${S4_NAMESPACE}"
+        log_info "Manual sync steps: docs/development/clusterbot-operator-pytest.md (S4 credential gap)"
+        exit 1
     fi
 
     log_success "S4 deployment completed"
