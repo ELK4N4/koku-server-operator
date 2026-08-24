@@ -9,7 +9,6 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -33,7 +32,7 @@ func TestReconcileMigration_EmptyKokuImage_DegradedNoJob(t *testing.T) {
 	if jobExists(c, testNamespace, resources.NameKokuMigration(cfg)) {
 		t.Fatal("must not create a Koku migration Job without spec.costManagement.api.image")
 	}
-	assertImageNotSetStatus(t, cfg)
+	assertMigrationBlockedStatus(t, cfg, "ImageNotSet")
 }
 
 // ImageNotSet must flip a prior Ready status: Available/Progressing cannot
@@ -57,7 +56,7 @@ func TestReconcileMigration_ImageNotSet_ClearsStaleAvailable(t *testing.T) {
 	if jobExists(c, testNamespace, resources.NameKokuMigration(cfg)) {
 		t.Fatal("must not create a Koku migration Job after ImageNotSet")
 	}
-	assertImageNotSetStatus(t, cfg)
+	assertMigrationBlockedStatus(t, cfg, "ImageNotSet")
 }
 
 func TestReconcileMigration_EmptyRBACImage_DegradedNoJob(t *testing.T) {
@@ -74,7 +73,7 @@ func TestReconcileMigration_EmptyRBACImage_DegradedNoJob(t *testing.T) {
 	if jobExists(c, testNamespace, resources.NameKokuMigration(cfg)) {
 		t.Fatal("must not create any migration Job when a required image is unset")
 	}
-	assertImageNotSetStatus(t, cfg)
+	assertMigrationBlockedStatus(t, cfg, "ImageNotSet")
 }
 
 func TestReconcileMigration_ROSEnabledEmptyImage_DegradedNoJob(t *testing.T) {
@@ -92,7 +91,7 @@ func TestReconcileMigration_ROSEnabledEmptyImage_DegradedNoJob(t *testing.T) {
 	if jobExists(c, testNamespace, resources.NameKokuMigration(cfg)) || jobExists(c, testNamespace, resources.NameROSMigration(cfg)) {
 		t.Fatal("must not create migration Jobs when ROS image is unset")
 	}
-	assertImageNotSetStatus(t, cfg)
+	assertMigrationBlockedStatus(t, cfg, "ImageNotSet")
 }
 
 func TestReconcileMigration_FirstReconcileCreatesKokuJob(t *testing.T) {
@@ -236,18 +235,32 @@ func TestReconcileMigration_JobFailed_DegradedAndStop(t *testing.T) {
 	if jobExists(c, testNamespace, resources.NameRBACMigration(cfg)) {
 		t.Fatal("expected RBAC Job to NOT exist after Koku failure (pipeline stops)")
 	}
+	assertMigrationBlockedStatus(t, cfg, "MigrationFailed")
+}
 
-	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionSchemaUpToDate)
-	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "MigrationFailed" {
-		t.Fatalf("expected SchemaUpToDate=False MigrationFailed, got %+v", cond)
+// MigrationFailed must flip a prior Ready status: Available cannot stay True
+// while schema migrate failed and core services were not rolled.
+func TestReconcileMigration_MigrationFailed_ClearsStaleAvailable(t *testing.T) {
+	r, cfg, c := newMigrationTestReconciler(t)
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "AllComponentsReady", "All components are running")
+	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "ReconcileComplete", "")
+	r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionFalse, "ReconcileComplete", "")
+	r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionTrue, "MigrationComplete", "")
+	cfg.Status.Phase = costv1alpha1.PhaseReady
+
+	if _, err := r.reconcileMigration(context.Background(), cfg); err != nil {
+		t.Fatalf("create: %v", err)
 	}
-	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionDegraded) {
-		t.Fatal("expected Degraded=True on migration failure")
+	markJobFailed(t, c, testNamespace, resources.NameKokuMigration(cfg))
+
+	result, err := r.reconcileMigration(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("after failure: %v", err)
 	}
-	degraded := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
-	if degraded.Reason != "MigrationFailed" {
-		t.Errorf("Degraded reason = %q, want MigrationFailed", degraded.Reason)
+	if !result.Stop {
+		t.Fatal("expected Stop=true when Job fails")
 	}
+	assertMigrationBlockedStatus(t, cfg, "MigrationFailed")
 }
 
 func TestReconcileMigration_ImageTagChange_RecreatesJob(t *testing.T) {
@@ -538,9 +551,9 @@ func jobUIDs(c client.Client, ns string) map[string]types.UID {
 	return out
 }
 
-// assertImageNotSetStatus checks the OpenShift top-level conditions for a
-// config error: Available/Progressing false, Degraded true, schema stale.
-func assertImageNotSetStatus(t *testing.T, cfg *costv1alpha1.CostManagementServiceConfig) {
+// assertMigrationBlockedStatus checks OpenShift top-level conditions for a
+// migration gate that stopped the pipeline (ImageNotSet or MigrationFailed).
+func assertMigrationBlockedStatus(t *testing.T, cfg *costv1alpha1.CostManagementServiceConfig, reason string) {
 	t.Helper()
 	want := []struct {
 		typ    string
@@ -553,8 +566,8 @@ func assertImageNotSetStatus(t *testing.T, cfg *costv1alpha1.CostManagementServi
 	}
 	for _, w := range want {
 		cond := findCondition(cfg.Status.Conditions, w.typ)
-		if cond == nil || cond.Status != w.status || cond.Reason != "ImageNotSet" {
-			t.Errorf("%s: got %+v, want status=%s reason=ImageNotSet", w.typ, cond, w.status)
+		if cond == nil || cond.Status != w.status || cond.Reason != reason {
+			t.Errorf("%s: got %+v, want status=%s reason=%s", w.typ, cond, w.status, reason)
 		}
 	}
 	if cfg.Status.Phase != costv1alpha1.PhaseDegraded {

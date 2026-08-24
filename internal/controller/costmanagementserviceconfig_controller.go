@@ -561,7 +561,11 @@ func (r *CostManagementServiceConfigReconciler) runMigrationStep(
 	}
 	if isJobFailed(existing) {
 		msg := fmt.Sprintf("%s exhausted retries — check pod logs", jobName)
+		// Failed migrate stops the pipeline; core services are not rolled.
+		// Clear Available/Progressing so a prior Ready pass cannot linger.
 		r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse, "MigrationFailed", msg)
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "MigrationFailed", msg)
+		r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "MigrationFailed", msg)
 		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, "MigrationFailed", msg)
 		cfg.Status.Phase = costv1alpha1.PhaseDegraded
 		opmetrics.SetMigrationJobFailed(cfg.Namespace, cfg.Name, jobName, true)
