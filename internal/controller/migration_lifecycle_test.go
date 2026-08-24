@@ -33,21 +33,31 @@ func TestReconcileMigration_EmptyKokuImage_DegradedNoJob(t *testing.T) {
 	if jobExists(c, testNamespace, resources.NameKokuMigration(cfg)) {
 		t.Fatal("must not create a Koku migration Job without spec.costManagement.api.image")
 	}
+	assertImageNotSetStatus(t, cfg)
+}
 
-	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionSchemaUpToDate)
-	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "ImageNotSet" {
-		t.Fatalf("expected SchemaUpToDate=False ImageNotSet, got %+v", cond)
+// ImageNotSet must flip a prior Ready status: Available/Progressing cannot
+// stay True while Phase is Degraded (review on PR #109).
+func TestReconcileMigration_ImageNotSet_ClearsStaleAvailable(t *testing.T) {
+	r, cfg, c := newMigrationTestReconciler(t)
+	r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionTrue, "AllComponentsReady", "All components are running")
+	r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "ReconcileComplete", "")
+	r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionFalse, "ReconcileComplete", "")
+	r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionTrue, "MigrationComplete", "")
+	cfg.Status.Phase = costv1alpha1.PhaseReady
+	cfg.Spec.CostManagement.API.Image = costv1alpha1.ImageSpec{}
+
+	result, err := r.reconcileMigration(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("reconcileMigration: %v", err)
 	}
-	if !apimeta.IsStatusConditionTrue(cfg.Status.Conditions, costv1alpha1.ConditionDegraded) {
-		t.Fatal("expected Degraded=True when API image is unset")
+	if !result.Stop {
+		t.Fatal("expected Stop=true when API image is unset")
 	}
-	degraded := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionDegraded)
-	if degraded.Reason != "ImageNotSet" {
-		t.Errorf("Degraded reason = %q, want ImageNotSet", degraded.Reason)
+	if jobExists(c, testNamespace, resources.NameKokuMigration(cfg)) {
+		t.Fatal("must not create a Koku migration Job after ImageNotSet")
 	}
-	if cfg.Status.Phase != costv1alpha1.PhaseDegraded {
-		t.Errorf("Phase = %q, want %q", cfg.Status.Phase, costv1alpha1.PhaseDegraded)
-	}
+	assertImageNotSetStatus(t, cfg)
 }
 
 func TestReconcileMigration_EmptyRBACImage_DegradedNoJob(t *testing.T) {
@@ -64,11 +74,7 @@ func TestReconcileMigration_EmptyRBACImage_DegradedNoJob(t *testing.T) {
 	if jobExists(c, testNamespace, resources.NameKokuMigration(cfg)) {
 		t.Fatal("must not create any migration Job when a required image is unset")
 	}
-
-	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionSchemaUpToDate)
-	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "ImageNotSet" {
-		t.Fatalf("expected SchemaUpToDate=False ImageNotSet, got %+v", cond)
-	}
+	assertImageNotSetStatus(t, cfg)
 }
 
 func TestReconcileMigration_ROSEnabledEmptyImage_DegradedNoJob(t *testing.T) {
@@ -86,11 +92,7 @@ func TestReconcileMigration_ROSEnabledEmptyImage_DegradedNoJob(t *testing.T) {
 	if jobExists(c, testNamespace, resources.NameKokuMigration(cfg)) || jobExists(c, testNamespace, resources.NameROSMigration(cfg)) {
 		t.Fatal("must not create migration Jobs when ROS image is unset")
 	}
-
-	cond := findCondition(cfg.Status.Conditions, costv1alpha1.ConditionSchemaUpToDate)
-	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "ImageNotSet" {
-		t.Fatalf("expected SchemaUpToDate=False ImageNotSet, got %+v", cond)
-	}
+	assertImageNotSetStatus(t, cfg)
 }
 
 func TestReconcileMigration_FirstReconcileCreatesKokuJob(t *testing.T) {
@@ -534,6 +536,30 @@ func jobUIDs(c client.Client, ns string) map[string]types.UID {
 		out[j.Name] = j.UID
 	}
 	return out
+}
+
+// assertImageNotSetStatus checks the OpenShift top-level conditions for a
+// config error: Available/Progressing false, Degraded true, schema stale.
+func assertImageNotSetStatus(t *testing.T, cfg *costv1alpha1.CostManagementServiceConfig) {
+	t.Helper()
+	want := []struct {
+		typ    string
+		status metav1.ConditionStatus
+	}{
+		{costv1alpha1.ConditionAvailable, metav1.ConditionFalse},
+		{costv1alpha1.ConditionProgressing, metav1.ConditionFalse},
+		{costv1alpha1.ConditionDegraded, metav1.ConditionTrue},
+		{costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse},
+	}
+	for _, w := range want {
+		cond := findCondition(cfg.Status.Conditions, w.typ)
+		if cond == nil || cond.Status != w.status || cond.Reason != "ImageNotSet" {
+			t.Errorf("%s: got %+v, want status=%s reason=ImageNotSet", w.typ, cond, w.status)
+		}
+	}
+	if cfg.Status.Phase != costv1alpha1.PhaseDegraded {
+		t.Errorf("Phase = %q, want %q", cfg.Status.Phase, costv1alpha1.PhaseDegraded)
+	}
 }
 
 // newMigrationTestReconciler returns a reconciler and CR with bundled DB/Cache

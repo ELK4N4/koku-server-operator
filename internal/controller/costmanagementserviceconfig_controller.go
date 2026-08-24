@@ -424,7 +424,11 @@ func (r *CostManagementServiceConfigReconciler) reconcileInfrastructure(ctx cont
 // Jobs are not re-created unless the image-tag annotation changed.
 func (r *CostManagementServiceConfigReconciler) reconcileMigration(ctx context.Context, cfg *costv1alpha1.CostManagementServiceConfig) (Result, error) {
 	if msg := migrationImageError(cfg); msg != "" {
+		// Config error: Stop without requeue. Clear Available/Progressing so a
+		// prior Ready pass cannot leave Available=True while Phase is Degraded.
 		r.setCondition(cfg, costv1alpha1.ConditionSchemaUpToDate, metav1.ConditionFalse, "ImageNotSet", msg)
+		r.setCondition(cfg, costv1alpha1.ConditionAvailable, metav1.ConditionFalse, "ImageNotSet", msg)
+		r.setCondition(cfg, costv1alpha1.ConditionProgressing, metav1.ConditionFalse, "ImageNotSet", msg)
 		r.setCondition(cfg, costv1alpha1.ConditionDegraded, metav1.ConditionTrue, "ImageNotSet", msg)
 		cfg.Status.Phase = costv1alpha1.PhaseDegraded
 		r.Recorder.Event(cfg, corev1.EventTypeWarning, "ImageNotSet", msg)
