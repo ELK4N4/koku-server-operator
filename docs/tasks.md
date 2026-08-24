@@ -58,10 +58,10 @@ Last audited: 2026-08-19.
 |--------|---------|--------|-------|
 | [COST-7695](https://redhat.atlassian.net/browse/COST-7695) | Create OLM bundle | 🔄 | Channel `beta`, CSV base polished, generated `bundle/` validates. Makefile: `bundle`, `bundle-build`, `bundle-push`, `bundle-run`, `bundle-cleanup`. Remaining: commit/PR review; optional `minKubeVersion`. |
 | [COST-7696](https://redhat.atlassian.net/browse/COST-7696) | Build CI pipeline for bundle | ❌ | GitHub Actions CI with lint/build/test/check-generated/container-build ✅. Missing: bundle validation, scorecard tests, CatalogSource, OLM install verification. |
-| [COST-7697](https://redhat.atlassian.net/browse/COST-7697) | Adapt existing E2E suite for operator | ❌ | |
+| [COST-7697](https://redhat.atlassian.net/browse/COST-7697) | Adapt existing E2E suite for operator | 🔄 | Pytest suite + scripts merged to `main` (PR #56). Cluster-bot runbook: [clusterbot-operator-pytest.md](development/clusterbot-operator-pytest.md). Remaining: lab deploy glue (`deploy-incluster` vs `install-cmsc`), known test/fixture gaps, baseline parity on MCE. |
 | [COST-7698](https://redhat.atlassian.net/browse/COST-7698) | Implement operator-specific E2E scenarios | ❌ | Unit tests for discovery, ownership, migration pipeline present. Full operator E2E not written. |
 | [COST-7699](https://redhat.atlassian.net/browse/COST-7699) | Set up OpenShift CI integration | ❌ | |
-| [COST-7700](https://redhat.atlassian.net/browse/COST-7700) | Write installation and configuration guides | ❌ | README, CLAUDE.md, CRC dev guide, design docs present. Formal installation/configuration/quickstart guides not written. |
+| [COST-7700](https://redhat.atlassian.net/browse/COST-7700) | Write installation and configuration guides | 🔄 | Split: [COST-8124](jira/COST-8124.md) beta guides in [docs/install/](install/README.md) (this branch). [COST-8125](jira/COST-8125.md) GA remainder (post-beta). Close parent when both sub-tasks are done. |
 
 ---
 
@@ -98,6 +98,7 @@ Short version: bundled infra is dev-only (intentional), profile-based sizing for
 |--------|---------|-------|
 | [COST-8095](https://redhat.atlassian.net/browse/COST-8095) | `spec.profile` sizing maps | Shared `standard`/`ha` maps for remaining Cost workloads. UI already wired. ROS/Kruize rows stay with COST-8054. See [jira snapshot](jira/COST-8095.md). |
 | [COST-8103](https://redhat.atlassian.net/browse/COST-8103) | `CoreServicesAvailable` / mid-pipeline `Available` | Sparse success Events (`Ready`); stop treating Koku-API-up as product-available. See [jira snapshot](jira/COST-8103.md). |
+| [COST-8125](https://redhat.atlassian.net/browse/COST-8125) | GA install/config guide remainder | Certified versions, full-stack `profile: ha` docs, backup, complete NP/monitoring, OperatorHub, confirmed CMMO contract. Parent [COST-7700](jira/COST-7700.md). See [jira snapshot](jira/COST-8125.md). |
 
 ---
 
