@@ -334,6 +334,7 @@ def create_authenticated_session(
     session.headers["Authorization"] = f"Bearer {token.access_token}"
     if content_type:
         session.headers["Content-Type"] = content_type
+    session.trust_env = False
     session.verify = False
     return session
 
@@ -1272,6 +1273,7 @@ def test_csv_data() -> str:
 def http_session() -> requests.Session:
     """Create a requests session with SSL verification disabled."""
     session = requests.Session()
+    session.trust_env = False
     session.verify = False
     return session
 
@@ -1297,6 +1299,7 @@ def authenticated_session(user_jwt_token: JWTToken) -> requests.Session:
     session.headers.update({
         "Authorization": f"Bearer {user_jwt_token.access_token}",
     })
+    session.trust_env = False
     session.verify = False
     return session
 
