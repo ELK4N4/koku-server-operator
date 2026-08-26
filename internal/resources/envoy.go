@@ -20,7 +20,7 @@ const (
 	envoyAdminPort int32 = 9901
 	envoyComponent       = "gateway"
 
-	defaultKeycloakURL   = "https://keycloak.keycloak.svc.cluster.local"
+	defaultKeycloakURL   = "https://keycloak.keycloak.svc.cluster.local:8443"
 	defaultKeycloakRealm = "kubernetes"
 )
 
