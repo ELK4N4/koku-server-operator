@@ -94,11 +94,17 @@ def ensure_realm_user_with_password(
     }
 
     user_id = _realm_user_id(base, realm, admin_token, username)
+    # firstName/lastName are required by RHBK's default user profile.
+    # Without them Keycloak interrupts OIDC with VERIFY_PROFILE
+    # ("Account is not fully set up") and UI tests never reach /oauth2/callback.
     body = {
         "username": username,
         "enabled": True,
         "email": email,
         "emailVerified": True,
+        "firstName": username.capitalize(),
+        "lastName": "User",
+        "requiredActions": [],
         "attributes": {
             "org_id": [org_id],
             "account_number": [account_number],
