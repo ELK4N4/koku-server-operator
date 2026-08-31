@@ -89,7 +89,7 @@ spec:
       containers:
       - name: manager
         image: ${IMG}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         command: ["/manager"]
         args:
         - --leader-elect
@@ -130,7 +130,19 @@ spec:
           secretName: ${WEBHOOK_SECRET}
 EOF
 
-oc -n "$NS" rollout status deploy/koku-service-operator --timeout=180s
+# Ceiling only — rollout status returns as soon as the replica is Available.
+# 180s missed this cluster's node-reboot + registry-on-same-node recovery
+# (~5m). Override with DEPLOY_INCLUSTER_TIMEOUT if needed.
+ROLLOUT_TIMEOUT="${DEPLOY_INCLUSTER_TIMEOUT:-300s}"
+echo "[in-cluster] Waiting for Deployment rollout (${ROLLOUT_TIMEOUT})..."
+if ! oc -n "$NS" rollout status deploy/koku-service-operator --timeout="$ROLLOUT_TIMEOUT"; then
+  echo "[ERROR] Operator Deployment did not become ready in ${NS}" >&2
+  oc -n "$NS" get pods -l app.kubernetes.io/name=koku-service-operator -o wide 2>/dev/null || true
+  oc -n "$NS" describe deploy/koku-service-operator 2>/dev/null | tail -50 || true
+  echo "--- recent events ---"
+  oc -n "$NS" get events --sort-by='.lastTimestamp' 2>/dev/null | tail -30 || true
+  exit 1
+fi
 
 echo ""
 echo "Operator is running in ${NS}."

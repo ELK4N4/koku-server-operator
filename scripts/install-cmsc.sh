@@ -1118,6 +1118,32 @@ preflight_validate() {
     return 0
 }
 
+# Wait until the OwnNamespace operator Deployment is Available.
+# hack/deploy-incluster.sh already runs rollout status; this is a second gate
+# before applying the CMSC so a slow image pull cannot race the CR.
+wait_for_operator() {
+    local ns="$1"
+    local timeout_s="${2:-300}"
+    local deploy="koku-service-operator"
+
+    echo_info "Waiting for operator Deployment ${deploy} in ${ns} (timeout ${timeout_s}s)..."
+    if ! kubectl wait --for=condition=Available "deployment/$deploy" -n "$ns" --timeout="${timeout_s}s"; then
+        echo_error "Timed out waiting for operator deployment ${deploy} in ${ns}"
+        kubectl get pods -n "$ns" -l control-plane=controller-manager 2>/dev/null || true
+        kubectl describe "deployment/$deploy" -n "$ns" 2>/dev/null || true
+        return 1
+    fi
+    echo_success "Operator is ready in ${ns}"
+}
+
+# Lab OwnNamespace path does not register admission webhooks. Remove leftover
+# configs from `make deploy` so they cannot block CMSC apply when the
+# koku-service-operator-system manager is absent or watching the wrong NS.
+remove_make_deploy_webhooks() {
+    kubectl delete mutatingwebhookconfiguration koku-service-operator-mutating-webhook-configuration --ignore-not-found=true >/dev/null 2>&1 || true
+    kubectl delete validatingwebhookconfiguration koku-service-operator-validating-webhook-configuration --ignore-not-found=true >/dev/null 2>&1 || true
+}
+
 # Function to deploy Helm chart
 deploy_helm_chart() {
     echo_info "Deploying Cost Management On Premise Helm chart..."
@@ -1127,39 +1153,55 @@ deploy_helm_chart() {
     local crd_name="costmanagementserviceconfigs.service.costmanagement.openshift.io"
     local sample="${project_root}/config/samples/service.costmanagement_v1alpha1_costmanagementserviceconfig.yaml"
 
-    local operator_ns="koku-service-operator-system"
-    local pull_img="${IMG:-image-registry.openshift-image-registry.svc:5000/${operator_ns}/koku-service-operator:latest}"
-    local registry_host
-    registry_host="$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}' 2>/dev/null || true)"
-    if [ -z "$registry_host" ]; then
-        echo_info "Enabling OpenShift registry default-route"
-        oc patch configs.imageregistry.operator.openshift.io/cluster --type merge -p '{"spec":{"defaultRoute":true}}' >/dev/null
-        local _i
-        for _i in $(seq 1 60); do
-            registry_host="$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}' 2>/dev/null || true)"
-            [ -n "$registry_host" ] && break
-            sleep 2
-        done
+    # OwnNamespace: operator install NS must equal the CMSC namespace. Do not
+    # use `make deploy` (scaffolds koku-service-operator-system).
+    local cr_ns="${NAMESPACE:-cost-onprem}"
+    local pull_img="${IMG:-}"
+    if [ -z "$pull_img" ]; then
+        local registry_host
+        registry_host="$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}' 2>/dev/null || true)"
+        if [ -z "$registry_host" ]; then
+            echo_info "Enabling OpenShift registry default-route"
+            oc patch configs.imageregistry.operator.openshift.io/cluster --type merge -p '{"spec":{"defaultRoute":true}}' >/dev/null
+            local _i
+            for _i in $(seq 1 60); do
+                registry_host="$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}' 2>/dev/null || true)"
+                [ -n "$registry_host" ] && break
+                sleep 2
+            done
+        fi
+        if [ -z "$registry_host" ]; then
+            echo_error "OpenShift registry default-route not available"
+            return 1
+        fi
+        local build_img="${registry_host}/${cr_ns}/koku-service-operator:latest"
+        kubectl get ns "$cr_ns" >/dev/null 2>&1 || kubectl create ns "$cr_ns"
+        echo_info "Building and pushing operator image: $build_img"
+        if ! (cd "$project_root" && make docker-build IMG="$build_img" && { oc registry login --registry="$registry_host" 2>/dev/null || true; } && oc whoami -t | docker login -u "$(oc whoami)" --password-stdin "$registry_host" && make docker-push IMG="$build_img"); then
+            echo_error "Failed to build/push operator image"
+            return 1
+        fi
+        # Pin by digest so apply changes the Deployment spec ( :latest is a
+        # no-op) and kubelet does not default imagePullPolicy to Always.
+        local digest=""
+        digest="$(docker image inspect "$build_img" --format '{{with index .RepoDigests 0}}{{.}}{{end}}' 2>/dev/null | awk -F@ '{print $2}')"
+        if [ -n "$digest" ]; then
+            pull_img="image-registry.openshift-image-registry.svc:5000/${cr_ns}/koku-service-operator@${digest}"
+            echo_info "Pinning in-cluster operator image to ${pull_img}"
+        else
+            pull_img="image-registry.openshift-image-registry.svc:5000/${cr_ns}/koku-service-operator:latest"
+            echo_warning "Could not resolve image digest; using :latest"
+        fi
+    else
+        echo_info "Using pre-set IMG=$pull_img"
     fi
-    if [ -z "$registry_host" ]; then
-        echo_error "OpenShift registry default-route not available"
+
+    echo_info "Deploying OwnNamespace operator into ${cr_ns} (hack/deploy-incluster.sh)"
+    if ! (cd "$project_root" && IMG="$pull_img" ./hack/deploy-incluster.sh "$cr_ns"); then
+        echo_error "Failed to deploy operator via hack/deploy-incluster.sh"
         return 1
     fi
-    local build_img="${registry_host}/${operator_ns}/koku-service-operator:latest"
-    kubectl get ns "$operator_ns" >/dev/null 2>&1 || kubectl create ns "$operator_ns"
-    echo_info "Building and pushing operator image: $build_img"
-    if ! (cd "$project_root" && make docker-build IMG="$build_img" && { oc registry login --registry="$registry_host" 2>/dev/null || true; } && oc whoami -t | docker login -u "$(oc whoami)" --password-stdin "$registry_host" && make docker-push IMG="$build_img"); then
-        echo_error "Failed to build/push operator image"
-        return 1
-    fi
-    echo_info "CMSC CRD not found — deploying operator (make deploy)"
-    if ! (cd "$project_root" && make deploy IMG="$pull_img"); then
-        echo_error "Failed to deploy operator/CRDs via make deploy"
-        return 1
-    fi
-    # TODO: drop once wait-for init images are not pulled from the operator ImageStream across namespaces
-    echo_info "Granting image-puller so ${NAMESPACE} SAs can pull wait-for init image from ${operator_ns}"
-    oc adm policy add-role-to-group system:image-puller "system:serviceaccounts:${NAMESPACE}" -n "$operator_ns" || true
+    remove_make_deploy_webhooks
     echo_success "Operator/CRDs deployed"
 
     if [ ! -f "$sample" ]; then
@@ -1167,12 +1209,23 @@ deploy_helm_chart() {
         return 1
     fi
 
-    # TODO: remove anyuid SCC grant after operator sets compatible securityContext for bundled DB/cache (fsGroup 26 / PodSecurity)
-    echo_info "Granting anyuid SCC for bundled DB/cache pods"
-    oc adm policy add-scc-to-user anyuid -z default -n "${NAMESPACE:-cost-onprem}" 2>/dev/null || true
+    if ! wait_for_operator "$cr_ns"; then
+        echo_error "Operator not ready in ${cr_ns}; refusing to apply CMSC"
+        return 1
+    fi
 
     echo_info "Applying CMSC sample: $sample"
-    if ! kubectl apply -f "$sample"; then
+    local apply_ok=false
+    local attempt
+    for attempt in 1 2 3 4 5; do
+        if kubectl apply -f "$sample"; then
+            apply_ok=true
+            break
+        fi
+        echo_warning "CMSC apply failed (attempt ${attempt}/5); retrying in 5s"
+        sleep 5
+    done
+    if [ "$apply_ok" != "true" ]; then
         echo_error "Failed to apply CMSC"
         return 1
     fi
@@ -1180,15 +1233,18 @@ deploy_helm_chart() {
     # RHBK advertises the public Route as OIDC issuer even when JWKS uses the
     # in-cluster Service URL. Patch issuerURL from the detected Keycloak hostname
     # so oauth2-proxy / Envoy match tokens without hardcoding a cluster URL in the sample.
+    # oauth2-proxy verifies that issuer with the cluster service CA, which does not
+    # trust the router cert — skip-verify is required for lab Route issuers
+    # (prefer spec.auth.keycloak.tls.caCertSecretName in production).
     local cr_name="${CR_NAME:-cost-onprem}"
     if [ -z "${KEYCLOAK_URL:-}" ]; then
         detect_keycloak || true
     fi
     if [ -n "${KEYCLOAK_URL:-}" ]; then
-        echo_info "Patching CMSC ${cr_name} spec.auth.keycloak.issuerURL=${KEYCLOAK_URL}"
+        echo_info "Patching CMSC ${cr_name} issuerURL=${KEYCLOAK_URL} tls.insecureSkipVerify=true"
         if ! kubectl patch cmsc "$cr_name" -n "$NAMESPACE" --type merge \
-            -p "{\"spec\":{\"auth\":{\"keycloak\":{\"issuerURL\":\"${KEYCLOAK_URL}\"}}}}"; then
-            echo_warning "Failed to patch issuerURL; UI OIDC discovery may fail until set manually"
+            -p "{\"spec\":{\"auth\":{\"keycloak\":{\"issuerURL\":\"${KEYCLOAK_URL}\",\"tls\":{\"insecureSkipVerify\":true}}}}}"; then
+            echo_warning "Failed to patch issuerURL/TLS; UI OIDC discovery may fail until set manually"
         fi
     else
         echo_warning "KEYCLOAK_URL unset — skipping issuerURL patch (set auth.keycloak.issuerURL if UI OIDC fails)"
@@ -1423,23 +1479,27 @@ deploy_helm_chart() {
 wait_for_pods() {
     echo_info "Waiting for pods to be ready..."
 
-    # Wait for CMSC Ready (replaces Helm release pod wait)
+    # Conditions are the machine API. Phase stays Progressing until UIReady
+    # (OAuth client Secret + UI Route admitted), which is not required for day-one.
     local cr_name="${CR_NAME:-cost-onprem}"
     local cr_ns="${NAMESPACE:-cost-onprem}"
     local timeout_s="${HELM_TIMEOUT:-900}"
     timeout_s="${timeout_s%s}"
     local end=$((SECONDS + timeout_s))
-    local phase=""
+    local available=""
     while (( SECONDS < end )); do
-        phase="$(kubectl get cmsc "$cr_name" -n "$cr_ns" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
-        if [ "$phase" = "Ready" ]; then
+        available="$(kubectl get cmsc "$cr_name" -n "$cr_ns" \
+            -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || true)"
+        if [ "$available" = "True" ]; then
             break
         fi
-        echo_info "CMSC phase=${phase:-<empty>} (waiting for Ready)"
+        local phase
+        phase="$(kubectl get cmsc "$cr_name" -n "$cr_ns" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+        echo_info "CMSC Available=${available:-<empty>} phase=${phase:-<empty>} (waiting for Available=True)"
         sleep 10
     done
-    if [ "$phase" != "Ready" ]; then
-        echo_error "CMSC did not become Ready within ${timeout_s}s"
+    if [ "$available" != "True" ]; then
+        echo_error "CMSC did not become Available within ${timeout_s}s"
         kubectl get cmsc "$cr_name" -n "$cr_ns" -o yaml 2>/dev/null || true
         return 1
     fi
@@ -1559,36 +1619,42 @@ run_health_checks() {
     echo_info "Running health checks..."
 
     local failed_checks=0
+    local ros_enabled
+    ros_enabled="$(kubectl get cmsc "${CR_NAME:-cost-onprem}" -n "$NAMESPACE" \
+        -o jsonpath='{.spec.ros.enabled}' 2>/dev/null || true)"
 
     # Test internal service connectivity first (this should always work)
     echo_info "Testing internal service connectivity..."
 
-    # Test ROS API internally
-    local api_pod=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=ros-api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-    if [ -n "$api_pod" ]; then
-        if kubectl exec -n "$NAMESPACE" "$api_pod" -- curl -f -s http://localhost:8000/status >/dev/null 2>&1; then
-            echo_success "✓ ROS API service is healthy (internal)"
+    if [ "$ros_enabled" = "true" ]; then
+        # Test ROS API internally
+        local api_pod=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=ros-api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        if [ -n "$api_pod" ]; then
+            if kubectl exec -n "$NAMESPACE" "$api_pod" -- curl -f -s http://localhost:8000/status >/dev/null 2>&1; then
+                echo_success "✓ ROS API service is healthy (internal)"
+            else
+                echo_error "✗ ROS API service is not responding (internal)"
+                failed_checks=$((failed_checks + 1))
+            fi
         else
-            echo_error "✗ ROS API service is not responding (internal)"
+            echo_error "✗ ROS API pod not found"
             failed_checks=$((failed_checks + 1))
         fi
     else
-        echo_error "✗ ROS API pod not found"
-        failed_checks=$((failed_checks + 1))
+        echo_info "Skipping ROS API check (spec.ros.enabled is not true)"
     fi
 
     # Test services via port-forwarding
     echo_info "Testing services via port-forwarding..."
 
-    # Test Ingress API via port-forward
-    # Note: The ingress container listens on port 8081. When JWT auth is enabled, Envoy sidecar
-    # listens on port 8080 and requires authentication. For health checks, connect directly to
-    # the ingress container on port 8081 to bypass JWT authentication.
+    # Test Ingress API via port-forward.
+    # Operator ingress listens on 8080 (INGRESS_WEBPORT). JWT is terminated at
+    # the Envoy gateway, not an ingress sidecar (Helm used 8081 for that).
     echo_info "Testing Ingress API via port-forward..."
     local ingress_pod=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/component=ingress -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
     if [ -n "$ingress_pod" ]; then
         local ingress_pf_pid=""
-        kubectl port-forward -n "$NAMESPACE" pod/"$ingress_pod" 18081:8081 --request-timeout=90s >/dev/null 2>&1 &
+        kubectl port-forward -n "$NAMESPACE" pod/"$ingress_pod" 18081:8080 --request-timeout=90s >/dev/null 2>&1 &
         ingress_pf_pid=$!
         sleep 3
         if kill -0 "$ingress_pf_pid" 2>/dev/null && curl -f -s --connect-timeout 60 --max-time 90 http://localhost:18081/ >/dev/null 2>&1; then
@@ -1608,23 +1674,25 @@ run_health_checks() {
         failed_checks=$((failed_checks + 1))
     fi
 
-    # Test Kruize API via port-forward
-    echo_info "Testing Kruize API via port-forward..."
-    local kruize_pf_pid=""
-    kubectl port-forward -n "$NAMESPACE" svc/cost-onprem-kruize 18081:8080 --request-timeout=90s >/dev/null 2>&1 &
-    kruize_pf_pid=$!
-    sleep 3
-    if kill -0 "$kruize_pf_pid" 2>/dev/null && curl -f -s --connect-timeout 60 --max-time 90 http://localhost:18081/listPerformanceProfiles >/dev/null 2>&1; then
-        echo_success "✓ Kruize API service is healthy (port-forward)"
+    if [ "$ros_enabled" = "true" ]; then
+        # Test Kruize API via port-forward
+        echo_info "Testing Kruize API via port-forward..."
+        local kruize_pf_pid=""
+        kubectl port-forward -n "$NAMESPACE" svc/cost-onprem-kruize 18081:8080 --request-timeout=90s >/dev/null 2>&1 &
+        kruize_pf_pid=$!
+        sleep 3
+        if kill -0 "$kruize_pf_pid" 2>/dev/null && curl -f -s --connect-timeout 60 --max-time 90 http://localhost:18081/listPerformanceProfiles >/dev/null 2>&1; then
+            echo_success "✓ Kruize API service is healthy (port-forward)"
+        else
+            echo_error "✗ Kruize API service is not responding (port-forward)"
+            failed_checks=$((failed_checks + 1))
+        fi
+        if [ -n "$kruize_pf_pid" ] && kill -0 "$kruize_pf_pid" 2>/dev/null; then
+            kill "$kruize_pf_pid" 2>/dev/null || true
+            sleep 1
+        fi
     else
-        echo_error "✗ Kruize API service is not responding (port-forward)"
-        failed_checks=$((failed_checks + 1))
-    fi
-    # Cleanup kruize port-forward
-    if [ -n "$kruize_pf_pid" ] && kill -0 "$kruize_pf_pid" 2>/dev/null; then
-        kill "$kruize_pf_pid" 2>/dev/null || true
-        # Wait a moment for process to terminate
-        sleep 1
+        echo_info "Skipping Kruize API check (spec.ros.enabled is not true)"
     fi
 
     # Test external route accessibility (informational only - not counted as failure)
