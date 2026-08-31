@@ -26,6 +26,9 @@ set -euo pipefail
 #   --skip-rhbk               Skip Red Hat Build of Keycloak (RHBK) deployment
 #   --skip-kafka              Skip Kafka/AMQ Streams deployment
 #   --skip-helm               Skip COST Helm chart installation
+#   --build                   Build and push the operator image from this checkout.
+#                             Default is to pull quay.io/project-koku/koku-service-operator:v0.0.1
+#                             (or IMG / DEFAULT_OPERATOR_IMG if set).
 #   --skip-tls                Skip TLS certificate setup
 #   --skip-image-override     Skip creating custom values file for image override
 #   --deploy-s4               Deploy S4 (Super Simple Storage Service) for S3-compatible storage
@@ -109,6 +112,9 @@ set -euo pipefail
 #   # Skip RHBK if already deployed
 #   ./deploy-test-cost-onprem.sh --skip-rhbk
 #
+#   # Build and push the operator from this checkout (default is pull only)
+#   ./deploy-test-cost-onprem.sh --build
+#
 #   # Dry run to preview what would execute
 #   ./deploy-test-cost-onprem.sh --dry-run --verbose
 #
@@ -184,6 +190,7 @@ SIZING_PROFILE="${SIZING_PROFILE:-}"
 SKIP_RHBK=false  # Red Hat Build of Keycloak
 SKIP_KAFKA=false
 SKIP_HELM=false
+BUILD_IMAGE="${BUILD_IMAGE:-false}"
 SKIP_TLS=false
 SKIP_TEST=false
 SKIP_GRAFANA_LINKS=${SKIP_GRAFANA_LINKS:-true}  # Skip Grafana snapshot/links (default: skip, local Grafana rarely accessible)
@@ -703,6 +710,7 @@ deploy_helm_chart() {
     export JWT_AUTH_ENABLED="true"
     export USE_LOCAL_CHART="${USE_LOCAL_CHART}"
     export USE_HELM_DEVEL="${USE_HELM_DEVEL}"
+    export BUILD_IMAGE="${BUILD_IMAGE}"
     [[ -n "${CHART_VERSION}" ]] && export CHART_VERSION="${CHART_VERSION}"
     # Note: S3 setup behavior depends on values.yaml configuration:
     # - If objectStorage.endpoint is set: Script skips S3 auto-detection and bucket creation
@@ -1028,6 +1036,13 @@ print_summary() {
     [[ "${SKIP_KAFKA}" == "false" ]] && echo "  ✓ Deploy Kafka/AMQ Streams" || echo "  ✗ Deploy Kafka/AMQ Streams (SKIPPED)"
     [[ "${DEPLOY_S4}" == "true" ]] && echo "  ✓ Deploy S4 Storage (namespace: ${S4_NAMESPACE})" || echo "  ✗ Deploy S4 Storage (OPTIONAL)"
     [[ "${SKIP_HELM}" == "false" ]] && echo "  ✓ Deploy Cost On-Prem Helm Chart" || echo "  ✗ Deploy Cost On-Prem Helm Chart (SKIPPED)"
+    if [[ "${SKIP_HELM}" == "false" ]]; then
+        if [[ "${BUILD_IMAGE}" == "true" ]]; then
+            echo "       operator image: build and push (--build)"
+        else
+            echo "       operator image: pull (pass --build to compile from this checkout)"
+        fi
+    fi
     [[ "${SKIP_TLS}" == "false" ]] && echo "  ✓ Setup TLS Certificates" || echo "  ✗ Setup TLS Certificates (SKIPPED)"
     [[ "${SKIP_TEST}" == "false" ]] && echo "  ✓ Run Chart Tests" || echo "  ✗ Run Chart Tests (SKIPPED)"
     if [[ "${DEPLOY_OBSERVABILITY}" == "true" ]]; then
@@ -1087,6 +1102,10 @@ main() {
                 ;;
             --skip-helm)
                 SKIP_HELM=true
+                shift
+                ;;
+            --build)
+                BUILD_IMAGE=true
                 shift
                 ;;
             --skip-tls)

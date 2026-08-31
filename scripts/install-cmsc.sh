@@ -24,6 +24,9 @@
 #   S3_CLI_IMAGE    - Container image with AWS CLI for bucket creation (default: amazon/aws-cli:latest)
 #   HELM_FORCE_CONFLICTS - When true, pass --force-conflicts to helm upgrade (SSA field ownership;
 #                          use after kubectl set / oc set image on chart-managed resources)
+#   BUILD_IMAGE     - When true, docker-build and push the operator (default: false — pull only)
+#   DEFAULT_OPERATOR_IMG - Image to pull when BUILD_IMAGE is false and IMG is unset
+#                          (default: quay.io/project-koku/koku-service-operator:v0.0.1)
 #   DOCKER_NO_CACHE - When true, build the operator image with --no-cache (default: false)
 #   DOCKER_PUSH_RETRIES - docker-push attempts after a registry 500 (default: 5)
 #   IMAGESTREAM_API_TIMEOUT - Seconds to wait for image.openshift.io (default: 180)
@@ -1225,6 +1228,31 @@ build_and_push_operator_image() {
     return 1
 }
 
+# Pull a published operator image. Sets RESOLVED_OPERATOR_IMG. Used when
+# BUILD_IMAGE is not set.
+pull_operator_image() {
+    local img="$1"
+    local ctool="${CONTAINER_TOOL:-docker}"
+    RESOLVED_OPERATOR_IMG="$img"
+
+    echo_info "Pulling operator image: $img"
+    if ! command -v "$ctool" >/dev/null 2>&1; then
+        echo_warning "${ctool} not found; the cluster will pull ${img} when the pod starts"
+        return 0
+    fi
+    if "$ctool" pull "$img"; then
+        echo_success "Pulled $img"
+        local digest=""
+        digest="$("$ctool" image inspect "$img" --format '{{with index .RepoDigests 0}}{{.}}{{end}}' 2>/dev/null || true)"
+        if [ -n "$digest" ]; then
+            RESOLVED_OPERATOR_IMG="$digest"
+            echo_info "Pinning pulled operator image to ${RESOLVED_OPERATOR_IMG}"
+        fi
+    else
+        echo_warning "Local pull of ${img} failed; the cluster will pull it when the pod starts"
+    fi
+}
+
 # Function to deploy Helm chart
 deploy_helm_chart() {
     echo_info "Deploying Cost Management On Premise Helm chart..."
@@ -1238,7 +1266,10 @@ deploy_helm_chart() {
     # use `make deploy` (scaffolds koku-service-operator-system).
     local cr_ns="${NAMESPACE:-cost-onprem}"
     local pull_img="${IMG:-}"
-    if [ -z "$pull_img" ]; then
+    local default_img="${DEFAULT_OPERATOR_IMG:-quay.io/project-koku/koku-service-operator:v0.0.1}"
+    kubectl get ns "$cr_ns" >/dev/null 2>&1 || kubectl create ns "$cr_ns"
+
+    if [ "${BUILD_IMAGE:-false}" = "true" ]; then
         local registry_host
         registry_host="$(oc get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}' 2>/dev/null || true)"
         if [ -z "$registry_host" ]; then
@@ -1256,8 +1287,7 @@ deploy_helm_chart() {
             return 1
         fi
         local build_img="${registry_host}/${cr_ns}/koku-service-operator:latest"
-        kubectl get ns "$cr_ns" >/dev/null 2>&1 || kubectl create ns "$cr_ns"
-        echo_info "Building and pushing operator image: $build_img"
+        echo_info "BUILD_IMAGE=true — building and pushing operator image: $build_img"
         if ! build_and_push_operator_image "$project_root" "$registry_host" "$cr_ns" "$build_img"; then
             echo_error "Failed to build/push operator image"
             return 1
@@ -1279,7 +1309,12 @@ deploy_helm_chart() {
         pull_img="image-registry.openshift-image-registry.svc:5000/${cr_ns}/koku-service-operator@${digest}"
         echo_info "Pinning in-cluster operator image to ${pull_img}"
     else
-        echo_info "Using pre-set IMG=$pull_img"
+        if [ -z "$pull_img" ]; then
+            pull_img="$default_img"
+        fi
+        echo_info "BUILD_IMAGE unset — pulling operator image (set BUILD_IMAGE=true or pass --build to compile)"
+        pull_operator_image "$pull_img"
+        pull_img="${RESOLVED_OPERATOR_IMG:-$pull_img}"
     fi
 
     echo_info "Deploying OwnNamespace operator into ${cr_ns} (hack/deploy-incluster.sh)"
