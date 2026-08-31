@@ -1187,6 +1187,11 @@ build_and_push_operator_image() {
     local retries="${DOCKER_PUSH_RETRIES:-5}"
     local attempt
 
+    if ! [[ "$retries" =~ ^[1-9][0-9]*$ ]]; then
+        echo_warning "DOCKER_PUSH_RETRIES='${retries}' is not a positive integer; using 5"
+        retries=5
+    fi
+
     if ! wait_for_imagestream_api "$cr_ns"; then
         return 1
     fi
@@ -1210,7 +1215,7 @@ build_and_push_operator_image() {
         return 1
     fi
 
-    for attempt in $(seq 1 "$retries"); do
+    for ((attempt = 1; attempt <= retries; attempt++)); do
         echo_info "Pushing operator image (attempt ${attempt}/${retries}): $build_img"
         if (cd "$project_root" && make docker-push IMG="$build_img"); then
             echo_success "Operator image pushed"
@@ -1222,7 +1227,7 @@ build_and_push_operator_image() {
         fi
         wait_for_imagestream_api "$cr_ns" || true
         registry_docker_login "$registry_host" || true
-        sleep $((attempt * 5))
+        sleep "$((attempt * 5))"
     done
     echo_error "Failed to push operator image after ${retries} attempts"
     return 1
