@@ -1181,17 +1181,22 @@ deploy_helm_chart() {
             echo_error "Failed to build/push operator image"
             return 1
         fi
-        # Pin by digest so apply changes the Deployment spec ( :latest is a
-        # no-op) and kubelet does not default imagePullPolicy to Always.
+        # Pin by digest so apply changes the Deployment spec. Do not fall back
+        # to :latest: deploy-incluster uses IfNotPresent, and a cached tag can
+        # leave the manager on stale code.
         local digest=""
-        digest="$(docker image inspect "$build_img" --format '{{with index .RepoDigests 0}}{{.}}{{end}}' 2>/dev/null | awk -F@ '{print $2}')"
-        if [ -n "$digest" ]; then
-            pull_img="image-registry.openshift-image-registry.svc:5000/${cr_ns}/koku-service-operator@${digest}"
-            echo_info "Pinning in-cluster operator image to ${pull_img}"
-        else
-            pull_img="image-registry.openshift-image-registry.svc:5000/${cr_ns}/koku-service-operator:latest"
-            echo_warning "Could not resolve image digest; using :latest"
+        local _try
+        for _try in 1 2 3; do
+            digest="$(docker image inspect "$build_img" --format '{{with index .RepoDigests 0}}{{.}}{{end}}' 2>/dev/null | awk -F@ '{print $2}')"
+            [ -n "$digest" ] && break
+            sleep 2
+        done
+        if [ -z "$digest" ]; then
+            echo_error "Could not resolve image digest for ${build_img}; refusing :latest + IfNotPresent"
+            return 1
         fi
+        pull_img="image-registry.openshift-image-registry.svc:5000/${cr_ns}/koku-service-operator@${digest}"
+        echo_info "Pinning in-cluster operator image to ${pull_img}"
     else
         echo_info "Using pre-set IMG=$pull_img"
     fi
