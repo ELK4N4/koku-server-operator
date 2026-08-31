@@ -24,6 +24,9 @@
 #   S3_CLI_IMAGE    - Container image with AWS CLI for bucket creation (default: amazon/aws-cli:latest)
 #   HELM_FORCE_CONFLICTS - When true, pass --force-conflicts to helm upgrade (SSA field ownership;
 #                          use after kubectl set / oc set image on chart-managed resources)
+#   DOCKER_NO_CACHE - When true, build the operator image with --no-cache (default: false)
+#   DOCKER_PUSH_RETRIES - docker-push attempts after a registry 500 (default: 5)
+#   IMAGESTREAM_API_TIMEOUT - Seconds to wait for image.openshift.io (default: 180)
 #
 # Examples:
 #   # Default (clean output with successes/warnings/errors only)
@@ -1144,6 +1147,84 @@ remove_make_deploy_webhooks() {
     kubectl delete validatingwebhookconfiguration koku-service-operator-validating-webhook-configuration --ignore-not-found=true >/dev/null 2>&1 || true
 }
 
+# The integrated registry creates/reads an ImageStream on docker push. When
+# openshift-apiserver is restarting, that GET returns 503 and docker reports
+# "received unexpected HTTP status: 500 Internal Server Error".
+wait_for_imagestream_api() {
+    local ns="$1"
+    local timeout_s="${2:-${IMAGESTREAM_API_TIMEOUT:-180}}"
+    local end=$((SECONDS + timeout_s))
+
+    echo_info "Waiting for ImageStream API in ${ns} (timeout ${timeout_s}s)..."
+    while (( SECONDS < end )); do
+        if oc get imagestreams.image.openshift.io -n "$ns" >/dev/null 2>&1; then
+            echo_success "ImageStream API is reachable in ${ns}"
+            return 0
+        fi
+        sleep 5
+    done
+    echo_error "ImageStream API not reachable in ${ns} within ${timeout_s}s"
+    return 1
+}
+
+registry_docker_login() {
+    local registry_host="$1"
+    oc registry login --registry="$registry_host" 2>/dev/null || true
+    oc whoami -t | docker login -u "$(oc whoami)" --password-stdin "$registry_host"
+}
+
+# Build the operator image and push to the integrated registry. Push is retried
+# because lab clusters often flap image.openshift.io mid-upload.
+build_and_push_operator_image() {
+    local project_root="$1"
+    local registry_host="$2"
+    local cr_ns="$3"
+    local build_img="$4"
+    local ctool="${CONTAINER_TOOL:-docker}"
+    local retries="${DOCKER_PUSH_RETRIES:-5}"
+    local attempt
+
+    if ! wait_for_imagestream_api "$cr_ns"; then
+        return 1
+    fi
+
+    echo_info "Building operator image: $build_img"
+    if [ "${DOCKER_NO_CACHE:-false}" = "true" ]; then
+        echo_info "DOCKER_NO_CACHE=true — rebuilding without layer cache"
+        if ! (cd "$project_root" && "$ctool" build --no-cache -t "$build_img" .); then
+            echo_error "Failed to build operator image"
+            return 1
+        fi
+    else
+        if ! (cd "$project_root" && make docker-build IMG="$build_img"); then
+            echo_error "Failed to build operator image"
+            return 1
+        fi
+    fi
+
+    if ! registry_docker_login "$registry_host"; then
+        echo_error "Failed to log in to registry ${registry_host}"
+        return 1
+    fi
+
+    for attempt in $(seq 1 "$retries"); do
+        echo_info "Pushing operator image (attempt ${attempt}/${retries}): $build_img"
+        if (cd "$project_root" && make docker-push IMG="$build_img"); then
+            echo_success "Operator image pushed"
+            return 0
+        fi
+        echo_warning "docker-push failed (attempt ${attempt}/${retries})"
+        if [ "$attempt" -ge "$retries" ]; then
+            break
+        fi
+        wait_for_imagestream_api "$cr_ns" || true
+        registry_docker_login "$registry_host" || true
+        sleep $((attempt * 5))
+    done
+    echo_error "Failed to push operator image after ${retries} attempts"
+    return 1
+}
+
 # Function to deploy Helm chart
 deploy_helm_chart() {
     echo_info "Deploying Cost Management On Premise Helm chart..."
@@ -1177,7 +1258,7 @@ deploy_helm_chart() {
         local build_img="${registry_host}/${cr_ns}/koku-service-operator:latest"
         kubectl get ns "$cr_ns" >/dev/null 2>&1 || kubectl create ns "$cr_ns"
         echo_info "Building and pushing operator image: $build_img"
-        if ! (cd "$project_root" && make docker-build IMG="$build_img" && { oc registry login --registry="$registry_host" 2>/dev/null || true; } && oc whoami -t | docker login -u "$(oc whoami)" --password-stdin "$registry_host" && make docker-push IMG="$build_img"); then
+        if ! build_and_push_operator_image "$project_root" "$registry_host" "$cr_ns" "$build_img"; then
             echo_error "Failed to build/push operator image"
             return 1
         fi
