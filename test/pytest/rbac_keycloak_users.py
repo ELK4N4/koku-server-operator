@@ -269,7 +269,7 @@ def _find_group_id_by_name(
     admin_token: str,
     name: str,
 ) -> Optional[str]:
-    r = requests.get(
+    r = _http.get(
         f"{base}/admin/realms/{realm}/groups",
         params={"search": name, "exact": "true"},
         headers={"Authorization": f"Bearer {admin_token}"},
@@ -306,7 +306,7 @@ def _ensure_org_group(
         "Authorization": f"Bearer {admin_token}",
         "Content-Type": "application/json",
     }
-    r = requests.post(
+    r = _http.post(
         f"{base}/admin/realms/{realm}/groups",
         json={
             "name": name,
@@ -336,7 +336,7 @@ def _add_user_to_group(
     user_id: str,
     group_id: str,
 ) -> None:
-    r = requests.put(
+    r = _http.put(
         f"{base}/admin/realms/{realm}/users/{user_id}/groups/{group_id}",
         headers={"Authorization": f"Bearer {admin_token}"},
         verify=False,
